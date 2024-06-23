@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+option go_package = "github.com/desain-gratis/common/types/protobuf/contentupload;contentupload";
+
+package contentupload;
+
+// File upload config
+message File {
+  string id = 1;
+  string url = 2;
+  string description = 3;
+  repeated string tags = 4;
+}

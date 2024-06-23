@@ -1,0 +1,56 @@
+syntax = "proto3";
+
+option go_package = "github.com/desain-gratis/common/types/protobuf/session;session";
+
+package session;
+
+// OIDC claim UserID
+// https://openid.net/specs/openid-connect-core-1_0.html#StandardClaims
+// Important is the iss, sub, email verified, phone verified, Other optional.
+message OIDCClaim {
+  string iss = 1; // issuer
+  string sub = 2; // the ID
+  string name = 3;
+  string given_name = 4;
+  string family_name = 5;
+  string midle_name = 6;
+  string nickname = 7;
+  string preferred_username = 8;
+  string profile = 9;
+  string picture = 10;
+  string website = 11;
+  string email = 12;
+  bool email_verified = 13;
+  string gender = 14;
+  string birthdate = 15;
+  string zoneinfo = 16;
+  string locale = 17;
+  string phone_number = 18;
+  bool phone_number_verified = 19;
+  AddressClaim address = 20;
+  int64 updated_at = 21;
+}
+
+message Credential {
+  string email = 1;
+  string password = 2;
+}
+
+message AddressClaim {
+  string formatted = 1;
+  string street_address = 2;
+  string locality = 3;
+  string region = 4;
+  string postal_code = 5;
+  string country = 6;
+}
+
+// Profile for summary
+message Profile {
+  string id = 1;
+  string url = 2;
+  string display_name = 3;
+  string image_data_url = 4;
+  string image_url = 5;
+  string user_id = 6;
+}

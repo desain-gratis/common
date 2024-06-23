@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+option go_package = "github.com/desain-gratis/common/types/protobuf/contentupload;contentupload";
+
+package contentupload;
+
+// Or actual "content" that we uploaded to storage (eg. GCS); here is the
+// meetadata.
+// TODO: make generic in other module
+message Attachment {
+  string id = 1;
+  string ref_id = 2;
+  string owner_id = 3;
+  string path = 4; // private path of the resource
+  string name = 5; // name of the resource
+  string url = 6;  // public URL of the resource
+  string content_type = 7;
+  int64 content_size = 8;
+  string description = 9;
+  repeated string tags = 10; // meta data
+  int32 ordering = 11;
+  string image_data_url = 12; // image (thumbnail) data URL if applicable
+  string created_at = 13;
+  string hash = 14; // hash of the attachment
+}

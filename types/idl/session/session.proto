@@ -1,0 +1,96 @@
+syntax = "proto3";
+
+option go_package = "github.com/desain-gratis/common/types/protobuf/session;session";
+
+package session;
+
+import "session/claims.proto";
+import "google/protobuf/any.proto";
+
+// Session contains authorization information about a session
+message Session {
+  string id =
+      1; // JWT (contain custom claim and other standard claims), and auth grant
+}
+
+// Contain arbitrary session data for our application to use
+message SessionData {
+  session.OIDCClaim non_registered_id =
+      1;              // User ID provided by identity provider
+  string user_id = 2; // to check whether the user already registered or not
+  string token = 3;   // random string
+  map<string, Grant> grants =
+      5; // access to an organization (represented by URL)
+}
+
+message Grant {
+  string token = 1;
+  string url = 2;
+  string email = 3;
+  repeated string roles = 4;
+  string user_id = 5;
+  string expiry = 6;
+}
+
+// Error is the common error format
+// Should be on different file TO DO
+message Error {
+  enum ErrorCode {
+    ERROR_SERVER_ERROR = 0;
+    ERROR_ROLE_REJECTED = 1;
+    ERROR_INVALID_REQUEST = 2;
+    ERROR_UNAUTHORIZED = 3;
+  }
+  ErrorCode code = 1;
+  string message = 2;
+}
+
+// CommonError later replace "Error"
+message CommonError {
+  int32 error_count = 1;
+  repeated Err errors = 2;
+}
+
+message Err {
+  // For if logic in front end
+  string code = 1;
+
+  // User friendly messages
+  // Please no internal detail (eg. panic at line...)
+  string message = 2;
+
+  // URL for help / next action items
+  string url = 3;
+
+  // Helpful icon
+  string icon_url = 4;
+
+  // Helpful images
+  string image_url = 5;
+
+  // ERROR, WARN, INFO, etc.
+  int32 severity = 6;
+
+  int32 http_code = 7;
+}
+
+message CommonResponse {
+  CommonError error = 1;
+  Success success = 2;
+}
+
+message Success {
+  map<string, google.protobuf.Any> metadata = 1;
+  google.protobuf.Any data = 2;
+}
+
+message CommonRequest {
+  map<string, google.protobuf.Any> metadata = 1;
+  google.protobuf.Any data = 2;
+}
+
+// GenericToken is the payload for for generic token
+message GenericToken {
+  string token = 1;
+  string user_id = 2;
+}

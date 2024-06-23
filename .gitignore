@@ -1,0 +1,4 @@
+*.secret
+node_modules/
+mochawesome-report*/
+mochawesome-report/

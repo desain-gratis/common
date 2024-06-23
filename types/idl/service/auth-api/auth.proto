@@ -1,0 +1,191 @@
+syntax = "proto3";
+
+option go_package = "github.com/desain-gratis/common/types/protobuf/service/authapi;authapi";
+
+package authapi;
+
+import "session/claims.proto";
+import "session/session.proto";
+import "google/protobuf/timestamp.proto";
+
+// AuthenticationService handles login related functionality
+service AuthenticationService {
+  // Googlelogin is to authenticate with facebook OIDC provider
+  rpc GoogleLogin(LoginRequest)
+      returns (LoginResponse); // TODO MVP change LoginForm to LoginRequest, to
+                               // make it not anti pattern
+
+  // UserPasswordLogin is to authenticate without OIDC provider
+  // But with user password login
+  rpc UserPasswordLogin(LoginRequest) returns (LoginResponse);
+
+  // Logout is used to expire authorization token
+  // this will be used for important operations where the account API will keep
+  // track of the session in the back end
+  rpc Logout(LogoutRequest) returns (LogoutResponse);
+
+  // GetSigningKey is used to the public key used to validate this service token
+  rpc GetSigningKey(SigningKeyRequest) returns (SigningKeyResponse);
+
+  // CreateLogin is used to create account with account API authentication
+  // mechanism Why it is different than using OIDC ? Because we need to verify
+  // email / phone number before we register them as user! Whereas if you use
+  // 3rd party, the verification process can be deffered to later time. We will
+  // not expose this in the front end UI. Instead, this will be very useful when
+  // we do integration / functionality testing.
+  //
+  // the account will have very minimal permission (only able to do
+  // REGISTRATION)
+  rpc CreateLogin(CreateLoginRequest) returns (CreateLoginResponse);
+
+  // GetAuthorizationToken is the general case of 'login'
+  // It is used to get authorization for operations in our service
+  rpc GetAuthorizationToken(GetAuthorizationTokenRequest)
+      returns (GetAuthorizationTokenResponse);
+
+  // TrackLogin tracks user login activity
+  rpc TrackLogin(TrackLoginRequest) returns (TrackLoginResponse);
+}
+
+message GetAuthorizationTokenRequest {
+  session.Session session = 1;
+  repeated string roles = 2;
+}
+
+message GetAuthorizationTokenResponse {
+  message Success {
+    string message = 1;
+    map<string, string> token = 2;
+  }
+
+  message Error {
+    enum ErrorCode {
+      ERROR_SERVER_ERROR = 0;
+      ERROR_ROLE_REJECTED = 1;
+    }
+    ErrorCode code = 1;
+    string message = 2;
+  }
+
+  Success success = 1;
+  Error error = 2;
+}
+
+message CreateLoginRequest { session.Credential credential = 1; }
+
+message CreateLoginResponse {
+  message Success { string message = 1; }
+
+  message Error {
+    enum ErrorCode {
+      ERROR_INVALID_CREDENTIAL = 0;
+      ERROR_WEAK_PASSWORD = 1;
+      ERROR_SERVER_ERROR = 2;
+    }
+    ErrorCode code = 1;
+    string message = 2;
+  }
+
+  Success success = 1;
+  Error error = 2;
+}
+
+// Login data is the OIDC auth token from provider such as Google or facebook
+//
+// Google: https://developers.google.com/identity/sign-in/android/backend-auth
+// Facebook: https://developers.facebook.com/docs/facebook-login/android
+message LoginRequest {
+  string id_token = 1;
+  string username = 2;
+  string password = 3;
+}
+
+message LoginResponse {
+  message Success { session.Session session = 1; }
+
+  message Error {
+    enum ErrorCode {
+      ERROR_UNSUPPORTED_LOGIN_TYPE = 0;
+      ERROR_INVALID_TOKEN = 1;
+      ERROR_SERVER_ERROR = 2;
+      ERROR_INVALID_CREDENTIAL = 3;
+    }
+    ErrorCode code = 1;
+    string message = 2;
+  }
+
+  Success success = 1;
+  Error error = 2;
+}
+
+message LogoutRequest {
+  session.Session session = 1;
+  // optional user ID if want to force other user
+  session.OIDCClaim userID = 2;
+}
+
+message LogoutResponse {
+  message Success {}
+
+  message Error {
+    enum ErrorCode {
+      ERROR_SERVER_ERROR = 0;
+      ERROR_AUTHORIZATION_ERROR = 1;
+    }
+    ErrorCode code = 1;
+    string message = 2;
+  }
+  optional Success success = 1;
+  optional Error error = 2;
+}
+
+message SigningKeyRequest { string key_id = 1; }
+
+message SigningKeyResponse {
+  message Success {
+    string key_id = 1;
+    string key_pem = 2;
+  }
+
+  message Error {
+    enum ErrorCode { ERROR_SERVER_ERROR = 0; }
+    ErrorCode code = 1;
+    string message = 2;
+  }
+
+  optional Success success = 1;
+  optional Error error = 2;
+}
+
+// TrackLoginRequest for tracking and verifying user data
+message TrackLoginRequest { TrackingData data = 1; }
+
+// TrackLoginResponse for acknowledgement of the tracking data
+message TrackLoginResponse {
+  message Success {}
+
+  message Error {
+    enum ErrorCode { ERROR_SERVER_ERROR = 0; }
+    ErrorCode code = 1;
+    string message = 2;
+  }
+  optional Success success = 1;
+  optional Error error = 2;
+}
+
+// Login related data
+message TrackingData {
+  Geolocation location = 1;
+  string device = 2;
+  // oneof device_info {
+  //     android.Data android = 3;
+  // }
+  int64 nonce = 4;
+  google.protobuf.Timestamp client_time = 5; // should be with time zone
+}
+
+// Geolocation contains WGS84 lat lon information
+message Geolocation {
+  double lat = 1;
+  double lon = 2;
+}

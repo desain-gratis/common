@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+option go_package = "github.com/desain-gratis/common/types/protobuf/contentupload;contentupload";
+
+package contentupload;
+
+import "google/protobuf/timestamp.proto";
+
+// https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type
+// https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers
+// Basically, it's more a ContentMetadata
+message Content {
+  string id = 1;
+  string type = 2;
+  int64 length = 3;
+  string encoding = 4;
+  string title = 5;
+  string description = 6;
+  string language = 7;
+  string tags = 8;
+  int32 width = 9;                            // if applicable
+  int32 height = 10;                          // if applicable
+  google.protobuf.Timestamp upload_date = 11; // for validation
+  Thumbnails thumbnails = 12;                 // if applicable
+}
+
+// Image Thumbnails
+message Thumbnails {
+  bool ratio_original = 1;
+  bool ratio_1x1 = 2;
+  bool ratio_1x2 = 3;
+  bool ratio_1x3 = 4;
+  bool ratio_2x1 = 5;
+  bool ratio_2x3 = 6;
+  bool ratio_3x1 = 7;
+  bool ratio_3x2 = 8;
+  bool ratio_9x16 = 9;
+  bool ratio_16x9 = 10;
+}
