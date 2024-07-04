@@ -7,8 +7,6 @@ import (
 
 	"github.com/julienschmidt/httprouter"
 	"github.com/rs/zerolog/log"
-	"google.golang.org/protobuf/encoding/protojson"
-	"google.golang.org/protobuf/proto"
 
 	"github.com/desain-gratis/common/repository/content"
 	types "github.com/desain-gratis/common/types/http"
@@ -19,13 +17,13 @@ import (
 const maximumRequestLength = 1 << 20
 const maximumRequestLengthAttachment = 100 << 20
 
-type ResourceManagerService[T proto.Message] struct {
+type ResourceManagerService[T any] struct {
 	myContentUC  mycontent.Usecase[T]
 	allocate     func() T
 	mainRefParam string
 }
 
-func New[T proto.Message](
+func New[T any](
 	repo content.Repository[T],
 	allocate func() T,
 	validate func(T) *types.CommonError,
@@ -68,11 +66,13 @@ func (i *ResourceManagerService[T]) Put(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
-	resource := i.allocate()
-	err = protojson.UnmarshalOptions{
-		AllowPartial: true,
-	}.Unmarshal(payload, resource)
-	// err = json.Unmarshal(payload, resource)
+	// resource := i.allocate()
+	// err = protojson.UnmarshalOptions{
+	// 	AllowPartial: true,
+	// }.Unmarshal(payload, resource)
+
+	var resource T
+	err = json.Unmarshal(payload, resource)
 	if err != nil {
 		errMessage := serializeError(&types.CommonError{
 			Errors: []types.Error{
@@ -97,7 +97,7 @@ func (i *ResourceManagerService[T]) Put(w http.ResponseWriter, r *http.Request, 
 	}
 
 	// naise. the wrap can be considered as message!
-	// result := res.(proto.Message)
+	// result := res.(any)
 	// payload, err = protojson.MarshalOptions{
 	// 	UseProtoNames: true,
 	// 	EmitUnpopulated: true,

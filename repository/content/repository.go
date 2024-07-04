@@ -4,8 +4,6 @@ import (
 	"context"
 	"time"
 
-	"google.golang.org/protobuf/proto"
-
 	types "github.com/desain-gratis/common/types/http"
 )
 
@@ -30,7 +28,7 @@ import (
 
 // Stores your data in the internet and assign ID to resource so it can be located
 // It stores the data using user ID
-type Repository[T proto.Message] interface {
+type Repository[T any] interface {
 	// Store data with associated metadata
 	// Metadata will be used for indexing & searching
 	Put(ctx context.Context, userID string, data Data[T]) (Data[T], *types.CommonError)
@@ -60,7 +58,7 @@ type Addressable interface {
 // An URL (if any)
 // Update date
 // Also some basic indexing such as last update date
-type Data[T proto.Message] struct {
+type Data[T any] struct {
 	// The location of the data in the repository
 	ID string
 

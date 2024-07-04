@@ -288,7 +288,7 @@ func (i *ContentUploadMetadata) Upload(w http.ResponseWriter, r *http.Request, p
 	}
 
 	// naise. the wrap can be considered as message!
-	// result := res.(proto.Message)
+	// result := res.(any)
 	// payload, err = protojson.MarshalOptions{
 	// 	UseProtoNames: true,
 	// 	EmitUnpopulated: true,

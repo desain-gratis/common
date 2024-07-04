@@ -5,19 +5,17 @@ import (
 	"net/http"
 	"time"
 
-	"google.golang.org/protobuf/proto"
-
 	"github.com/desain-gratis/common/repository/content"
 	types "github.com/desain-gratis/common/types/http"
 	"github.com/desain-gratis/common/usecase/mycontent"
 )
 
-var _ mycontent.Usecase[proto.Message] = &crud[proto.Message]{}
+var _ mycontent.Usecase[any] = &crud[any]{}
 
 // URLFormat for custom URL (this should be the URL default)
 type URLFormat func(dataPath, userID, refID, ID string) string
 
-type crud[T proto.Message] struct {
+type crud[T any] struct {
 	repo content.Repository[T]
 
 	// Modifier to the underlying data
@@ -27,7 +25,7 @@ type crud[T proto.Message] struct {
 	urlFormat URLFormat
 }
 
-func New[T proto.Message](
+func New[T any](
 	repo content.Repository[T],
 	wrap func(T) mycontent.Data,
 	validate func(T) *types.CommonError,

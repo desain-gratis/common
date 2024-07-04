@@ -5,12 +5,10 @@ import (
 	"io"
 	"time"
 
-	"google.golang.org/protobuf/proto"
-
 	types "github.com/desain-gratis/common/types/http"
 )
 
-type Usecase[T proto.Message] interface {
+type Usecase[T any] interface {
 	// Put (create new or overwrite) resource here
 	Put(ctx context.Context, data T) (T, *types.CommonError)
 
@@ -22,7 +20,7 @@ type Usecase[T proto.Message] interface {
 	Delete(ctx context.Context, userID string, ID string) (T, *types.CommonError)
 }
 
-type Attachable[T proto.Message] interface {
+type Attachable[T any] interface {
 	// Attach generic binary to path
 	// Path is internal address
 	Attach(ctx context.Context, meta T, payload io.Reader) (T, *types.CommonError)
@@ -32,7 +30,7 @@ type Attachable[T proto.Message] interface {
 
 // Data is the main data structure used in the my content usecase
 type Data interface {
-	proto.Message
+	any
 
 	ID[Data]
 	Locatable[Data]

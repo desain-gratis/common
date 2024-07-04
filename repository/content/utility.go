@@ -5,15 +5,13 @@ import (
 	"net/http"
 	"sync"
 
-	"google.golang.org/protobuf/proto"
-
 	types "github.com/desain-gratis/common/types/http"
 )
 
-var _ Repository[proto.Message] = &wrapper[proto.Message]{}
+var _ Repository[any] = &wrapper[any]{}
 
 // Wrap repo with another repository
-type wrapper[T proto.Message] struct {
+type wrapper[T any] struct {
 	Repository[T]
 
 	put            func(ctx context.Context, userID string, data Data[T]) (Data[T], *types.CommonError)
@@ -59,7 +57,7 @@ func (w *wrapper[T]) GetByMainRefID(ctx context.Context, userID, mainRefID strin
 }
 
 // Should be not business logic (eg. global) to protect the DB itself
-func LimitSize[T proto.Message](a Repository[T], configuredMax int) Repository[T] {
+func LimitSize[T any](a Repository[T], configuredMax int) Repository[T] {
 	return &wrapper[T]{
 		Repository: a,
 		put: func(ctx context.Context, userID string, data Data[T]) (Data[T], *types.CommonError) {
@@ -99,7 +97,7 @@ func LimitSize[T proto.Message](a Repository[T], configuredMax int) Repository[T
 
 // Creation of entity in B dependend on entity already exist (have ID) in repository A
 // Deletion of entity in A will be canceled if entity B still have reference to A
-func Link[T proto.Message, U proto.Message](a Repository[T], b Repository[U]) (Repository[T], Repository[U]) {
+func Link[T any, U any](a Repository[T], b Repository[U]) (Repository[T], Repository[U]) {
 	lock := &sync.Mutex{}
 
 	return &wrapper[T]{
@@ -161,7 +159,7 @@ func Link[T proto.Message, U proto.Message](a Repository[T], b Repository[U]) (R
 }
 
 // Reference is Link Many
-func Reference[T proto.Message, U proto.Message](a Repository[T], b Repository[U]) (Repository[T], Repository[U]) {
+func Reference[T any, U any](a Repository[T], b Repository[U]) (Repository[T], Repository[U]) {
 	lock := &sync.Mutex{}
 
 	return &wrapper[T]{

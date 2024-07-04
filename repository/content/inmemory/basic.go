@@ -1,23 +1,24 @@
 package inmemory
 
 import (
+	"bytes"
 	"context"
+	"encoding/gob"
 	"net/http"
 	"sort"
 	"strconv"
 	"sync"
 
 	"github.com/rs/zerolog/log"
-	"google.golang.org/protobuf/proto"
 
 	"github.com/desain-gratis/common/repository/content"
 	types "github.com/desain-gratis/common/types/http"
 )
 
-var _ content.Repository[proto.Message] = &handler[proto.Message]{}
+var _ content.Repository[any] = &handler[any]{}
 
 // limitation can only handle int
-type handler[T proto.Message] struct {
+type handler[T any] struct {
 	mtx     *sync.Mutex
 	counter int
 
@@ -34,7 +35,7 @@ type handler[T proto.Message] struct {
 // enableOverwriteID is for entity that depend on another entity ID to live
 // it allows to PUT using ID even the current user don't have it.
 // as long is the same as the another entity ID
-func New[T proto.Message](enableOverwriteID bool) *handler[T] {
+func New[T any](enableOverwriteID bool) *handler[T] {
 	return &handler[T]{
 		mtx:               &sync.Mutex{},
 		indexByUserID:     make(map[string]map[string]struct{}),
@@ -69,12 +70,15 @@ func (h *handler[T]) Put(ctx context.Context, userID string, data content.Data[T
 			// user ID validation is on the usecase, not here
 
 			// let's see whether this will work or not
-			copied, ok := proto.Clone(data.Data).(T)
+
+			// PREVIOUSLY USE PROTO
+			// copied, ok := proto.Clone(data.Data).(T)
+			copied, ok := copyData(data.Data)
 			if !ok {
 				log.Fatal().Msgf("HEHE cannot copy %+v", copied)
 			}
-
 			data.Data = copied
+
 			h.data[data.ID] = data
 
 			return h.data[data.ID], nil
@@ -83,7 +87,7 @@ func (h *handler[T]) Put(ctx context.Context, userID string, data content.Data[T
 		if h.enableOverwriteID {
 			// Create new
 
-			copied, ok := proto.Clone(data.Data).(T)
+			copied, ok := copyData(data.Data)
 			if !ok {
 				// TODO not fatal
 				log.Fatal().Msgf("%+v", data)
@@ -114,7 +118,7 @@ func (h *handler[T]) Put(ctx context.Context, userID string, data content.Data[T
 
 	// Create new
 
-	copied, ok := proto.Clone(data.Data).(T)
+	copied, ok := copyData(data.Data)
 	if !ok {
 		// TODO not fatal
 		log.Fatal().Msgf("%+v", data)
@@ -155,7 +159,8 @@ func (h *handler[T]) Get(ctx context.Context, userID string) ([]content.Data[T],
 	result := make([]content.Data[T], 0, len(ids))
 	for _, id := range idsarr {
 		item := h.data[id]
-		item.Data = proto.Clone(item.Data).(T)
+		copied, _ := copyData(item.Data)
+		item.Data = copied
 		result = append(result, item)
 	}
 
@@ -244,7 +249,9 @@ func (h *handler[T]) GetByID(ctx context.Context, userID, ID string) (content.Da
 	}
 
 	result := h.data[ID]
-	result.Data = proto.Clone(result.Data).(T)
+
+	copied, _ := copyData(result.Data)
+	result.Data = copied
 
 	return result, nil
 }
@@ -263,4 +270,16 @@ func (w *handler[T]) GetByMainRefID(ctx context.Context, userID, mainRefID strin
 	}
 
 	return filtered, nil
+}
+
+func copyData[T any](a T) (T, bool) {
+	_buf := make([]byte, 0, 1000)
+	buf := bytes.NewBuffer(_buf)
+	encoder := gob.NewEncoder(buf)
+	decoder := gob.NewDecoder(buf)
+	encoder.Encode(a)
+	var t T
+	log.Error().Msgf("%+v", buf)
+	decoder.Decode(&t)
+	return t, true
 }
