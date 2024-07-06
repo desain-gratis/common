@@ -39,3 +39,10 @@ const (
 	Image_WIDTH  Image_ScaleDirection = 0
 	Image_HEIGHT Image_ScaleDirection = 1
 )
+
+type File struct {
+	Id          string   `json:"id,omitempty"`
+	Url         string   `json:"url,omitempty"`
+	Description string   `json:"description,omitempty"`
+	Tags        []string `json:"tags,omitempty"`
+}
