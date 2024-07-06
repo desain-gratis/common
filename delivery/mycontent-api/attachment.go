@@ -16,7 +16,6 @@ import (
 	"github.com/desain-gratis/common/repository/content"
 	types "github.com/desain-gratis/common/types/http"
 	entity_attachment "github.com/desain-gratis/common/types/protobuf-wrapper/attachment"
-	"github.com/desain-gratis/common/types/protobuf/contentupload"
 	"github.com/desain-gratis/common/usecase/mycontent"
 	mycontent_crud "github.com/desain-gratis/common/usecase/mycontent/crud"
 )
@@ -26,9 +25,9 @@ import (
 // TODO might be in different folder
 
 type ContentUploadMetadata struct {
-	*ResourceManagerService[*contentupload.Attachment]
-	repo         content.Repository[*contentupload.Attachment]
-	uc           mycontent.Attachable[*contentupload.Attachment]
+	*ResourceManagerService[*types.Attachment]
+	repo         content.Repository[*types.Attachment]
+	uc           mycontent.Attachable[*types.Attachment]
 	cacheControl string
 }
 
@@ -36,7 +35,7 @@ type ContentUploadMetadata struct {
 // Can only do repository "Put" via Upload API
 // Can on
 func NewAttachment(
-	repo content.Repository[*contentupload.Attachment], // todo, change catalog.Attachment location to more common location (not uc specific)
+	repo content.Repository[*types.Attachment], // todo, change catalog.Attachment location to more common location (not uc specific)
 	blobRepo blob.Repository,
 	mainRefParam string,
 	hideUrl bool,
@@ -58,7 +57,7 @@ func NewAttachment(
 	}
 
 	return &ContentUploadMetadata{
-		ResourceManagerService: &ResourceManagerService[*contentupload.Attachment]{
+		ResourceManagerService: &ResourceManagerService[*types.Attachment]{
 			myContentUC:  uc,
 			allocate:     entity_attachment.New,
 			mainRefParam: mainRefParam,

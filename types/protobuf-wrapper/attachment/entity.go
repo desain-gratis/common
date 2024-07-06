@@ -4,20 +4,19 @@ import (
 	"time"
 
 	types "github.com/desain-gratis/common/types/http"
-	"github.com/desain-gratis/common/types/protobuf/contentupload"
 	"github.com/desain-gratis/common/usecase/mycontent"
 )
 
-func New() *contentupload.Attachment {
-	return new(contentupload.Attachment)
+func New() *types.Attachment {
+	return new(types.Attachment)
 }
 
 // wrapped provides functionalities that are required by the usecases
 type Wrapper struct {
-	*contentupload.Attachment
+	*types.Attachment
 }
 
-func Wrap(c *contentupload.Attachment) mycontent.Data {
+func Wrap(c *types.Attachment) mycontent.Data {
 	return &Wrapper{
 		Attachment: c,
 	}
@@ -109,6 +108,6 @@ func (c *Wrapper) CreatedTime() time.Time {
 	return t
 }
 
-func Validate(c *contentupload.Attachment) *types.CommonError {
+func Validate(c *types.Attachment) *types.CommonError {
 	return nil
 }
