@@ -1,4 +1,4 @@
-package types
+package entity
 
 type Attachment struct {
 	Id           string   `json:"id,omitempty"`

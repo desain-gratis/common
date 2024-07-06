@@ -3,7 +3,8 @@ package attachment
 import (
 	"time"
 
-	types "github.com/desain-gratis/common/types/http"
+	types "github.com/desain-gratis/common/types/entity"
+	httptypes "github.com/desain-gratis/common/types/http"
 	"github.com/desain-gratis/common/usecase/mycontent"
 )
 
@@ -108,6 +109,6 @@ func (c *Wrapper) CreatedTime() time.Time {
 	return t
 }
 
-func Validate(c *types.Attachment) *types.CommonError {
+func Validate(c *types.Attachment) *httptypes.CommonError {
 	return nil
 }

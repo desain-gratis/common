@@ -12,16 +12,17 @@ import (
 
 	"github.com/desain-gratis/common/repository/blob"
 	"github.com/desain-gratis/common/repository/content"
+	"github.com/desain-gratis/common/types/entity"
 	types "github.com/desain-gratis/common/types/http"
 	entity_attachment "github.com/desain-gratis/common/types/protobuf-wrapper/attachment"
 	"github.com/desain-gratis/common/usecase/mycontent"
 )
 
-var _ mycontent.Usecase[*types.Attachment] = &crudWithAttachment{}
-var _ mycontent.Attachable[*types.Attachment] = &crudWithAttachment{}
+var _ mycontent.Usecase[*entity.Attachment] = &crudWithAttachment{}
+var _ mycontent.Attachable[*entity.Attachment] = &crudWithAttachment{}
 
 type crudWithAttachment struct {
-	*crud[*types.Attachment]
+	*crud[*entity.Attachment]
 	blobRepo  blob.Repository
 	hideUrl   bool // if data are quite sensitive
 	namespace string
@@ -30,7 +31,7 @@ type crudWithAttachment struct {
 // NewWithAttachment creates the basic CRUD handle, but enables attachment
 // Whether this is private or not will mostly be depended by the blob repository
 func NewAttachment(
-	repo content.Repository[*types.Attachment], // todo, change catalog.Attachment location to more common location (not uc specific)
+	repo content.Repository[*entity.Attachment], // todo, change catalog.Attachment location to more common location (not uc specific)
 	blobRepo blob.Repository,
 	hideUrl bool,
 	namespace string,
@@ -38,7 +39,7 @@ func NewAttachment(
 ) *crudWithAttachment {
 
 	return &crudWithAttachment{
-		crud: &crud[*types.Attachment]{
+		crud: &crud[*entity.Attachment]{
 			repo:      repo,
 			wrap:      entity_attachment.Wrap,
 			validate:  entity_attachment.Validate,
@@ -51,7 +52,7 @@ func NewAttachment(
 }
 
 // Overwrite for censoring
-func (c *crudWithAttachment) Get(ctx context.Context, userID string, mainRefID string, ID string) ([]*types.Attachment, *types.CommonError) {
+func (c *crudWithAttachment) Get(ctx context.Context, userID string, mainRefID string, ID string) ([]*entity.Attachment, *types.CommonError) {
 	result, err := c.crud.Get(ctx, userID, mainRefID, ID)
 	if err != nil {
 		return nil, err
@@ -66,7 +67,7 @@ func (c *crudWithAttachment) Get(ctx context.Context, userID string, mainRefID s
 }
 
 // BETA
-func (c *crudWithAttachment) GetAttachment(ctx context.Context, userID string, mainRefID string, ID string) (payload io.ReadCloser, meta *types.Attachment, err *types.CommonError) {
+func (c *crudWithAttachment) GetAttachment(ctx context.Context, userID string, mainRefID string, ID string) (payload io.ReadCloser, meta *entity.Attachment, err *types.CommonError) {
 	result, err := c.crud.Get(ctx, userID, mainRefID, ID)
 	if err != nil {
 		return nil, nil, err
@@ -91,7 +92,7 @@ func (c *crudWithAttachment) GetAttachment(ctx context.Context, userID string, m
 
 // Put
 // disables the default put behaviour
-func (c *crudWithAttachment) Put(ctx context.Context, content *types.Attachment) (*types.Attachment, *types.CommonError) {
+func (c *crudWithAttachment) Put(ctx context.Context, content *entity.Attachment) (*entity.Attachment, *types.CommonError) {
 	return nil, &types.CommonError{
 		Errors: []types.Error{
 			{
@@ -103,7 +104,7 @@ func (c *crudWithAttachment) Put(ctx context.Context, content *types.Attachment)
 	}
 }
 
-func (c *crudWithAttachment) Attach(ctx context.Context, meta *types.Attachment, payload io.Reader) (*types.Attachment, *types.CommonError) {
+func (c *crudWithAttachment) Attach(ctx context.Context, meta *entity.Attachment, payload io.Reader) (*entity.Attachment, *types.CommonError) {
 	// TODO: Get all existing data based on user ID, calculate the total size to do validation
 
 	// Check existing, if exist with the same ID, then use existing
@@ -114,7 +115,7 @@ func (c *crudWithAttachment) Attach(ctx context.Context, meta *types.Attachment,
 		}
 	}
 
-	var result *types.Attachment
+	var result *entity.Attachment
 	for _, e := range existing {
 		if e.Id == meta.Id {
 			if e.CreatedAt == "" {
@@ -215,7 +216,7 @@ func (c *crudWithAttachment) Attach(ctx context.Context, meta *types.Attachment,
 }
 
 // DeleteAttachment generic binary at path
-func (c *crudWithAttachment) Delete(ctx context.Context, userID string, ID string) (*types.Attachment, *types.CommonError) {
+func (c *crudWithAttachment) Delete(ctx context.Context, userID string, ID string) (*entity.Attachment, *types.CommonError) {
 	result, err := c.crud.Get(ctx, userID, "", ID)
 	if err != nil {
 		return nil, err
