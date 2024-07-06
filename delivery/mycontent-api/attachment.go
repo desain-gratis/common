@@ -10,7 +10,6 @@ import (
 
 	"github.com/julienschmidt/httprouter"
 	"github.com/rs/zerolog/log"
-	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/desain-gratis/common/repository/blob"
 	"github.com/desain-gratis/common/repository/content"
@@ -177,9 +176,7 @@ func (i *ContentUploadMetadata) Upload(w http.ResponseWriter, r *http.Request, p
 	}
 
 	attachmentData := i.allocate()
-	err = protojson.UnmarshalOptions{
-		AllowPartial: true,
-	}.Unmarshal(_doc, attachmentData)
+	err = json.Unmarshal(_doc, attachmentData)
 	if err != nil {
 		errMessage := serializeError(&types.CommonError{
 			Errors: []types.Error{
