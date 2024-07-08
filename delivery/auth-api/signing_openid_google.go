@@ -79,7 +79,8 @@ type googleSignInService struct {
 	googleAuth signing.VerifierOf[idtoken.Payload]
 	profile    mycontent.Usecase[*session.Profile]
 
-	enteprise map[string]*signingService
+	enteprise          map[string]*signingService
+	TokenExpiryMinutes int
 }
 
 // ParseTokenAsOpenID is a utility function to parse the token published by GoogleSignInService
@@ -104,6 +105,7 @@ func NewGoogleSignInService(
 	signing signing.Usecase,
 	profile mycontent.Usecase[*session.Profile],
 	kvStore secretkv.Provider,
+	TokenExpiryMinutes int,
 ) *googleSignInService {
 
 	// Initialize usecase by organization
@@ -119,8 +121,7 @@ func NewGoogleSignInService(
 						PollTime: 30 * time.Second,
 						ID:       org.SignInKeyID,
 					},
-					Issuer:             orgName,
-					TokenExpiryMinutes: 60 * 8,
+					Issuer: orgName,
 				},
 				jwtrsa_hardcode.New(org.URL),
 				kvStore,
@@ -133,8 +134,9 @@ func NewGoogleSignInService(
 		signingService: &signingService{
 			signing: signing,
 		},
-		profile:   profile,
-		enteprise: enterprise,
+		profile:            profile,
+		enteprise:          enterprise,
+		TokenExpiryMinutes: TokenExpiryMinutes,
 	}
 }
 
@@ -221,7 +223,8 @@ func (s *googleSignInService) SignIn(w http.ResponseWriter, r *http.Request, p h
 			continue
 		}
 
-		token, expiry, errUC := s.enteprise[org].signing.Sign(r.Context(), newPayload)
+		expiry := time.Now().Add(time.Duration(s.TokenExpiryMinutes) * time.Minute)
+		token, errUC := s.enteprise[org].signing.Sign(r.Context(), newPayload, expiry)
 		if errUC != nil {
 			if r.Context().Err() != nil {
 				return
@@ -267,7 +270,8 @@ func (s *googleSignInService) SignIn(w http.ResponseWriter, r *http.Request, p h
 
 	var newToken string
 	if s.signing != nil {
-		newToken, _, errUC = s.signing.Sign(r.Context(), newPayload)
+		expiry := time.Now().Add(time.Duration(s.TokenExpiryMinutes) * time.Minute)
+		newToken, errUC = s.signing.Sign(r.Context(), newPayload, expiry)
 		log.Debug().Msgf("Signed message for  %v %v \n", newToken, err)
 		if errUC != nil {
 			if r.Context().Err() != nil {

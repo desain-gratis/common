@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/julienschmidt/httprouter"
 	"github.com/nbutton23/zxcvbn-go"
@@ -18,8 +19,9 @@ import (
 
 type passwordService struct {
 	*signingService
-	account    accountUC.Usecase
-	openIDAuth signing.Verifier
+	account            accountUC.Usecase
+	openIDAuth         signing.Verifier
+	TokenExpiryMinutes int
 }
 
 // ParseTokenAsGenericToken is a utility function to parse the token published by NewPassword
@@ -41,13 +43,15 @@ func NewPasswordService(
 	openIDAuth signing.Verifier,
 	signing signing.Usecase,
 	account accountUC.Usecase,
+	TokenExpiryMinutes int,
 ) *passwordService {
 	return &passwordService{
 		signingService: &signingService{
 			signing: signing,
 		},
-		openIDAuth: openIDAuth,
-		account:    account,
+		openIDAuth:         openIDAuth,
+		account:            account,
+		TokenExpiryMinutes: TokenExpiryMinutes,
 	}
 }
 
@@ -142,7 +146,7 @@ func (s *passwordService) Create(w http.ResponseWriter, r *http.Request, p httpr
 	// ignore error intentionally
 	// create password at this time is already successful
 	// will document on contract
-	token, _, errUC := s.signing.Sign(r.Context(), payload)
+	token, errUC := s.signing.Sign(r.Context(), payload, time.Now().Add(time.Duration(s.TokenExpiryMinutes)*time.Minute))
 	if errUC != nil {
 		log.Err(errUC.Err()).Msg("Failed to sign token for password creation")
 		errMessage := types.SerializeError(errUC)

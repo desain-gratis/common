@@ -19,7 +19,7 @@ type Usecase interface {
 // TOKEN Based authorization
 type Publisher interface {
 	// Convert any data proto to signed JWT token
-	Sign(ctx context.Context, claim []byte) (token string, expiry time.Time, errUC *types.CommonError)
+	Sign(ctx context.Context, claim []byte, expire time.Time) (token string, errUC *types.CommonError)
 
 	// Get keys to verify token this usecase have signed
 	Keys(ctx context.Context) (keys []Keys, errUC *types.CommonError)

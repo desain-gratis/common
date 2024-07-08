@@ -94,10 +94,10 @@ func New(
 	return s
 }
 
-func (s *oidcLogin) Sign(ctx context.Context, claim []byte) (token string, expiry time.Time, errUC *types.CommonError) {
+func (s *oidcLogin) Sign(ctx context.Context, claim []byte, expire time.Time) (token string, errUC *types.CommonError) {
 	keys, errUC := s.getKeys(ctx)
 	if errUC != nil || len(keys) == 0 {
-		return "", expiry, &types.CommonError{
+		return "", &types.CommonError{
 			Errors: []types.Error{
 				{
 					Code:     "FAILED_TO_GET_KEYS",
@@ -108,10 +108,10 @@ func (s *oidcLogin) Sign(ctx context.Context, claim []byte) (token string, expir
 		}
 	}
 
-	tokenExpiry := time.Now().Add(time.Duration(s.config.TokenExpiryMinutes) * time.Minute)
-	token, err := s.rsaStore.BuildRSAJWTToken(claim, tokenExpiry, keys[0].KeyID)
+	// tokenExpiry := time.Now().Add(time.Duration(s.config.TokenExpiryMinutes) * time.Minute)
+	token, err := s.rsaStore.BuildRSAJWTToken(claim, expire, keys[0].KeyID)
 	if err != nil {
-		return "", expiry, &types.CommonError{
+		return "", &types.CommonError{
 			Errors: []types.Error{
 				{
 					Code:     "GENERATE_TOKEN_FAILED",
@@ -121,7 +121,7 @@ func (s *oidcLogin) Sign(ctx context.Context, claim []byte) (token string, expir
 			},
 		}
 	}
-	return token, tokenExpiry, nil
+	return token, nil
 }
 
 func (s *oidcLogin) Keys(ctx context.Context) ([]signing.Keys, *types.CommonError) {
