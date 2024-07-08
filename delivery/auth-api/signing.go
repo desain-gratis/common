@@ -13,11 +13,11 @@ import (
 
 	types "github.com/desain-gratis/common/types/http"
 	"github.com/desain-gratis/common/types/protobuf/session"
-	"github.com/desain-gratis/common/usecase/authorization"
+	"github.com/desain-gratis/common/usecase/signing"
 )
 
 type signingService struct {
-	authorization authorization.Usecase
+	signing signing.Usecase
 }
 
 // Base signing service
@@ -28,15 +28,15 @@ type signingService struct {
 //
 // To obtain the actual token, use "NewGoogleSignIn", "NewPassword", and "NewPin"
 // TODO: refactor this to leverage multi usecase
-func New(authorization authorization.Usecase) *signingService {
+func New(signing signing.Usecase) *signingService {
 	return &signingService{
-		authorization: authorization,
+		signing: signing,
 	}
 }
 
 // Keys allows other service to verify this published delivery Open ID credential
 func (s *signingService) Keys(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	keys, errUC := s.authorization.Keys(r.Context())
+	keys, errUC := s.signing.Keys(r.Context())
 	if errUC != nil {
 		if r.Context().Err() != nil {
 			return
@@ -75,7 +75,7 @@ func (s *signingService) Keys(w http.ResponseWriter, r *http.Request, p httprout
 // Debug allows validates token published by this service and print the OIDC data
 func (s *signingService) Debug(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	authHeader := r.Header.Get("Authorization")
-	data, errUC := s.verifyAuthorizationHeader(r.Context(), s.authorization, authHeader)
+	data, errUC := s.verifyAuthorizationHeader(r.Context(), s.signing, authHeader)
 	if errUC != nil {
 		errMessage := types.SerializeError(errUC)
 		w.WriteHeader(http.StatusBadRequest)
@@ -120,7 +120,7 @@ func (s *signingService) Debug(w http.ResponseWriter, r *http.Request, p httprou
 	w.Write(payload)
 }
 
-func (s *signingService) verifyAuthorizationHeader(ctx context.Context, verifier authorization.Verifier, value string) (payload []byte, errUC *types.CommonError) {
+func (s *signingService) verifyAuthorizationHeader(ctx context.Context, verifier signing.Verifier, value string) (payload []byte, errUC *types.CommonError) {
 	token := strings.Split(value, " ")
 	if len(token) < 2 || token[1] == "" {
 		return nil, &types.CommonError{

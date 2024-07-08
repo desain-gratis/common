@@ -1,6 +1,6 @@
-package authorization
+package signing
 
-// the package name should be authorization; token related
+// the package name should be signing; token related
 
 import (
 	"context"

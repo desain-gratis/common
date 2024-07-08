@@ -8,7 +8,7 @@ import (
 	"time"
 
 	types "github.com/desain-gratis/common/types/http"
-	"github.com/desain-gratis/common/usecase/authorization"
+	"github.com/desain-gratis/common/usecase/signing"
 	jwtrsa "github.com/desain-gratis/common/utility/secret/rsa"
 	"github.com/desain-gratis/common/utility/secretkv"
 	"github.com/rs/zerolog/log"
@@ -16,7 +16,7 @@ import (
 	"google.golang.org/api/idtoken"
 )
 
-var _ authorization.VerifierOf[idtoken.Payload] = &googleVerifier{}
+var _ signing.VerifierOf[idtoken.Payload] = &googleVerifier{}
 
 type GoogleOAuth2Secret struct {
 	SyncTime time.Time

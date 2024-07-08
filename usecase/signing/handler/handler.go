@@ -13,13 +13,13 @@ import (
 	"golang.org/x/sync/singleflight"
 
 	types "github.com/desain-gratis/common/types/http"
-	"github.com/desain-gratis/common/usecase/authorization"
+	"github.com/desain-gratis/common/usecase/signing"
 	jwtrsa "github.com/desain-gratis/common/utility/secret/rsa"
 	"github.com/desain-gratis/common/utility/secretkv"
 )
 
-var _ authorization.Publisher = &oidcLogin{}
-var _ authorization.Verifier = &oidcLogin{}
+var _ signing.Publisher = &oidcLogin{}
+var _ signing.Verifier = &oidcLogin{}
 
 type Config struct {
 	// Issuer for the issuer field display
@@ -69,7 +69,7 @@ type oidcLogin struct {
 }
 
 type keys struct {
-	authorization.Keys
+	signing.Keys
 	cacheUpdateTime time.Time
 	createdAt       time.Time
 }
@@ -124,7 +124,7 @@ func (s *oidcLogin) Sign(ctx context.Context, claim []byte) (token string, expir
 	return token, tokenExpiry, nil
 }
 
-func (s *oidcLogin) Keys(ctx context.Context) ([]authorization.Keys, *types.CommonError) {
+func (s *oidcLogin) Keys(ctx context.Context) ([]signing.Keys, *types.CommonError) {
 	result, err := s.getKeys(ctx)
 	return convertToOIDCKeys(result), err
 }
@@ -167,7 +167,7 @@ func (s *oidcLogin) updateSigningKeys(ctx context.Context, key string) ([]keys, 
 				continue
 			}
 			result = append(result, keys{
-				Keys: authorization.Keys{
+				Keys: signing.Keys{
 					CreatedAt: payload.CreatedAt.Format(time.RFC3339),
 					KeyID:     KEY_ID,
 					Key:       string(pub),
@@ -219,8 +219,8 @@ func (s *oidcLogin) updateSigningKeys(ctx context.Context, key string) ([]keys, 
 	}
 }
 
-func convertToOIDCKeys(keys []keys) []authorization.Keys {
-	result := make([]authorization.Keys, 0, len(keys))
+func convertToOIDCKeys(keys []keys) []signing.Keys {
+	result := make([]signing.Keys, 0, len(keys))
 	for _, v := range keys {
 		result = append(result, v.Keys)
 	}

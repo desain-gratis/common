@@ -15,9 +15,9 @@ import (
 
 	types "github.com/desain-gratis/common/types/http"
 	"github.com/desain-gratis/common/types/protobuf/session"
-	"github.com/desain-gratis/common/usecase/authorization"
-	authorization_handler "github.com/desain-gratis/common/usecase/authorization/handler"
 	"github.com/desain-gratis/common/usecase/mycontent"
+	"github.com/desain-gratis/common/usecase/signing"
+	signing_handler "github.com/desain-gratis/common/usecase/signing/handler"
 	"github.com/desain-gratis/common/utility/enterpriseauth"
 	enterpiseauth "github.com/desain-gratis/common/utility/enterpriseauth"
 	"github.com/desain-gratis/common/utility/iplocation"
@@ -76,7 +76,7 @@ type ProfileCompletion struct {
 
 type googleSignInService struct {
 	*signingService
-	googleAuth authorization.VerifierOf[idtoken.Payload]
+	googleAuth signing.VerifierOf[idtoken.Payload]
 	profile    mycontent.Usecase[*session.Profile]
 
 	enteprise map[string]*signingService
@@ -100,8 +100,8 @@ func ParseTokenAsOpenID(payload []byte) (result *session.SessionData, errUC *typ
 // I think should return authorization token for verifying login
 // and also hash of user ID contained inside of JWT Token
 func NewGoogleSignInService(
-	googleAuth authorization.VerifierOf[idtoken.Payload],
-	authorization authorization.Usecase,
+	googleAuth signing.VerifierOf[idtoken.Payload],
+	signing signing.Usecase,
 	profile mycontent.Usecase[*session.Profile],
 	kvStore secretkv.Provider,
 ) *googleSignInService {
@@ -112,9 +112,9 @@ func NewGoogleSignInService(
 	for orgName, org := range allOrg {
 		// Dynamically create auth usecase
 		enterprise[orgName] = New(
-			authorization_handler.New(
-				authorization_handler.Config{
-					SigningConfig: authorization_handler.SigningConfig{
+			signing_handler.New(
+				signing_handler.Config{
+					SigningConfig: signing_handler.SigningConfig{
 						Secret:   org.SignInPK,
 						PollTime: 30 * time.Second,
 						ID:       org.SignInKeyID,
@@ -131,7 +131,7 @@ func NewGoogleSignInService(
 	return &googleSignInService{
 		googleAuth: googleAuth,
 		signingService: &signingService{
-			authorization: authorization,
+			signing: signing,
 		},
 		profile:   profile,
 		enteprise: enterprise,
@@ -221,7 +221,7 @@ func (s *googleSignInService) SignIn(w http.ResponseWriter, r *http.Request, p h
 			continue
 		}
 
-		token, expiry, errUC := s.enteprise[org].authorization.Sign(r.Context(), newPayload)
+		token, expiry, errUC := s.enteprise[org].signing.Sign(r.Context(), newPayload)
 		if errUC != nil {
 			if r.Context().Err() != nil {
 				return
@@ -266,8 +266,8 @@ func (s *googleSignInService) SignIn(w http.ResponseWriter, r *http.Request, p h
 	}
 
 	var newToken string
-	if s.authorization != nil {
-		newToken, _, errUC = s.authorization.Sign(r.Context(), newPayload)
+	if s.signing != nil {
+		newToken, _, errUC = s.signing.Sign(r.Context(), newPayload)
 		log.Debug().Msgf("Signed message for  %v %v \n", newToken, err)
 		if errUC != nil {
 			if r.Context().Err() != nil {

@@ -13,13 +13,13 @@ import (
 	types "github.com/desain-gratis/common/types/http"
 	"github.com/desain-gratis/common/types/protobuf/session"
 	accountUC "github.com/desain-gratis/common/usecase/account"
-	"github.com/desain-gratis/common/usecase/authorization"
+	"github.com/desain-gratis/common/usecase/signing"
 )
 
 type passwordService struct {
 	*signingService
 	account    accountUC.Usecase
-	openIDAuth authorization.Verifier
+	openIDAuth signing.Verifier
 }
 
 // ParseTokenAsGenericToken is a utility function to parse the token published by NewPassword
@@ -38,13 +38,13 @@ func ParseTokenAsGenericToken(payload []byte) (result *session.GenericToken, err
 }
 
 func NewPasswordService(
-	openIDAuth authorization.Verifier,
-	authorization authorization.Usecase,
+	openIDAuth signing.Verifier,
+	signing signing.Usecase,
 	account accountUC.Usecase,
 ) *passwordService {
 	return &passwordService{
 		signingService: &signingService{
-			authorization: authorization,
+			signing: signing,
 		},
 		openIDAuth: openIDAuth,
 		account:    account,
@@ -142,7 +142,7 @@ func (s *passwordService) Create(w http.ResponseWriter, r *http.Request, p httpr
 	// ignore error intentionally
 	// create password at this time is already successful
 	// will document on contract
-	token, _, errUC := s.authorization.Sign(r.Context(), payload)
+	token, _, errUC := s.signing.Sign(r.Context(), payload)
 	if errUC != nil {
 		log.Err(errUC.Err()).Msg("Failed to sign token for password creation")
 		errMessage := types.SerializeError(errUC)

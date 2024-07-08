@@ -10,11 +10,11 @@ import (
 	"github.com/rs/zerolog/log"
 
 	types "github.com/desain-gratis/common/types/http"
-	"github.com/desain-gratis/common/usecase/authorization"
+	"github.com/desain-gratis/common/usecase/signing"
 	jwtrsa "github.com/desain-gratis/common/utility/secret/rsa"
 )
 
-var _ authorization.Verifier = &remoteVerifier{}
+var _ signing.Verifier = &remoteVerifier{}
 
 type remoteVerifier struct {
 	keysURL  string
@@ -89,7 +89,7 @@ func (s *remoteVerifier) updateKeys(ctx context.Context) (result []keys, errUC *
 		}
 	}
 
-	var commonResponse types.CommonResponseTyped[[]authorization.Keys]
+	var commonResponse types.CommonResponseTyped[[]signing.Keys]
 	err = json.Unmarshal(body, &commonResponse)
 	if err != nil {
 		return nil, &types.CommonError{
@@ -111,7 +111,7 @@ func (s *remoteVerifier) updateKeys(ctx context.Context) (result []keys, errUC *
 	for _, v := range commonResponse.Success {
 		tc, _ := time.Parse(time.RFC3339, v.CreatedAt)
 		k = append(k, keys{
-			Keys: authorization.Keys{
+			Keys: signing.Keys{
 				CreatedAt: v.CreatedAt,
 				KeyID:     v.KeyID,
 				Key:       v.Key,
