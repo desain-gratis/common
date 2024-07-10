@@ -279,7 +279,6 @@ func copyData[T any](a T) (T, bool) {
 	decoder := gob.NewDecoder(buf)
 	encoder.Encode(a)
 	var t T
-	log.Error().Msgf("%+v", buf)
 	decoder.Decode(&t)
 	return t, true
 }
