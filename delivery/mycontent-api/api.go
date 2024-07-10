@@ -72,7 +72,7 @@ func (i *ResourceManagerService[T]) Put(w http.ResponseWriter, r *http.Request, 
 	// }.Unmarshal(payload, resource)
 
 	var resource T
-	err = json.Unmarshal(payload, resource)
+	err = json.Unmarshal(payload, &resource)
 	if err != nil {
 		errMessage := serializeError(&types.CommonError{
 			Errors: []types.Error{
