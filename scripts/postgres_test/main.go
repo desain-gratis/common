@@ -111,7 +111,7 @@ func doSingleRefID(db *sqlx.DB) {
 }
 
 func doMultipleRefID(db *sqlx.DB) {
-	pgDriver := postgres.New(db, "test_table_2", 100)
+	pgDriver := postgres.New(db, "test_table_2")
 
 	err := pgDriver.Insert(context.Background(), "user_id_val_1", "id_val_1", []string{"ref_id_1_val_1", "ref_id_1_val_2"}, `{"phones":[{"type":"mobile","phone":"001001"},{"type":"fix","phone":"002002"}]}`)
 	if err != nil {
