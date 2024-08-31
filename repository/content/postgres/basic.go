@@ -43,21 +43,22 @@ func (h *handler) Select(ctx context.Context, userID, ID string, refIDs []string
 		return
 	}
 
-	// result = make(map[string]int)
+	values := make([]interface{}, len(columns))
+	valuePtrs := make([]interface{}, len(columns))
+
 	for rows.Next() {
-		values := make([]interface{}, len(columns))
-		for i := range values {
-			values[i] = new(interface{})
+		for i := range columns {
+			valuePtrs[i] = &values[i]
 		}
 
-		errScan := rows.Scan(values...)
+		errScan := rows.Scan(valuePtrs...)
 		if errScan != nil {
 			continue
 		}
 
 		rowValue, errMerge := mergeColumnValue(columns, values)
 		if errMerge != nil {
-			log.Err(err).Msgf("Failed merge column & value")
+			log.Err(errMerge).Msgf("Failed merge column & value")
 			continue
 		}
 
@@ -105,7 +106,7 @@ func (h *handler) Delete(ctx context.Context, userID, ID string, refIDs []string
 		RefIDs: refIDs,
 	}
 
-	q := generateQuery(h.tableName, "Delete", pKey, UpsertData{})
+	q := generateQuery(h.tableName, "DELETE", pKey, UpsertData{})
 	_, err = h.db.ExecContext(ctx, q)
 	if err != nil {
 		log.Err(err).Msgf("Delete query failed")

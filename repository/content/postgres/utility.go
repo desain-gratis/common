@@ -40,7 +40,7 @@ func generateQuery(tableName, queryType string, primaryKey PrimaryKey, upsertDat
 		arguments := generateSetArguments(upsertData)
 		query = `UPDATE ` + tableName + ` SET ` + strings.Join(arguments, ", ") + ` WHERE ` + strings.Join(primaryKeys, " AND ")
 	case "DELETE":
-		query = `DELETE FROM ` + tableName + `WHERE ` + strings.Join(primaryKeys, " AND ")
+		query = `DELETE FROM ` + tableName + ` WHERE ` + strings.Join(primaryKeys, " AND ")
 	}
 
 	query += `;`
@@ -67,11 +67,17 @@ func mergeColumnValue(columns []string, values []interface{}) (resp Response, er
 	}
 
 	for i, column := range columns {
-		value, ok := values[i].(string)
-		if !ok {
-			err = fmt.Errorf("columnType (%s)) is not string: %v", column, values[i])
-			return
+		tempValue := values[i]
+		b, ok := tempValue.([]byte)
+		var value string
+		if ok {
+			value = string(b)
+		} else {
+			var v interface{}
+			v = tempValue
+			value = fmt.Sprintf("%s", v)
 		}
+
 		switch {
 		case column == "user_id":
 			resp.UserID = value
