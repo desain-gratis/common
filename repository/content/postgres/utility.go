@@ -1,11 +1,14 @@
 package postgres
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/rs/zerolog/log"
 )
 
-func generateQueryAndArgs(tableName, queryType string, primaryKey PrimaryKey, upsertData UpsertData) (query string) {
+func generateQuery(tableName, queryType string, primaryKey PrimaryKey, upsertData UpsertData) (query string) {
 	// primaryKeys is used by SELECT, UPDATE, DELETE query
 	var primaryKeys []string
 	var columns, values []string
@@ -53,6 +56,34 @@ func generateSetArguments(upsertData UpsertData) (arguments []string) {
 	if upsertData.PayloadJSON != "" {
 		arg := `payload = '` + upsertData.PayloadJSON + `'::jsonb`
 		arguments = append(arguments, arg)
+	}
+	return
+}
+
+func mergeColumnValue(columns []string, values []interface{}) (resp Response, err error) {
+	if len(columns) != len(values) {
+		err = fmt.Errorf("column length & value length are not same")
+		return
+	}
+
+	for i, column := range columns {
+		value, ok := values[i].(string)
+		if !ok {
+			err = fmt.Errorf("columnType (%s)) is not string: %v", column, values[i])
+			return
+		}
+		switch {
+		case column == "user_id":
+			resp.UserID = value
+		case column == "id":
+			resp.ID = value
+		case strings.Contains(column, "ref_id"):
+			resp.RefIDs = append(resp.RefIDs, value)
+		case column == "payload":
+			resp.PayloadJSON = value
+		default:
+			log.Info().Msgf("Unrecognized column: %s", column)
+		}
 	}
 	return
 }
