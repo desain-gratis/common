@@ -11,14 +11,12 @@ import (
 type handler struct {
 	db        *sqlx.DB
 	tableName string
-	timeoutMs int
 }
 
 func New(db *sqlx.DB, tableName string, timeoutMs int) *handler {
 	return &handler{
 		db:        db,
 		tableName: tableName,
-		timeoutMs: timeoutMs,
 	}
 }
 
