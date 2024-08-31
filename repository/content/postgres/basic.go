@@ -13,7 +13,7 @@ type handler struct {
 	tableName string
 }
 
-func New(db *sqlx.DB, tableName string, timeoutMs int) *handler {
+func New(db *sqlx.DB, tableName string) *handler {
 	return &handler{
 		db:        db,
 		tableName: tableName,
