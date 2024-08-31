@@ -73,9 +73,7 @@ func mergeColumnValue(columns []string, values []interface{}) (resp Response, er
 		if ok {
 			value = string(b)
 		} else {
-			var v interface{}
-			v = tempValue
-			value = fmt.Sprintf("%s", v)
+			value = fmt.Sprintf("%s", tempValue)
 		}
 
 		switch {
