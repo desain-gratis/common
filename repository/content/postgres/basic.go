@@ -8,19 +8,19 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-type handler struct {
+type Handler struct {
 	db        *sqlx.DB
 	tableName string
 }
 
-func New(db *sqlx.DB, tableName string) *handler {
-	return &handler{
+func New(db *sqlx.DB, tableName string) *Handler {
+	return &Handler{
 		db:        db,
 		tableName: tableName,
 	}
 }
 
-func (h *handler) Select(ctx context.Context, userID, ID string, refIDs []string) (resp []Response, err error) {
+func (h *Handler) Select(ctx context.Context, userID, ID string, refIDs []string) (resp []Response, err error) {
 	pKey := PrimaryKey{
 		UserID: userID,
 		ID:     ID,
@@ -65,7 +65,7 @@ func (h *handler) Select(ctx context.Context, userID, ID string, refIDs []string
 	return
 }
 
-func (h *handler) Insert(ctx context.Context, userID, ID string, refIDs []string, payloadJSON string) (err error) {
+func (h *Handler) Insert(ctx context.Context, userID, ID string, refIDs []string, payloadJSON string) (err error) {
 	pKey := PrimaryKey{
 		UserID: userID,
 		ID:     ID,
@@ -81,7 +81,7 @@ func (h *handler) Insert(ctx context.Context, userID, ID string, refIDs []string
 	return
 }
 
-func (h *handler) Update(ctx context.Context, userID, ID string, refIDs []string, upsertData UpsertData) (err error) {
+func (h *Handler) Update(ctx context.Context, userID, ID string, refIDs []string, upsertData UpsertData) (err error) {
 	pKey := PrimaryKey{
 		UserID: userID,
 		ID:     ID,
@@ -97,7 +97,7 @@ func (h *handler) Update(ctx context.Context, userID, ID string, refIDs []string
 	return
 }
 
-func (h *handler) Delete(ctx context.Context, userID, ID string, refIDs []string) (err error) {
+func (h *Handler) Delete(ctx context.Context, userID, ID string, refIDs []string) (err error) {
 	pKey := PrimaryKey{
 		UserID: userID,
 		ID:     ID,
