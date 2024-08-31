@@ -14,8 +14,16 @@ func generateQuery(tableName, queryType string, primaryKey PrimaryKey, upsertDat
 	var columns, values []string
 
 	// init default composite columns & values
-	columns = []string{"user_id", "id"}
-	values = []string{"'" + primaryKey.UserID + "'", "'" + primaryKey.ID + "'"}
+	if primaryKey.UserID != "" {
+		columns = append(columns, "user_id")
+		values = append(values, "'"+primaryKey.UserID+"'")
+	}
+
+	if primaryKey.ID != "" {
+		columns = append(columns, "id")
+		values = append(values, "'"+primaryKey.ID+"'")
+
+	}
 
 	// if only use ref_ids
 	for i, refID := range primaryKey.RefIDs {
