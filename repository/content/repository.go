@@ -80,7 +80,7 @@ type Data[T any] struct {
 
 	// USED FOR SQL
 	UserID string
-	RefID  []string
+	RefIDs []string
 }
 
 // OptGetParam represent Optional Get Paramaater

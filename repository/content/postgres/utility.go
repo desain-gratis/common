@@ -5,8 +5,22 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/desain-gratis/common/repository/content"
 	"github.com/rs/zerolog/log"
 )
+
+func getData[T any](in T) (out string, isRecognized bool) {
+	switch any(in).(type) {
+	case string:
+		str, ok := any(in).(string)
+		if !ok {
+			return
+		}
+		out = str
+		isRecognized = true
+	}
+	return
+}
 
 func generateQuery(tableName, queryType string, primaryKey PrimaryKey, upsertData UpsertData) (query string) {
 	// primaryKeys is used by SELECT, UPDATE, DELETE query
@@ -68,7 +82,7 @@ func generateSetArguments(upsertData UpsertData) (arguments []string) {
 	return
 }
 
-func mergeColumnValue(columns []string, values []interface{}) (resp Response, err error) {
+func mergeColumnValue[T any](columns []string, values []interface{}) (resp content.Data[T], err error) {
 	if len(columns) != len(values) {
 		err = fmt.Errorf("column length & value length are not same")
 		return
@@ -92,7 +106,7 @@ func mergeColumnValue(columns []string, values []interface{}) (resp Response, er
 		case strings.Contains(column, "ref_id"):
 			resp.RefIDs = append(resp.RefIDs, value)
 		case column == "payload":
-			resp.PayloadJSON = value
+			resp.Data = any(value).(T)
 		default:
 			log.Info().Msgf("Unrecognized column: %s", column)
 		}

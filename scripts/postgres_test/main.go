@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 
+	"github.com/desain-gratis/common/repository/content"
 	"github.com/desain-gratis/common/repository/content/postgres"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
@@ -44,116 +45,131 @@ func main() {
 }
 
 func doSingleRefID(db *sqlx.DB) {
-	pgDriver := postgres.New(db, "test_table_1")
+	pgDriver := postgres.New[string](db, "test_table_1")
 
-	err := pgDriver.Insert(context.Background(), "user_id_val_1", "id_val_1", []string{"ref_id_1_val_1"}, `{"phones":[{"type":"mobile","phone":"001001"},{"type":"fix","phone":"002002"}]}`)
+	pgPostData := content.Data[string]{
+		Data: `{"phones":[{"type":"mobile","phone":"001001"},{"type":"fix","phone":"002002"}]}`,
+	}
+
+	err := pgDriver.Post(context.Background(), "user_id_val_1", "id_val_1", []string{"ref_id_1_val_1"}, pgPostData)
 	if err != nil {
-		log.Println("insert error", err)
+		log.Println("post error", err)
 		return
 	}
 
-	log.Println("insert done")
+	log.Println("post done")
 
-	resp, err := pgDriver.Select(context.Background(), "user_id_val_1", "id_val_1", []string{"ref_id_1_val_1"})
+	resp, err := pgDriver.Get(context.Background(), "user_id_val_1", "id_val_1", []string{"ref_id_1_val_1"})
 	if err != nil {
-		log.Println("select error", err)
+		log.Println("get error", err)
 		return
 	}
 
 	log.Println("done select", resp)
 
-	err = pgDriver.Update(context.Background(), "user_id_val_1", "id_val_1", []string{"ref_id_1_val_1"}, postgres.UpsertData{PayloadJSON: `{"updated_phones":[{"type":"mobile","phone":"001001"},{"type":"fix","phone":"002002"}]}`})
+	pgPutData := content.Data[string]{
+		Data: `{"updated_phones":[{"type":"mobile","phone":"001001"},{"type":"fix","phone":"002002"}]}`,
+	}
+	_, err = pgDriver.Put(context.Background(), "user_id_val_1", "id_val_1", []string{"ref_id_1_val_1"}, pgPutData)
 	if err != nil {
-		log.Println("update payload error", err)
+		log.Println("put payload error", err)
 		return
 	}
 
-	log.Println("done update payload")
+	log.Println("done put payload")
 
-	resp, err = pgDriver.Select(context.Background(), "user_id_val_1", "id_val_1", []string{"ref_id_1_val_1"})
+	resp, err = pgDriver.Get(context.Background(), "user_id_val_1", "id_val_1", []string{"ref_id_1_val_1"})
 	if err != nil {
-		log.Println("select payload error", err)
+		log.Println("get error", err)
 		return
 	}
 
 	log.Println("done select payload", resp)
 
-	err = pgDriver.Update(context.Background(), "user_id_val_1", "id_val_1", []string{"ref_id_1_val_1"}, postgres.UpsertData{RefIDs: []string{"updated_ref_id_1_val_1"}})
+	_, err = pgDriver.Put(context.Background(), "user_id_val_1", "id_val_1", []string{"ref_id_1_val_1"}, content.Data[string]{RefIDs: []string{"updated_ref_id_1_val_1"}})
 	if err != nil {
-		log.Println("update ref id error", err)
+		log.Println("put ref id error", err)
 		return
 	}
 
-	log.Println("done update ref id")
+	log.Println("done put ref id")
 
-	resp, err = pgDriver.Select(context.Background(), "user_id_val_1", "id_val_1", []string{"updated_ref_id_1_val_1"})
+	resp, err = pgDriver.Get(context.Background(), "user_id_val_1", "id_val_1", []string{"updated_ref_id_1_val_1"})
 	if err != nil {
-		log.Println("select ref id error", err)
+		log.Println("get ref id error", err)
 		return
 	}
 
 	log.Println("done select ref id", resp)
 
-	err = pgDriver.Delete(context.Background(), "user_id_val_1", "id_val_1", []string{"updated_ref_id_1_val_1"})
+	_, err = pgDriver.Delete(context.Background(), "user_id_val_1", "id_val_1", []string{"updated_ref_id_1_val_1"})
 	if err != nil {
 		log.Println("delete error", err)
 	}
 
 	log.Println("done delete")
 
-	resp, err = pgDriver.Select(context.Background(), "user_id_val_1", "id_val_1", []string{"ref_id_1_val_1"})
+	resp, err = pgDriver.Get(context.Background(), "user_id_val_1", "id_val_1", []string{"ref_id_1_val_1"})
 	if err != nil {
-		log.Println("select delete error", err)
+		log.Println("get delete error", err)
 		return
 	}
 
-	log.Println("done select delete", resp)
+	log.Println("done get delete", resp)
 }
 
 func doMultipleRefID(db *sqlx.DB) {
-	pgDriver := postgres.New(db, "test_table_2")
+	pgDriver := postgres.New[string](db, "test_table_2")
 
-	err := pgDriver.Insert(context.Background(), "user_id_val_1", "id_val_1", []string{"ref_id_1_val_1", "ref_id_1_val_2"}, `{"phones":[{"type":"mobile","phone":"001001"},{"type":"fix","phone":"002002"}]}`)
+	pgPostData := content.Data[string]{
+		Data: `{"phones":[{"type":"mobile","phone":"001001"},{"type":"fix","phone":"002002"}]}`,
+	}
+
+	err := pgDriver.Post(context.Background(), "user_id_val_1", "id_val_1", []string{"ref_id_1_val_1", "ref_id_1_val_2"}, pgPostData)
 	if err != nil {
-		log.Println("insert error", err)
+		log.Println("post error", err)
 		return
 	}
 
-	log.Println("insert done")
+	log.Println("post done")
 
-	resp, err := pgDriver.Select(context.Background(), "user_id_val_1", "id_val_1", []string{"ref_id_1_val_1", "ref_id_1_val_2"})
+	resp, err := pgDriver.Get(context.Background(), "user_id_val_1", "id_val_1", []string{"ref_id_1_val_1", "ref_id_1_val_2"})
 	if err != nil {
-		log.Println("select error", err)
+		log.Println("get error", err)
 		return
 	}
 
 	log.Println("done select", resp)
 
-	err = pgDriver.Update(context.Background(), "user_id_val_1", "id_val_1", []string{"ref_id_1_val_1", "ref_id_1_val_2"}, postgres.UpsertData{PayloadJSON: `{"updated_phones":[{"type":"mobile","phone":"001001"},{"type":"fix","phone":"002002"}]}`})
+	pgPutData := content.Data[string]{
+		Data: `{"updated_phones":[{"type":"mobile","phone":"001001"},{"type":"fix","phone":"002002"}]}`,
+	}
+
+	_, err = pgDriver.Put(context.Background(), "user_id_val_1", "id_val_1", []string{"ref_id_1_val_1", "ref_id_1_val_2"}, pgPutData)
 	if err != nil {
-		log.Println("update payload error", err)
+		log.Println("put payload error", err)
 		return
 	}
 
-	log.Println("done update payload")
+	log.Println("done put payload")
 
-	resp, err = pgDriver.Select(context.Background(), "user_id_val_1", "id_val_1", []string{"ref_id_1_val_1", "ref_id_1_val_2"})
+	resp, err = pgDriver.Get(context.Background(), "user_id_val_1", "id_val_1", []string{"ref_id_1_val_1", "ref_id_1_val_2"})
 	if err != nil {
-		log.Println("select payload error", err)
+		log.Println("get payload error", err)
 		return
 	}
 
-	log.Println("done select payload", resp)
+	log.Println("done get payload", resp)
 
-	err = pgDriver.Update(context.Background(), "user_id_val_1", "id_val_1", []string{"ref_id_1_val_1", "ref_id_1_val_2"}, postgres.UpsertData{RefIDs: []string{"updated_ref_id_1_val_1", "ref_id_1_val_2"}})
+	_, err = pgDriver.Put(context.Background(), "user_id_val_1", "id_val_1", []string{"ref_id_1_val_1", "ref_id_1_val_2"}, content.Data[string]{RefIDs: []string{"updated_ref_id_1_val_1", "ref_id_1_val_2"}})
 	if err != nil {
-		log.Println("update ref id error", err)
+		log.Println("put ref id error", err)
 		return
 	}
 
-	log.Println("done update ref id")
+	log.Println("done put ref id")
 
-	resp, err = pgDriver.Select(context.Background(), "user_id_val_1", "id_val_1", []string{"updated_ref_id_1_val_1", "ref_id_1_val_2"})
+	resp, err = pgDriver.Get(context.Background(), "user_id_val_1", "id_val_1", []string{"updated_ref_id_1_val_1", "ref_id_1_val_2"})
 	if err != nil {
 		log.Println("select ref id error", err)
 		return
@@ -161,18 +177,18 @@ func doMultipleRefID(db *sqlx.DB) {
 
 	log.Println("done select ref id", resp)
 
-	err = pgDriver.Delete(context.Background(), "user_id_val_1", "id_val_1", []string{"updated_ref_id_1_val_1", "ref_id_1_val_2"})
+	_, err = pgDriver.Delete(context.Background(), "user_id_val_1", "id_val_1", []string{"updated_ref_id_1_val_1", "ref_id_1_val_2"})
 	if err != nil {
 		log.Println("delete error", err)
 	}
 
 	log.Println("done delete")
 
-	resp, err = pgDriver.Select(context.Background(), "user_id_val_1", "id_val_1", []string{"updated_ref_id_1_val_1", "ref_id_1_val_2"})
+	resp, err = pgDriver.Get(context.Background(), "user_id_val_1", "id_val_1", []string{"updated_ref_id_1_val_1", "ref_id_1_val_2"})
 	if err != nil {
-		log.Println("select delete error", err)
+		log.Println("get delete error", err)
 		return
 	}
 
-	log.Println("done select delete", resp)
+	log.Println("done get delete", resp)
 }
