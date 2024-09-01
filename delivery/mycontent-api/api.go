@@ -49,6 +49,34 @@ func New[T any](
 	}
 }
 
+func NewWithHook[T any](
+	repo content.Repository[T],
+	allocate func() T,
+	validate func(T) *types.CommonError,
+	wrap func(T) mycontent.Data,
+	mainRefParam string,
+	updateHook mycontent.UpdateHook[T],
+	urlFormat mycontent_crud.URLFormat,
+) *ResourceManagerService[T] {
+	uc := mycontent_crud.NewWithHook(
+		repo,
+		wrap,
+		validate,
+		updateHook,
+		urlFormat,
+	)
+
+	if mainRefParam == "user_id" || mainRefParam == "id" {
+		log.Panic().Msgf("mainRefParam cannot be `user_id` or `id`")
+	}
+
+	return &ResourceManagerService[T]{
+		myContentUC:  uc,
+		allocate:     allocate,
+		mainRefParam: mainRefParam,
+	}
+}
+
 func (i *ResourceManagerService[T]) Put(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	// Read body parse entity and extract metadata
 

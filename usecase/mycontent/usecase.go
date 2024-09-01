@@ -72,3 +72,8 @@ type Temporal[T any] interface {
 	WithEndTime(t time.Time) T
 	EndTime() time.Time
 }
+
+type UpdateHook[T any] interface {
+	OnDelete(T) *types.CommonError
+	OnUpdate(T, T) *types.CommonError
+}
