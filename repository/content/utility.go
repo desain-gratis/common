@@ -14,32 +14,40 @@ var _ Repository[any] = &wrapper[any]{}
 type wrapper[T any] struct {
 	Repository[T]
 
-	put            func(ctx context.Context, userID string, data Data[T]) (Data[T], *types.CommonError)
-	get            func(ctx context.Context, userID string) ([]Data[T], *types.CommonError)
-	delete         func(ctx context.Context, userID, ID string) (Data[T], *types.CommonError)
+	post           func(ctx context.Context, userID, ID string, refIDs []string, data Data[T]) *types.CommonError
+	put            func(ctx context.Context, userID, ID string, refIDs []string, data Data[T]) (Data[T], *types.CommonError)
+	get            func(ctx context.Context, userID, ID string, refIDs []string) ([]Data[T], *types.CommonError)
+	delete         func(ctx context.Context, userID, ID string, refIDs []string) (Data[T], *types.CommonError)
 	getByID        func(ctx context.Context, userID, ID string) (Data[T], *types.CommonError)
 	getByMainRefID func(ctx context.Context, userID, mainRefID string) ([]Data[T], *types.CommonError)
 }
 
-func (w *wrapper[T]) Put(ctx context.Context, userID string, data Data[T]) (Data[T], *types.CommonError) {
+func (w *wrapper[T]) Post(ctx context.Context, userID, ID string, refIDs []string, data Data[T]) *types.CommonError {
 	if w.put != nil {
-		return w.put(ctx, userID, data)
+		return w.post(ctx, userID, ID, refIDs, data)
 	}
-	return w.Repository.Put(ctx, userID, data)
+	return w.Repository.Post(ctx, userID, ID, refIDs, data)
 }
 
-func (w *wrapper[T]) Get(ctx context.Context, userID string) ([]Data[T], *types.CommonError) {
+func (w *wrapper[T]) Put(ctx context.Context, userID, ID string, refIDs []string, data Data[T]) (Data[T], *types.CommonError) {
+	if w.put != nil {
+		return w.put(ctx, userID, ID, refIDs, data)
+	}
+	return w.Repository.Put(ctx, userID, ID, refIDs, data)
+}
+
+func (w *wrapper[T]) Get(ctx context.Context, userID, ID string, refIDs []string) ([]Data[T], *types.CommonError) {
 	if w.get != nil {
-		return w.get(ctx, userID)
+		return w.get(ctx, userID, ID, refIDs)
 	}
-	return w.Repository.Get(ctx, userID)
+	return w.Repository.Get(ctx, userID, ID, refIDs)
 }
 
-func (w *wrapper[T]) Delete(ctx context.Context, userID, ID string) (Data[T], *types.CommonError) {
+func (w *wrapper[T]) Delete(ctx context.Context, userID, ID string, refIDs []string) (Data[T], *types.CommonError) {
 	if w.delete != nil {
-		return w.delete(ctx, userID, ID)
+		return w.delete(ctx, userID, ID, refIDs)
 	}
-	return w.Repository.Delete(ctx, userID, ID)
+	return w.Repository.Delete(ctx, userID, ID, refIDs)
 }
 
 func (w *wrapper[T]) GetByID(ctx context.Context, userID, ID string) (Data[T], *types.CommonError) {
@@ -60,7 +68,7 @@ func (w *wrapper[T]) GetByMainRefID(ctx context.Context, userID, mainRefID strin
 func LimitSize[T any](a Repository[T], configuredMax int) Repository[T] {
 	return &wrapper[T]{
 		Repository: a,
-		put: func(ctx context.Context, userID string, data Data[T]) (Data[T], *types.CommonError) {
+		put: func(ctx context.Context, userID, ID string, refIDs []string, data Data[T]) (Data[T], *types.CommonError) {
 			var existing []Data[T]
 			var err *types.CommonError
 
@@ -73,7 +81,7 @@ func LimitSize[T any](a Repository[T], configuredMax int) Repository[T] {
 					return Data[T]{}, err
 				}
 			} else {
-				existing, err = a.Get(ctx, userID)
+				existing, err = a.Get(ctx, userID, ID, refIDs)
 				if err != nil {
 					return Data[T]{}, err
 				}
@@ -90,7 +98,7 @@ func LimitSize[T any](a Repository[T], configuredMax int) Repository[T] {
 					},
 				}
 			}
-			return a.Put(ctx, userID, data)
+			return a.Put(ctx, userID, ID, refIDs, data)
 		},
 	}
 }
@@ -102,13 +110,13 @@ func Link[T any, U any](a Repository[T], b Repository[U]) (Repository[T], Reposi
 
 	return &wrapper[T]{
 			Repository: a,
-			delete: func(ctx context.Context, userID, ID string) (Data[T], *types.CommonError) {
+			delete: func(ctx context.Context, userID, ID string, refIDs []string) (Data[T], *types.CommonError) {
 				lock.Lock()
 				defer lock.Unlock()
 
 				_, err := b.GetByID(ctx, userID, ID)
 				if err != nil {
-					return a.Delete(ctx, userID, ID)
+					return a.Delete(ctx, userID, ID, refIDs)
 				}
 
 				return Data[T]{}, &types.CommonError{
@@ -123,7 +131,7 @@ func Link[T any, U any](a Repository[T], b Repository[U]) (Repository[T], Reposi
 			},
 		}, &wrapper[U]{
 			Repository: b,
-			put: func(ctx context.Context, userID string, data Data[U]) (Data[U], *types.CommonError) {
+			put: func(ctx context.Context, userID, ID string, refIDs []string, data Data[U]) (Data[U], *types.CommonError) {
 				lock.Lock()
 				defer lock.Unlock()
 
@@ -153,7 +161,7 @@ func Link[T any, U any](a Repository[T], b Repository[U]) (Repository[T], Reposi
 					}
 				}
 
-				return b.Put(ctx, userID, data)
+				return b.Put(ctx, userID, ID, refIDs, data)
 			},
 		}
 }
@@ -164,7 +172,7 @@ func Reference[T any, U any](a Repository[T], b Repository[U]) (Repository[T], R
 
 	return &wrapper[T]{
 			Repository: a,
-			delete: func(ctx context.Context, userID, ID string) (Data[T], *types.CommonError) {
+			delete: func(ctx context.Context, userID, ID string, refIDs []string) (Data[T], *types.CommonError) {
 				lock.Lock()
 				defer lock.Unlock()
 
@@ -185,11 +193,11 @@ func Reference[T any, U any](a Repository[T], b Repository[U]) (Repository[T], R
 					}
 				}
 
-				return a.Delete(ctx, userID, ID)
+				return a.Delete(ctx, userID, ID, refIDs)
 			},
 		}, &wrapper[U]{
 			Repository: b,
-			put: func(ctx context.Context, userID string, data Data[U]) (Data[U], *types.CommonError) {
+			put: func(ctx context.Context, userID, ID string, refIDs []string, data Data[U]) (Data[U], *types.CommonError) {
 				lock.Lock()
 				defer lock.Unlock()
 
@@ -219,7 +227,7 @@ func Reference[T any, U any](a Repository[T], b Repository[U]) (Repository[T], R
 					}
 				}
 
-				return b.Put(ctx, userID, data)
+				return b.Put(ctx, userID, ID, refIDs, data)
 			},
 		}
 }
