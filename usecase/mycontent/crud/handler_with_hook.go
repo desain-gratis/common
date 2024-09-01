@@ -53,7 +53,7 @@ func (c *crudWithHook[T]) Put(ctx context.Context, data T) (T, *types.CommonErro
 		return current, err
 	}
 
-	err = c.updateHook.OnUpdate(previous.Data, current)
+	err = c.updateHook.OnUpdate(ctx, previous.Data, current)
 	if err != nil {
 		return current, err
 	}
@@ -68,7 +68,7 @@ func (c *crudWithHook[T]) Delete(ctx context.Context, userID string, ID string) 
 	if err != nil {
 		return res, err
 	}
-	err = c.updateHook.OnDelete(res)
+	err = c.updateHook.OnDelete(ctx, res)
 	if err != nil {
 		return res, err
 	}

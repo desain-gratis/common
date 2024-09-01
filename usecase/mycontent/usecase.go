@@ -74,6 +74,6 @@ type Temporal[T any] interface {
 }
 
 type UpdateHook[T any] interface {
-	OnDelete(T) *types.CommonError
-	OnUpdate(T, T) *types.CommonError
+	OnDelete(context.Context, T) *types.CommonError
+	OnUpdate(context.Context, T, T) *types.CommonError
 }
