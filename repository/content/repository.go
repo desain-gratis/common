@@ -73,9 +73,6 @@ type Data[T any] struct {
 	// The actual data
 	Data T
 
-	// The published URL
-	URL string
-
 	LastUpdate time.Time
 
 	// USED FOR SQL

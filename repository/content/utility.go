@@ -23,7 +23,7 @@ type wrapper[T any] struct {
 }
 
 func (w *wrapper[T]) Post(ctx context.Context, userID, ID string, refIDs []string, data Data[T]) *types.CommonError {
-	if w.put != nil {
+	if w.post != nil {
 		return w.post(ctx, userID, ID, refIDs, data)
 	}
 	return w.Repository.Post(ctx, userID, ID, refIDs, data)
