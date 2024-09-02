@@ -29,20 +29,24 @@ import (
 // Stores your data in the internet and assign ID to resource so it can be located
 // It stores the data using user ID
 type Repository[T any] interface {
+	Post(ctx context.Context, userID, ID string, refIDs []string, data Data[T]) *types.CommonError
+
 	// Store data with associated metadata
 	// Metadata will be used for indexing & searching
-	Put(ctx context.Context, userID string, data Data[T]) (Data[T], *types.CommonError)
+	Put(ctx context.Context, userID, ID string, refIDs []string, data Data[T]) (Data[T], *types.CommonError)
 
 	// Get daya by owner ID
 	// If not exist, return empty result as success
-	Get(ctx context.Context, userID string) ([]Data[T], *types.CommonError)
+	Get(ctx context.Context, userID, ID string, refIDs []string) ([]Data[T], *types.CommonError)
 
 	// Delete specific ID data. If no data, MUST return error
-	Delete(ctx context.Context, userID, ID string) (Data[T], *types.CommonError)
+	Delete(ctx context.Context, userID, ID string, refIDs []string) (Data[T], *types.CommonError)
 
+	// not used in sql
 	// Get specific data by ID. If not exist, MUST return error
 	GetByID(ctx context.Context, userID, ID string) (Data[T], *types.CommonError)
 
+	// not used in sql
 	// Main ref if the data is a dependent
 	GetByMainRefID(ctx context.Context, userID, mainRefID string) ([]Data[T], *types.CommonError)
 }
@@ -73,6 +77,10 @@ type Data[T any] struct {
 	URL string
 
 	LastUpdate time.Time
+
+	// USED FOR SQL
+	UserID string
+	RefIDs []string
 }
 
 // OptGetParam represent Optional Get Paramaater

@@ -9,10 +9,9 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/rs/zerolog/log"
-
 	"github.com/desain-gratis/common/repository/content"
 	types "github.com/desain-gratis/common/types/http"
+	"github.com/rs/zerolog/log"
 )
 
 var _ content.Repository[any] = &handler[any]{}
@@ -44,7 +43,12 @@ func New[T any](enableOverwriteID bool) *handler[T] {
 	}
 }
 
-func (h *handler[T]) Put(ctx context.Context, userID string, data content.Data[T]) (content.Data[T], *types.CommonError) {
+func (h *handler[T]) Post(ctx context.Context, userID, ID string, refIDs []string, data content.Data[T]) *types.CommonError {
+	// not used in memory
+	return nil
+}
+
+func (h *handler[T]) Put(ctx context.Context, userID, ID string, refIDs []string, data content.Data[T]) (content.Data[T], *types.CommonError) {
 	h.mtx.Lock()
 	defer h.mtx.Unlock()
 
@@ -148,7 +152,7 @@ func (h *handler[T]) Put(ctx context.Context, userID string, data content.Data[T
 	return h.data[data.ID], nil
 }
 
-func (h *handler[T]) Get(ctx context.Context, userID string) ([]content.Data[T], *types.CommonError) {
+func (h *handler[T]) Get(ctx context.Context, userID, ID string, refIDs []string) ([]content.Data[T], *types.CommonError) {
 	ids := h.indexByUserID[userID]
 
 	idsarr := make([]string, 0, len(ids))
@@ -171,7 +175,7 @@ func (h *handler[T]) Get(ctx context.Context, userID string) ([]content.Data[T],
 	return result, nil
 }
 
-func (h *handler[T]) Delete(ctx context.Context, userID, ID string) (content.Data[T], *types.CommonError) {
+func (h *handler[T]) Delete(ctx context.Context, userID, ID string, refIDs []string) (content.Data[T], *types.CommonError) {
 	h.mtx.Lock()
 	defer h.mtx.Unlock()
 
@@ -257,7 +261,7 @@ func (h *handler[T]) GetByID(ctx context.Context, userID, ID string) (content.Da
 }
 
 func (w *handler[T]) GetByMainRefID(ctx context.Context, userID, mainRefID string) ([]content.Data[T], *types.CommonError) {
-	all, err := w.Get(ctx, userID)
+	all, err := w.Get(ctx, userID, "", []string{})
 	if err != nil || len(all) == 0 {
 		return all, err
 	}

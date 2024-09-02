@@ -55,7 +55,7 @@ func (c *crud[T]) Put(ctx context.Context, data T) (T, *types.CommonError) {
 			},
 		}
 	}
-	result, err := c.repo.Put(ctx, wrap.OwnerID(), content.Data[T]{
+	result, err := c.repo.Put(ctx, wrap.OwnerID(), "", []string{}, content.Data[T]{
 		ID:         wrap.ID(),
 		MainRefID:  wrap.MainRefID(),
 		Data:       data,
@@ -123,7 +123,7 @@ func (c *crud[T]) Get(ctx context.Context, userID string, mainRefID string, ID s
 	}
 
 	// 3. get by user ID
-	ds, err := c.repo.Get(ctx, userID)
+	ds, err := c.repo.Get(ctx, userID, "", []string{})
 	if err != nil {
 		return nil, err
 	}
@@ -150,7 +150,7 @@ func (c *crud[T]) Delete(ctx context.Context, userID string, ID string) (T, *typ
 
 	// TODO user ID validation
 
-	d, err := c.repo.Delete(ctx, userID, ID)
+	d, err := c.repo.Delete(ctx, userID, ID, []string{})
 	if err != nil {
 		return d.Data, err
 	}
