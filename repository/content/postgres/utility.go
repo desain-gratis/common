@@ -53,7 +53,13 @@ func generateQuery(tableName, queryType string, primaryKey PrimaryKey, upsertDat
 
 	switch queryType {
 	case "SELECT":
-		query = `SELECT * FROM ` + tableName + ` WHERE ` + strings.Join(primaryKeys, " AND ")
+		var whereClause string
+		// set where clause if any
+		if len(primaryKeys) > 0 {
+			whereClause = ` WHERE ` + strings.Join(primaryKeys, " AND ")
+		}
+
+		query = `SELECT * FROM ` + tableName + whereClause
 	case "INSERT":
 		columns = append(columns, "payload")
 		values = append(values, `'`+upsertData.PayloadJSON+`'::jsonb`)
