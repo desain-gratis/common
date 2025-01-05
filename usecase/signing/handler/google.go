@@ -7,13 +7,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rs/zerolog/log"
+	"golang.org/x/sync/singleflight"
+	"google.golang.org/api/idtoken"
+
 	types "github.com/desain-gratis/common/types/http"
 	"github.com/desain-gratis/common/usecase/signing"
 	jwtrsa "github.com/desain-gratis/common/utility/secret/rsa"
 	"github.com/desain-gratis/common/utility/secretkv"
-	"github.com/rs/zerolog/log"
-	"golang.org/x/sync/singleflight"
-	"google.golang.org/api/idtoken"
 )
 
 var _ signing.VerifierOf[idtoken.Payload] = &googleVerifier{}
