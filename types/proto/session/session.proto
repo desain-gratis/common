@@ -16,20 +16,22 @@ message Session {
 // Contain arbitrary session data for our application to use
 message SessionData {
   session.OIDCClaim non_registered_id =
-      1;              // User ID provided by identity provider
-  string user_id = 2; // to check whether the user already registered or not
-  string token = 3;   // random string
+      1;            // User ID provided by identity provider
+  string token = 2; // random string
   map<string, Grant> grants =
-      5; // access to an organization (represented by URL)
+      3; // access to an organization (represented by URL)
+  string sign_in_method = 4;
+  string sign_in_email = 5;
+  string expiry = 6;
+  bool is_super_admin =
+      7; // superadmin, the API administator
 }
 
 message Grant {
-  string token = 1;
-  string url = 2;
-  string email = 3;
-  repeated string roles = 4;
-  string user_id = 5;
-  string expiry = 6;
+  string user_id = 1;
+  string group_id = 2;
+  string name = 3;
+  map<string, bool> ui_and_api_permission = 4;
 }
 
 // Error is the common error format

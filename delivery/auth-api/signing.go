@@ -125,7 +125,7 @@ func (s *signingService) verifyAuthorizationHeader(ctx context.Context, verifier
 	if len(token) < 2 || token[1] == "" {
 		return nil, &types.CommonError{
 			Errors: []types.Error{
-				{Code: "BAD_REQUEST", HTTPCode: http.StatusBadRequest, Message: "Invalid authorization token format"},
+				{Code: "UNAUTHORIZED", HTTPCode: http.StatusUnauthorized, Message: "Invalid authorization token format"},
 			},
 		}
 	}
