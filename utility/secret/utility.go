@@ -2,17 +2,12 @@ package jwt
 
 import (
 	"io"
-	"net/http"
-	"net/url"
 	"os"
-	"time"
 
 	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/hclsimple"
 	"github.com/rs/zerolog/log"
-	"google.golang.org/protobuf/encoding/protojson"
 
-	authapi "github.com/desain-gratis/common/types/protobuf/service/auth-api"
 	secret_hmac "github.com/desain-gratis/common/utility/secret/hmac"
 	secret_kv "github.com/desain-gratis/common/utility/secret/kv"
 	secret_rsa "github.com/desain-gratis/common/utility/secret/rsa"
@@ -47,63 +42,6 @@ func Load(secretPath string, implementation Strategy) {
 		// no op (currently not supported)
 	default:
 	}
-}
-
-func LoadSecretFromServiceAPIHTTP(accountAPIAddress string) error {
-	go func() {
-		clientz := http.Client{
-			Timeout: 100 * time.Millisecond,
-		}
-
-		// conn, err := grpc.Dial(accountAPIAddress, opts...)
-		u, err := url.Parse(accountAPIAddress)
-		if err != nil {
-			log.Err(err).Msgf("GEGE")
-			return
-		}
-
-	HHEE:
-		resp, err := clientz.Do(&http.Request{
-			Method: http.MethodGet,
-			URL:    u,
-		})
-		if err != nil {
-			log.Err(err).Str("address", accountAPIAddress).Msgf("Failed to gte signing key")
-			return
-		}
-
-		glug, err := io.ReadAll(resp.Body)
-		if err != nil {
-			log.Err(err).Str("address", accountAPIAddress).Msgf("Failed to gte signing key")
-			return
-		}
-
-		var signingKeyResp *authapi.SigningKeyResponse = &authapi.SigningKeyResponse{}
-		err = protojson.UnmarshalOptions{
-			DiscardUnknown: true,
-		}.Unmarshal(glug, signingKeyResp)
-		if err != nil {
-			log.Err(err).Str("address", accountAPIAddress).Msgf("Failed to unmarshal signing key")
-			return
-		}
-
-		if err == nil {
-			if signingKeyResp.Error == nil {
-				secret_rsa.StorePublicKey(signingKeyResp.Success.KeyId, signingKeyResp.Success.KeyPem)
-				log.Info().Str("address", accountAPIAddress).Msgf("Stored the account API public key. See you in the next 1 hour")
-			} else {
-				log.Err(err).Str("address", accountAPIAddress).Msgf(signingKeyResp.Error.Message)
-			}
-
-		} else {
-			log.Err(err).Str("address", accountAPIAddress).Msgf("Failed to gte signing key")
-		}
-
-		time.Sleep(1 * time.Hour)
-		goto HHEE
-
-	}()
-	return nil
 }
 
 // many more loader later

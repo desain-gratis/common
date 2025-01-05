@@ -20,6 +20,7 @@ type Data struct {
 	Email        string       `json:"email"`
 	Roles        []string     `json:"roles"`
 	UserID       string       `json:"user_id"`
+	GroupID      string       `json:"group_id"`
 }
 
 type Organization struct {
