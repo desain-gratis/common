@@ -59,7 +59,7 @@ func NewMicrosoftSignInService(
 }
 
 func (s *microsoftSignInService) UpdateAuth(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	sessionData, errUC := helper.ParseAuthorizationToken(r.Context(), s.signing, r.Header.Get("Authorization"))
+	sessionData, errUC := ParseAuthorizationToken(r.Context(), s.signing, r.Header.Get("Authorization"))
 	if errUC != nil {
 		errMessage := types.SerializeError(errUC)
 		w.WriteHeader(http.StatusBadRequest)

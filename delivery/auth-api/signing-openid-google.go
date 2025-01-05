@@ -14,7 +14,6 @@ import (
 	"google.golang.org/api/idtoken"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/desain-gratis/common/delivery/helper"
 	types "github.com/desain-gratis/common/types/http"
 	"github.com/desain-gratis/common/types/protobuf/session"
 	"github.com/desain-gratis/common/usecase/signing"
@@ -109,7 +108,7 @@ func NewGoogleSignInService(
 }
 
 func (s *googleSignInService) UpdateAuth(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	sessionData, errUC := helper.ParseAuthorizationToken(r.Context(), s.signing, r.Header.Get("Authorization"))
+	sessionData, errUC := ParseAuthorizationToken(r.Context(), s.signing, r.Header.Get("Authorization"))
 	if errUC != nil {
 		errMessage := types.SerializeError(errUC)
 		w.WriteHeader(http.StatusBadRequest)
@@ -149,31 +148,6 @@ func (s *googleSignInService) UpdateAuth(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
-	// var resource GSIData
-	// err = json.Unmarshal(payload, &resource)
-	// if err != nil {
-	// 	errMessage := types.SerializeError(&types.CommonError{
-	// 		Errors: []types.Error{
-	// 			{Message: "Failed to parse body (content API). Make sure file size does not exceed 200 Kb: " + err.Error(), Code: "BAD_REQUEST"},
-	// 		},
-	// 	},
-	// 	)
-	// 	w.WriteHeader(http.StatusBadRequest)
-	// 	w.Write(errMessage)
-	// 	return
-	// }
-
-	// resource.OwnerId = "root" // hardcoded
-	// // resource.Url = s // should fill
-
-	// result, errUC := s.myContentAuth.Put(r.Context(), &resource)
-	// if errUC != nil {
-	// 	d := types.SerializeError(errUC)
-	// 	w.WriteHeader(http.StatusInternalServerError)
-	// 	w.Write(d)
-	// 	return
-	// }
-
 	var clientPayload Payload
 	err = json.Unmarshal(payload, &clientPayload)
 	if err != nil {
@@ -185,6 +159,8 @@ func (s *googleSignInService) UpdateAuth(w http.ResponseWriter, r *http.Request,
 		w.Write(errMessage)
 		return
 	}
+
+	// TODO: use bcrypt to hash email
 
 	ucPayload := convertUpdatePayload(clientPayload)
 
