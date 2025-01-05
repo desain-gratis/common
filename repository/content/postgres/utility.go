@@ -63,7 +63,7 @@ func generateQuery(tableName, queryType string, primaryKey PrimaryKey, upsertDat
 	case "INSERT":
 		columns = append(columns, "payload")
 		values = append(values, `'`+upsertData.PayloadJSON+`'::jsonb`)
-		query = `INSERT INTO ` + tableName + `(` + strings.Join(columns, ", ") + `) VALUES (` + strings.Join(values, ", ") + `)`
+		query = `INSERT INTO ` + tableName + `(` + strings.Join(columns, ", ") + `) VALUES (` + strings.Join(values, ", ") + `)` + `ON CONFLICT DO UPDATE`
 	case "UPDATE":
 		arguments := generateSetArguments(upsertData)
 		query = `UPDATE ` + tableName + ` SET ` + strings.Join(arguments, ", ") + ` WHERE ` + strings.Join(primaryKeys, " AND ")
