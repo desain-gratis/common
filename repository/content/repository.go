@@ -66,10 +66,6 @@ type Data[T any] struct {
 	// The location of the data in the repository
 	ID string
 
-	// If the data is dependent on / is part of another data,
-	// We put the main reference ID here
-	MainRefID string
-
 	// The actual data
 	Data T
 
@@ -78,6 +74,13 @@ type Data[T any] struct {
 	// USED FOR SQL
 	UserID string
 	RefIDs []string
+}
+
+func (d Data[any]) ParentID() string {
+	if len(d.RefIDs) == 0 {
+		return ""
+	}
+	return d.RefIDs[len(d.RefIDs)-1]
 }
 
 // OptGetParam represent Optional Get Paramaater

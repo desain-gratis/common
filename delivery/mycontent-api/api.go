@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/url"
 
 	"github.com/julienschmidt/httprouter"
 	"github.com/rs/zerolog/log"
@@ -20,7 +21,7 @@ const maximumRequestLengthAttachment = 100 << 20
 type ResourceManagerService[T any] struct {
 	myContentUC  mycontent.Usecase[T]
 	allocate     func() T
-	mainRefParam string
+	refIDsParser func(url.Values) []string
 }
 
 func New[T any](
@@ -28,7 +29,7 @@ func New[T any](
 	allocate func() T,
 	validate func(T) *types.CommonError,
 	wrap func(T) mycontent.Data,
-	mainRefParam string,
+	refIDsParser func(url.Values) []string,
 	urlFormat mycontent_crud.URLFormat,
 ) *ResourceManagerService[T] {
 	uc := mycontent_crud.New(
@@ -38,42 +39,10 @@ func New[T any](
 		urlFormat,
 	)
 
-	if mainRefParam == "user_id" || mainRefParam == "id" {
-		log.Panic().Msgf("mainRefParam cannot be `user_id` or `id`")
-	}
-
 	return &ResourceManagerService[T]{
 		myContentUC:  uc,
 		allocate:     allocate,
-		mainRefParam: mainRefParam,
-	}
-}
-
-func NewWithHook[T any](
-	repo content.Repository[T],
-	allocate func() T,
-	validate func(T) *types.CommonError,
-	wrap func(T) mycontent.Data,
-	mainRefParam string,
-	updateHook mycontent.UpdateHook[T],
-	urlFormat mycontent_crud.URLFormat,
-) *ResourceManagerService[T] {
-	uc := mycontent_crud.NewWithHook(
-		repo,
-		wrap,
-		validate,
-		updateHook,
-		urlFormat,
-	)
-
-	if mainRefParam == "user_id" || mainRefParam == "id" {
-		log.Panic().Msgf("mainRefParam cannot be `user_id` or `id`")
-	}
-
-	return &ResourceManagerService[T]{
-		myContentUC:  uc,
-		allocate:     allocate,
-		mainRefParam: mainRefParam,
+		refIDsParser: refIDsParser,
 	}
 }
 
@@ -172,13 +141,9 @@ func (i *ResourceManagerService[T]) Get(w http.ResponseWriter, r *http.Request, 
 	}
 
 	ID = r.URL.Query().Get("id")
-	var mainRef string
+	refIDs := i.refIDsParser(r.URL.Query())
 
-	if i.mainRefParam != "" {
-		mainRef = r.URL.Query().Get(i.mainRefParam)
-	}
-
-	result, errUC := i.myContentUC.Get(r.Context(), userID, mainRef, ID)
+	result, errUC := i.myContentUC.Get(r.Context(), userID, refIDs, ID)
 	if errUC != nil {
 		errMessage := serializeError(errUC)
 		w.WriteHeader(http.StatusInternalServerError)
@@ -206,9 +171,7 @@ func (i *ResourceManagerService[T]) Get(w http.ResponseWriter, r *http.Request, 
 }
 
 func (i *ResourceManagerService[T]) Delete(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	var userID string
-
-	userID = r.URL.Query().Get("user_id")
+	userID := r.URL.Query().Get("user_id")
 	if userID == "" {
 		d := serializeError(&types.CommonError{
 			Errors: []types.Error{

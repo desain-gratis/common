@@ -6,6 +6,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"net/url"
 	"strconv"
 
 	"github.com/julienschmidt/httprouter"
@@ -37,7 +38,7 @@ type ContentUploadMetadata struct {
 func NewAttachment(
 	repo content.Repository[*entity.Attachment], // todo, change catalog.Attachment location to more common location (not uc specific)
 	blobRepo blob.Repository,
-	mainRefParam string,
+	refIDsParser func(url.Values) []string,
 	hideUrl bool,
 	namespace string, // in blob storage
 	urlFormat mycontent_crud.URLFormat,
@@ -52,15 +53,11 @@ func NewAttachment(
 		urlFormat,
 	)
 
-	if mainRefParam == "user_id" || mainRefParam == "id" {
-		log.Panic().Msgf("mainRefParam cannot be `user_id` or `id`")
-	}
-
 	return &ContentUploadMetadata{
 		ResourceManagerService: &ResourceManagerService[*entity.Attachment]{
 			myContentUC:  uc,
 			allocate:     entity_attachment.New,
-			mainRefParam: mainRefParam,
+			refIDsParser: refIDsParser,
 		},
 		uc:           uc, // uc with advanced functionality
 		cacheControl: cacheControl,
@@ -84,11 +81,8 @@ func (i *ContentUploadMetadata) Get(w http.ResponseWriter, r *http.Request, p ht
 	}
 
 	ID = r.URL.Query().Get("id")
-	var mainRef string
 
-	if i.mainRefParam != "" {
-		mainRef = r.URL.Query().Get(i.mainRefParam)
-	}
+	refIDs := i.refIDsParser(r.URL.Query())
 
 	isData := r.URL.Query().Get("data")
 
@@ -97,7 +91,7 @@ func (i *ContentUploadMetadata) Get(w http.ResponseWriter, r *http.Request, p ht
 		return
 	}
 
-	payload, meta, errUC := i.uc.GetAttachment(r.Context(), userID, mainRef, ID)
+	payload, meta, errUC := i.uc.GetAttachment(r.Context(), userID, refIDs, ID)
 	if errUC != nil {
 		errMessage := serializeError(errUC)
 		w.WriteHeader(http.StatusInternalServerError)

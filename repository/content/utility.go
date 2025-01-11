@@ -75,8 +75,8 @@ func LimitSize[T any](a Repository[T], configuredMax int) Repository[T] {
 			// Limit based on wether they're dependent service or not.
 			// If it's main entity, then limit based on user ID
 			// If it's dependent entity, then limit based on the main entity
-			if data.MainRefID != "" {
-				existing, err = a.GetByMainRefID(ctx, userID, data.MainRefID)
+			if data.ParentID() != "" {
+				existing, err = a.GetByMainRefID(ctx, userID, data.ParentID())
 				if err != nil {
 					return Data[T]{}, err
 				}
@@ -201,7 +201,7 @@ func Reference[T any, U any](a Repository[T], b Repository[U]) (Repository[T], R
 				lock.Lock()
 				defer lock.Unlock()
 
-				if data.MainRefID == "" {
+				if data.ParentID() == "" {
 					return Data[U]{}, &types.CommonError{
 						Errors: []types.Error{
 							{
@@ -214,7 +214,7 @@ func Reference[T any, U any](a Repository[T], b Repository[U]) (Repository[T], R
 				}
 				// check if exist in the main DB first.
 				// if not we  fail
-				_, err := a.GetByID(ctx, userID, data.MainRefID)
+				_, err := a.GetByID(ctx, userID, data.ParentID())
 				if err != nil {
 					return Data[U]{}, &types.CommonError{
 						Errors: []types.Error{

@@ -268,7 +268,7 @@ func (w *handler[T]) GetByMainRefID(ctx context.Context, userID, mainRefID strin
 
 	filtered := make([]content.Data[T], 0, len(all))
 	for _, v := range all {
-		if v.MainRefID == mainRefID {
+		if v.ParentID() == mainRefID {
 			filtered = append(filtered, v)
 		}
 	}

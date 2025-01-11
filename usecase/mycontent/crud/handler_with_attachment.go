@@ -52,8 +52,8 @@ func NewAttachment(
 }
 
 // Overwrite for censoring
-func (c *crudWithAttachment) Get(ctx context.Context, userID string, mainRefID string, ID string) ([]*entity.Attachment, *types.CommonError) {
-	result, err := c.crud.Get(ctx, userID, mainRefID, ID)
+func (c *crudWithAttachment) Get(ctx context.Context, userID string, refIDs []string, ID string) ([]*entity.Attachment, *types.CommonError) {
+	result, err := c.crud.Get(ctx, userID, refIDs, ID)
 	if err != nil {
 		return nil, err
 	}
@@ -67,8 +67,8 @@ func (c *crudWithAttachment) Get(ctx context.Context, userID string, mainRefID s
 }
 
 // BETA
-func (c *crudWithAttachment) GetAttachment(ctx context.Context, userID string, mainRefID string, ID string) (payload io.ReadCloser, meta *entity.Attachment, err *types.CommonError) {
-	result, err := c.crud.Get(ctx, userID, mainRefID, ID)
+func (c *crudWithAttachment) GetAttachment(ctx context.Context, userID string, refIDs []string, ID string) (payload io.ReadCloser, meta *entity.Attachment, err *types.CommonError) {
+	result, err := c.crud.Get(ctx, userID, refIDs, ID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -108,7 +108,7 @@ func (c *crudWithAttachment) Attach(ctx context.Context, meta *entity.Attachment
 	// TODO: Get all existing data based on user ID, calculate the total size to do validation
 
 	// Check existing, if exist with the same ID, then use existing
-	existing, errUC := c.crud.Get(ctx, meta.OwnerId, meta.RefId, meta.Id)
+	existing, errUC := c.crud.Get(ctx, meta.OwnerId, []string{meta.RefId}, meta.Id)
 	if errUC != nil {
 		if errUC.Errors[0].HTTPCode != http.StatusNotFound {
 			return nil, errUC
@@ -217,7 +217,7 @@ func (c *crudWithAttachment) Attach(ctx context.Context, meta *entity.Attachment
 
 // DeleteAttachment generic binary at path
 func (c *crudWithAttachment) Delete(ctx context.Context, userID string, ID string) (*entity.Attachment, *types.CommonError) {
-	result, err := c.crud.Get(ctx, userID, "", ID)
+	result, err := c.crud.Get(ctx, userID, nil, ID)
 	if err != nil {
 		return nil, err
 	}

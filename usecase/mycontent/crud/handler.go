@@ -13,7 +13,7 @@ import (
 var _ mycontent.Usecase[any] = &crud[any]{}
 
 // URLFormat for custom URL (this should be the URL default)
-type URLFormat func(dataPath, userID, refID, ID string) string
+type URLFormat func(dataPath string, userID string, refID []string, ID string) string
 
 type crud[T any] struct {
 	repo content.Repository[T]
@@ -55,11 +55,21 @@ func (c *crud[T]) Put(ctx context.Context, data T) (T, *types.CommonError) {
 			},
 		}
 	}
+
+	refIDs := wrap.RefIDs()
+	if len(refIDs) > 0 {
+		// make sure parent ID is indexed as last entry of the index
+		if refIDs[len(refIDs)-1] != wrap.ParentID() {
+			refIDs = append(refIDs, wrap.ParentID())
+		}
+	}
+
 	result, err := c.repo.Put(ctx, wrap.OwnerID(), "", []string{}, content.Data[T]{
 		ID:         wrap.ID(),
-		MainRefID:  wrap.MainRefID(),
 		Data:       data,
 		LastUpdate: time.Now(),
+		UserID:     wrap.OwnerID(),
+		RefIDs:     refIDs, // allow to be queried by this indices
 	})
 	if err != nil {
 		return result.Data, err
@@ -71,7 +81,7 @@ func (c *crud[T]) Put(ctx context.Context, data T) (T, *types.CommonError) {
 	wrap = c.wrap(result.Data)
 
 	if c.urlFormat != nil {
-		c.wrap(result.Data).WithURL(c.urlFormat(wrap.URL(), wrap.OwnerID(), wrap.MainRefID(), wrap.ID()))
+		c.wrap(result.Data).WithURL(c.urlFormat(wrap.URL(), wrap.OwnerID(), wrap.RefIDs(), wrap.ID()))
 	}
 
 	return result.Data, nil
@@ -79,7 +89,7 @@ func (c *crud[T]) Put(ctx context.Context, data T) (T, *types.CommonError) {
 
 // Get all of your resource for your user ID here
 // Simple wrapper for repository
-func (c *crud[T]) Get(ctx context.Context, userID string, mainRefID string, ID string) ([]T, *types.CommonError) {
+func (c *crud[T]) Get(ctx context.Context, userID string, refIDs []string, ID string) ([]T, *types.CommonError) {
 	// 1. check if there is ID
 	if ID != "" {
 		result := make([]T, 0, 1)
@@ -93,7 +103,7 @@ func (c *crud[T]) Get(ctx context.Context, userID string, mainRefID string, ID s
 
 		wrap := c.wrap(d.Data)
 		if c.urlFormat != nil {
-			c.wrap(d.Data).WithURL(c.urlFormat(wrap.URL(), wrap.OwnerID(), wrap.MainRefID(), wrap.ID()))
+			c.wrap(d.Data).WithURL(c.urlFormat(wrap.URL(), wrap.OwnerID(), wrap.RefIDs(), wrap.ID()))
 		}
 
 		result = append(result, d.Data)
@@ -101,8 +111,8 @@ func (c *crud[T]) Get(ctx context.Context, userID string, mainRefID string, ID s
 	}
 
 	// 2. check if there is main ref ID
-	if mainRefID != "" {
-		ds, err := c.repo.GetByMainRefID(ctx, userID, mainRefID)
+	if len(refIDs) > 0 {
+		ds, err := c.repo.Get(ctx, userID, "", refIDs)
 		if err != nil {
 			return nil, err
 		}
@@ -114,7 +124,7 @@ func (c *crud[T]) Get(ctx context.Context, userID string, mainRefID string, ID s
 
 			wrap := c.wrap(d.Data)
 			if c.urlFormat != nil {
-				c.wrap(d.Data).WithURL(c.urlFormat(wrap.URL(), wrap.OwnerID(), wrap.MainRefID(), wrap.ID()))
+				c.wrap(d.Data).WithURL(c.urlFormat(wrap.URL(), wrap.OwnerID(), wrap.RefIDs(), wrap.ID()))
 			}
 
 			result = append(result, d.Data)
@@ -135,7 +145,7 @@ func (c *crud[T]) Get(ctx context.Context, userID string, mainRefID string, ID s
 
 		wrap := c.wrap(d.Data)
 		if c.urlFormat != nil {
-			c.wrap(d.Data).WithURL(c.urlFormat(wrap.URL(), wrap.OwnerID(), wrap.MainRefID(), wrap.ID()))
+			c.wrap(d.Data).WithURL(c.urlFormat(wrap.URL(), wrap.OwnerID(), wrap.RefIDs(), wrap.ID()))
 		}
 
 		result = append(result, d.Data)
@@ -160,7 +170,7 @@ func (c *crud[T]) Delete(ctx context.Context, userID string, ID string) (T, *typ
 
 	wrap := c.wrap(d.Data)
 	if c.urlFormat != nil {
-		c.wrap(d.Data).WithURL(c.urlFormat(wrap.URL(), wrap.OwnerID(), wrap.MainRefID(), wrap.ID()))
+		c.wrap(d.Data).WithURL(c.urlFormat(wrap.URL(), wrap.OwnerID(), wrap.RefIDs(), wrap.ID()))
 	}
 
 	return d.Data, nil
