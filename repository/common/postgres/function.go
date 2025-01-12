@@ -42,10 +42,11 @@ func (r *repo[T]) Insert(ctx context.Context, organizationID, id string, refID [
 		return
 	}
 
-	postData := content.Data[string]{
-		Data: string(payload),
+	postData := content.Data{
+		Data: payload,
 	}
-	errInsert := r.client.Post(ctx, organizationID, id, refID, postData)
+
+	_, errInsert := r.client.Post(ctx, organizationID, id, refID, postData)
 	if errInsert != nil {
 		if len(errInsert.Errors) > 0 {
 			err = fmt.Errorf("failed to insert: %s", errInsert.Errors[0].Message)
@@ -54,6 +55,7 @@ func (r *repo[T]) Insert(ctx context.Context, organizationID, id string, refID [
 
 	return
 }
+
 func (r *repo[T]) Update(ctx context.Context, organizationID, id string, refID []string, data T) (err error) {
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(r.timeoutMs)*time.Millisecond)
 	defer cancel()
@@ -63,8 +65,8 @@ func (r *repo[T]) Update(ctx context.Context, organizationID, id string, refID [
 		return
 	}
 
-	updateData := content.Data[string]{
-		Data: string(payload),
+	updateData := content.Data{
+		Data: payload,
 	}
 
 	_, errUpdate := r.client.Put(ctx, organizationID, id, refID, updateData)

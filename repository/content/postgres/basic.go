@@ -11,21 +11,21 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-var _ content.Repository[any] = &handler[any]{}
+var _ content.Repository = &handler{}
 
-type handler[T any] struct {
+type handler struct {
 	db        *sqlx.DB
 	tableName string
 }
 
-func New[T any](db *sqlx.DB, tableName string) *handler[T] {
-	return &handler[T]{
+func New(db *sqlx.DB, tableName string) *handler {
+	return &handler{
 		db:        db,
 		tableName: tableName,
 	}
 }
 
-func (h *handler[T]) Get(ctx context.Context, userID, ID string, refIDs []string) (resp []content.Data[T], err *types.CommonError) {
+func (h *handler) Get(ctx context.Context, userID, ID string, refIDs []string) (resp []content.Data, err *types.CommonError) {
 	pKey := PrimaryKey{
 		UserID: userID,
 		ID:     ID,
@@ -76,7 +76,7 @@ func (h *handler[T]) Get(ctx context.Context, userID, ID string, refIDs []string
 			continue
 		}
 
-		rowValue, errMerge := mergeColumnValue[T](columns, values)
+		rowValue, errMerge := mergeColumnValue(columns, values)
 		if errMerge != nil {
 			log.Err(errMerge).Msgf("Failed merge column & value")
 			continue
@@ -87,85 +87,52 @@ func (h *handler[T]) Get(ctx context.Context, userID, ID string, refIDs []string
 	return
 }
 
-func (h *handler[T]) Post(ctx context.Context, userID, ID string, refIDs []string, data content.Data[T]) (err *types.CommonError) {
+func (h *handler) Post(ctx context.Context, userID, ID string, refIDs []string, input content.Data) (out content.Data, err *types.CommonError) {
 	pKey := PrimaryKey{
 		UserID: userID,
 		ID:     ID,
 		RefIDs: refIDs,
 	}
 
-	payload, isRecognized := getData(data.Data)
-	if !isRecognized {
-		err = &types.CommonError{
-			Errors: []types.Error{
-				{
-					HTTPCode: http.StatusNotAcceptable,
-					Code:     "NOT_ACCEPTABLE",
-					Message:  "Data type is not recognized",
-				},
-			},
-		}
-		return
-	}
-
-	q := generateQuery(h.tableName, "INSERT", pKey, UpsertData{PayloadJSON: payload})
-	_, errExec := h.db.ExecContext(ctx, q)
+	q := generateQuery(h.tableName, "INSERT", pKey, UpsertData{PayloadJSON: input.Data})
+	log.Info().Msgf("query nya adalah: %v", q)
+	result, errExec := h.db.QueryContext(ctx, q)
 	if errExec != nil {
 		err = &types.CommonError{
 			Errors: []types.Error{
 				{
 					HTTPCode: http.StatusInternalServerError,
 					Code:     "INTERNAL_SERVER_ERROR",
-					Message:  "Insert query failed",
+					Message:  "Update query failed: " + errExec.Error(),
 				},
 			},
 		}
+		return input, err
 	}
 
-	return
+	var idstr string
+	for result.Next() {
+		_err := result.Scan(&idstr)
+		if _err != nil {
+			log.Err(_err).Msgf("ERROR %v", _err)
+			continue
+		}
+	}
+
+	// idstr := strconv.FormatInt(id, 10)
+
+	input.ID = idstr
+
+	return input, nil
 }
 
 // Put(ctx context.Context, userID, ID string, refIDs []string, data Data[T]) (Data[T], *types.CommonError)
 
-func (h *handler[T]) Put(ctx context.Context, userID, ID string, refIDs []string, data content.Data[T]) (_ content.Data[T], err *types.CommonError) {
-	pKey := PrimaryKey{
-		UserID: userID,
-		ID:     ID,
-		RefIDs: refIDs,
-	}
-
-	payload, isRecognized := getData(data.Data)
-	if !isRecognized {
-		err = &types.CommonError{
-			Errors: []types.Error{
-				{
-					HTTPCode: http.StatusNotAcceptable,
-					Code:     "NOT_ACCEPTABLE",
-					Message:  "Data type is not recognized",
-				},
-			},
-		}
-		return
-	}
-
-	q := generateQuery(h.tableName, "UPDATE", pKey, UpsertData{RefIDs: data.RefIDs, PayloadJSON: payload})
-	_, errExec := h.db.ExecContext(ctx, q)
-	if errExec != nil {
-		err = &types.CommonError{
-			Errors: []types.Error{
-				{
-					HTTPCode: http.StatusInternalServerError,
-					Code:     "INTERNAL_SERVER_ERROR",
-					Message:  "Update query failed: " + q,
-				},
-			},
-		}
-	}
-
-	return
+func (h *handler) Put(ctx context.Context, userID, ID string, refIDs []string, input content.Data) (out content.Data, err *types.CommonError) {
+	return h.Post(ctx, userID, ID, refIDs, input)
 }
 
-func (h *handler[T]) Delete(ctx context.Context, userID, ID string, refIDs []string) (_ content.Data[T], err *types.CommonError) {
+func (h *handler) Delete(ctx context.Context, userID, ID string, refIDs []string) (_ content.Data, err *types.CommonError) {
 	pKey := PrimaryKey{
 		UserID: userID,
 		ID:     ID,
@@ -189,12 +156,12 @@ func (h *handler[T]) Delete(ctx context.Context, userID, ID string, refIDs []str
 	return
 }
 
-func (h *handler[T]) GetByID(ctx context.Context, userID, ID string) (_ content.Data[T], _ *types.CommonError) {
+func (h *handler) GetByID(ctx context.Context, userID, ID string) (_ content.Data, _ *types.CommonError) {
 	// not used
 	return
 }
 
-func (h *handler[T]) GetByMainRefID(ctx context.Context, userID, mainRefID string) (_ []content.Data[T], _ *types.CommonError) {
+func (h *handler) GetByMainRefID(ctx context.Context, userID, mainRefID string) (_ []content.Data, _ *types.CommonError) {
 	// not used
 	return
 }

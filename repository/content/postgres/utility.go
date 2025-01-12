@@ -9,19 +9,6 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-func getData[T any](in T) (out string, isRecognized bool) {
-	switch any(in).(type) {
-	case string:
-		str, ok := any(in).(string)
-		if !ok {
-			return
-		}
-		out = str
-		isRecognized = true
-	}
-	return
-}
-
 func generateQuery(tableName, queryType string, primaryKey PrimaryKey, upsertData UpsertData) (query string) {
 	// primaryKeys is used by SELECT, UPDATE, DELETE query
 	var primaryKeys []string
@@ -36,7 +23,6 @@ func generateQuery(tableName, queryType string, primaryKey PrimaryKey, upsertDat
 	if primaryKey.ID != "" {
 		columns = append(columns, "id")
 		values = append(values, "'"+primaryKey.ID+"'")
-
 	}
 
 	// if only use ref_ids
@@ -62,8 +48,8 @@ func generateQuery(tableName, queryType string, primaryKey PrimaryKey, upsertDat
 		query = `SELECT * FROM ` + tableName + whereClause
 	case "INSERT":
 		columns = append(columns, "payload")
-		values = append(values, `'`+upsertData.PayloadJSON+`'::jsonb`)
-		query = `INSERT INTO ` + tableName + `(` + strings.Join(columns, ", ") + `) VALUES (` + strings.Join(values, ", ") + `)` + `ON CONFLICT DO UPDATE`
+		values = append(values, `'`+string(upsertData.PayloadJSON)+`'::jsonb`)
+		query = `INSERT INTO ` + tableName + `(` + strings.Join(columns, ", ") + `) VALUES (` + strings.Join(values, ", ") + `)` + ` ON CONFLICT (user_id, ` + strings.Join(primaryKey.RefIDs, ",") + `id) DO UPDATE SET (` + strings.Join(columns, ", ") + `) = ` + `(` + strings.Join(values, ", ") + `) RETURNING id`
 	case "UPDATE":
 		arguments := generateSetArguments(upsertData)
 		query = `UPDATE ` + tableName + ` SET ` + strings.Join(arguments, ", ") + ` WHERE ` + strings.Join(primaryKeys, " AND ")
@@ -81,14 +67,14 @@ func generateSetArguments(upsertData UpsertData) (arguments []string) {
 		arguments = append(arguments, arg)
 	}
 
-	if upsertData.PayloadJSON != "" {
-		arg := `payload = '` + upsertData.PayloadJSON + `'::jsonb`
+	if len(upsertData.PayloadJSON) > 0 {
+		arg := `payload = '` + string(upsertData.PayloadJSON) + `'::jsonb`
 		arguments = append(arguments, arg)
 	}
 	return
 }
 
-func mergeColumnValue[T any](columns []string, values []interface{}) (resp content.Data[T], err error) {
+func mergeColumnValue(columns []string, values []interface{}) (resp content.Data, err error) {
 	if len(columns) != len(values) {
 		err = fmt.Errorf("column length & value length are not same")
 		return
@@ -112,7 +98,7 @@ func mergeColumnValue[T any](columns []string, values []interface{}) (resp conte
 		case strings.Contains(column, "ref_id"):
 			resp.RefIDs = append(resp.RefIDs, value)
 		case column == "payload":
-			resp.Data = any(value).(T)
+			resp.Data = []byte(value)
 		default:
 			log.Info().Msgf("Unrecognized column: %s", column)
 		}

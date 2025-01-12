@@ -9,7 +9,7 @@ import (
 
 func TestParse(t *testing.T) {
 	type args struct {
-		in string
+		in []byte
 	}
 	tests := []struct {
 		name    string
@@ -20,7 +20,7 @@ func TestParse(t *testing.T) {
 		{
 			name: "Test serde",
 			args: args{
-				in: `{"id": "hello", "default_homepage": "hai"}`,
+				in: []byte(`{"id": "hello", "default_homepage": "hai"}`),
 			},
 			want: m.AuthorizedUser{
 				ID:              "hello",

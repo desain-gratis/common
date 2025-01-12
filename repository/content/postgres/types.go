@@ -9,6 +9,6 @@ type (
 
 	UpsertData struct {
 		RefIDs      []string // only be used for update query
-		PayloadJSON string
+		PayloadJSON []byte
 	}
 )

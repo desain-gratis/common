@@ -9,13 +9,13 @@ import (
 )
 
 type repo[T any] struct {
-	client    content.Repository[string]
+	client    content.Repository
 	tableName string
 	timeoutMs int
 }
 
 func New[T any](db *sqlx.DB, tableName string, timeoutMs int) i.Repository[T] {
-	client := postgres.New[string](db, tableName)
+	client := postgres.New(db, tableName)
 	return &repo[T]{
 		client:    client,
 		tableName: tableName,

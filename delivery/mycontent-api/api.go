@@ -18,30 +18,25 @@ import (
 const maximumRequestLength = 1 << 20
 const maximumRequestLengthAttachment = 100 << 20
 
-type ResourceManagerService[T any] struct {
+type ResourceManagerService[T mycontent.Data] struct {
 	myContentUC  mycontent.Usecase[T]
-	allocate     func() T
 	refIDsParser func(url.Values) []string
 }
 
-func New[T any](
-	repo content.Repository[T],
-	allocate func() T,
+func New[T mycontent.Data](
+	repo content.Repository,
 	validate func(T) *types.CommonError,
-	wrap func(T) mycontent.Data,
 	refIDsParser func(url.Values) []string,
 	urlFormat mycontent_crud.URLFormat,
 ) *ResourceManagerService[T] {
 	uc := mycontent_crud.New(
 		repo,
-		wrap,
 		validate,
 		urlFormat,
 	)
 
 	return &ResourceManagerService[T]{
 		myContentUC:  uc,
-		allocate:     allocate,
 		refIDsParser: refIDsParser,
 	}
 }
@@ -62,11 +57,6 @@ func (i *ResourceManagerService[T]) Put(w http.ResponseWriter, r *http.Request, 
 		w.Write(errMessage)
 		return
 	}
-
-	// resource := i.allocate()
-	// err = protojson.UnmarshalOptions{
-	// 	AllowPartial: true,
-	// }.Unmarshal(payload, resource)
 
 	var resource T
 	err = json.Unmarshal(payload, &resource)
@@ -92,13 +82,6 @@ func (i *ResourceManagerService[T]) Put(w http.ResponseWriter, r *http.Request, 
 		w.Write(d)
 		return
 	}
-
-	// naise. the wrap can be considered as message!
-	// result := res.(any)
-	// payload, err = protojson.MarshalOptions{
-	// 	UseProtoNames: true,
-	// 	EmitUnpopulated: true,
-	// }.Marshal(result)
 
 	// since we wrap using types.CommonResponse, it cannot use protojson to unmarshal
 	// for now can remove omitempty manually in the generated proto, based on the usecase

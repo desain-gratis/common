@@ -4,16 +4,16 @@ import (
 	"encoding/json"
 )
 
-func Parse[T any](in string) (T, error) {
+func Parse[T any](in []byte) (T, error) {
 	var t T
-	err := json.Unmarshal([]byte(in), &t)
+	err := json.Unmarshal(in, &t)
 	if err != nil {
 		return t, err
 	}
 	return t, nil
 }
 
-func unmarshalData[T any](in string) (out T, err error) {
+func unmarshalData[T any](in []byte) (out T, err error) {
 	// var currentType T
 	// switch any(currentType).(type) {
 	// case m.AuthorizedUser:

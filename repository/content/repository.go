@@ -28,27 +28,27 @@ import (
 
 // Stores your data in the internet and assign ID to resource so it can be located
 // It stores the data using user ID
-type Repository[T any] interface {
-	Post(ctx context.Context, userID, ID string, refIDs []string, data Data[T]) *types.CommonError
+type Repository interface {
+	Post(ctx context.Context, userID, ID string, refIDs []string, data Data) (Data, *types.CommonError)
 
 	// Store data with associated metadata
 	// Metadata will be used for indexing & searching
-	Put(ctx context.Context, userID, ID string, refIDs []string, data Data[T]) (Data[T], *types.CommonError)
+	Put(ctx context.Context, userID, ID string, refIDs []string, data Data) (Data, *types.CommonError)
 
 	// Get daya by owner ID
 	// If not exist, return empty result as success
-	Get(ctx context.Context, userID, ID string, refIDs []string) ([]Data[T], *types.CommonError)
+	Get(ctx context.Context, userID, ID string, refIDs []string) ([]Data, *types.CommonError)
 
 	// Delete specific ID data. If no data, MUST return error
-	Delete(ctx context.Context, userID, ID string, refIDs []string) (Data[T], *types.CommonError)
+	Delete(ctx context.Context, userID, ID string, refIDs []string) (Data, *types.CommonError)
 
 	// not used in sql
 	// Get specific data by ID. If not exist, MUST return error
-	GetByID(ctx context.Context, userID, ID string) (Data[T], *types.CommonError)
+	GetByID(ctx context.Context, userID, ID string) (Data, *types.CommonError)
 
 	// not used in sql
 	// Main ref if the data is a dependent
-	GetByMainRefID(ctx context.Context, userID, mainRefID string) ([]Data[T], *types.CommonError)
+	GetByMainRefID(ctx context.Context, userID, mainRefID string) ([]Data, *types.CommonError)
 }
 
 type Addressable interface {
@@ -62,25 +62,18 @@ type Addressable interface {
 // An URL (if any)
 // Update date
 // Also some basic indexing such as last update date
-type Data[T any] struct {
+type Data struct {
 	// The location of the data in the repository
 	ID string
 
 	// The actual data
-	Data T
+	Data []byte
 
 	LastUpdate time.Time
 
 	// USED FOR SQL
 	UserID string
 	RefIDs []string
-}
-
-func (d Data[any]) ParentID() string {
-	if len(d.RefIDs) == 0 {
-		return ""
-	}
-	return d.RefIDs[len(d.RefIDs)-1]
 }
 
 // OptGetParam represent Optional Get Paramaater

@@ -31,7 +31,7 @@ type crudWithAttachment struct {
 // NewWithAttachment creates the basic CRUD handle, but enables attachment
 // Whether this is private or not will mostly be depended by the blob repository
 func NewAttachment(
-	repo content.Repository[*entity.Attachment], // todo, change catalog.Attachment location to more common location (not uc specific)
+	repo content.Repository, // todo, change catalog.Attachment location to more common location (not uc specific)
 	blobRepo blob.Repository,
 	hideUrl bool,
 	namespace string,
@@ -41,7 +41,6 @@ func NewAttachment(
 	return &crudWithAttachment{
 		crud: &crud[*entity.Attachment]{
 			repo:      repo,
-			wrap:      entity_attachment.Wrap,
 			validate:  entity_attachment.Validate,
 			urlFormat: urlFormat,
 		},

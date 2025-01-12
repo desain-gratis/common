@@ -16,7 +16,6 @@ import (
 	"github.com/desain-gratis/common/repository/content"
 	entity "github.com/desain-gratis/common/types/entity"
 	types "github.com/desain-gratis/common/types/http"
-	entity_attachment "github.com/desain-gratis/common/types/protobuf-wrapper/attachment"
 	"github.com/desain-gratis/common/usecase/mycontent"
 	mycontent_crud "github.com/desain-gratis/common/usecase/mycontent/crud"
 )
@@ -27,7 +26,7 @@ import (
 
 type ContentUploadMetadata struct {
 	*ResourceManagerService[*entity.Attachment]
-	repo         content.Repository[*entity.Attachment]
+	repo         content.Repository
 	uc           mycontent.Attachable[*entity.Attachment]
 	cacheControl string
 }
@@ -36,7 +35,7 @@ type ContentUploadMetadata struct {
 // Can only do repository "Put" via Upload API
 // Can on
 func NewAttachment(
-	repo content.Repository[*entity.Attachment], // todo, change catalog.Attachment location to more common location (not uc specific)
+	repo content.Repository, // todo, change catalog.Attachment location to more common location (not uc specific)
 	blobRepo blob.Repository,
 	refIDsParser func(url.Values) []string,
 	hideUrl bool,
@@ -56,7 +55,6 @@ func NewAttachment(
 	return &ContentUploadMetadata{
 		ResourceManagerService: &ResourceManagerService[*entity.Attachment]{
 			myContentUC:  uc,
-			allocate:     entity_attachment.New,
 			refIDsParser: refIDsParser,
 		},
 		uc:           uc, // uc with advanced functionality
@@ -170,7 +168,7 @@ func (i *ContentUploadMetadata) Upload(w http.ResponseWriter, r *http.Request, p
 		return
 	}
 
-	attachmentData := i.allocate()
+	attachmentData := &entity.Attachment{}
 	err = json.Unmarshal(_doc, attachmentData)
 	if err != nil {
 		errMessage := serializeError(&types.CommonError{
