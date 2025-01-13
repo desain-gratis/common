@@ -54,7 +54,7 @@ func generateQuery(tableName, queryType string, primaryKey PrimaryKey, upsertDat
 		arguments := generateSetArguments(upsertData)
 		query = `UPDATE ` + tableName + ` SET ` + strings.Join(arguments, ", ") + ` WHERE ` + strings.Join(primaryKeys, " AND ")
 	case "DELETE":
-		query = `DELETE FROM ` + tableName + ` WHERE ` + strings.Join(primaryKeys, " AND ")
+		query = `DELETE FROM ` + tableName + ` WHERE ` + strings.Join(primaryKeys, " AND ") + ` RETURNING id, user_id, payload`
 	}
 
 	query += `;`

@@ -239,7 +239,7 @@ func Parse[T any](in []byte) (T, *types.CommonError) {
 	var t T
 	err := json.Unmarshal(in, &t)
 	if err != nil {
-		log.Error().Msgf("er: %v", string(in))
+		log.Err(err).Msgf("err Parse: '%v'", string(in))
 		return t, &types.CommonError{
 			Errors: []types.Error{
 				{HTTPCode: http.StatusBadRequest, Code: "JSON_DECODE_FAILED", Message: "Failed unmarshal" + err.Error()},

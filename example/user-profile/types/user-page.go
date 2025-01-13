@@ -78,10 +78,12 @@ func (c *UserPage) WithCreatedTime(t time.Time) mycontent.Data {
 	c.CreatedAt = t.Format(time.RFC3339)
 	return c
 }
+
 func (c *UserPage) CreatedTime() time.Time {
 	t, _ := time.Parse(time.RFC3339, c.CreatedAt)
 	return t
 }
+
 func (c *UserPage) RefIDs() []string {
 	// allows to be get by organization id and profile id
 	return []string{c.OrganizationID, c.ProfileId}

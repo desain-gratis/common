@@ -9,9 +9,10 @@ import (
 	"net/url"
 
 	types "github.com/desain-gratis/common/types/http"
+	"github.com/desain-gratis/common/usecase/mycontent"
 )
 
-type client[T any] struct {
+type client[T mycontent.Data] struct {
 	endpoint string
 	token    string
 	tenantID string
@@ -20,7 +21,7 @@ type client[T any] struct {
 	httpc *http.Client
 }
 
-func New[T any](
+func New[T mycontent.Data](
 	httpc *http.Client,
 	endpoint string,
 	tenantID string,

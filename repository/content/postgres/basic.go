@@ -46,8 +46,8 @@ func (h *handler) Get(ctx context.Context, userID, ID string, refIDs []string) (
 		}
 		return
 	}
-
 	defer rows.Close()
+
 	columns, errColumns := rows.Columns()
 	if errColumns != nil {
 		err = &types.CommonError{
@@ -96,7 +96,7 @@ func (h *handler) Post(ctx context.Context, userID, ID string, refIDs []string, 
 
 	q := generateQuery(h.tableName, "INSERT", pKey, UpsertData{PayloadJSON: input.Data})
 	log.Info().Msgf("query nya adalah: %v", q)
-	result, errExec := h.db.QueryContext(ctx, q)
+	rows, errExec := h.db.QueryContext(ctx, q)
 	if errExec != nil {
 		err = &types.CommonError{
 			Errors: []types.Error{
@@ -109,10 +109,11 @@ func (h *handler) Post(ctx context.Context, userID, ID string, refIDs []string, 
 		}
 		return input, err
 	}
+	defer rows.Close()
 
 	var idstr string
-	for result.Next() {
-		_err := result.Scan(&idstr)
+	for rows.Next() {
+		_err := rows.Scan(&idstr)
 		if _err != nil {
 			log.Err(_err).Msgf("ERROR %v", _err)
 			continue
@@ -132,7 +133,7 @@ func (h *handler) Put(ctx context.Context, userID, ID string, refIDs []string, i
 	return h.Post(ctx, userID, ID, refIDs, input)
 }
 
-func (h *handler) Delete(ctx context.Context, userID, ID string, refIDs []string) (_ content.Data, err *types.CommonError) {
+func (h *handler) Delete(ctx context.Context, userID, ID string, refIDs []string) (out content.Data, err *types.CommonError) {
 	pKey := PrimaryKey{
 		UserID: userID,
 		ID:     ID,
@@ -140,20 +141,56 @@ func (h *handler) Delete(ctx context.Context, userID, ID string, refIDs []string
 	}
 
 	q := generateQuery(h.tableName, "DELETE", pKey, UpsertData{})
-	_, errExec := h.db.ExecContext(ctx, q)
+
+	rows, errExec := h.db.QueryContext(ctx, q)
 	if errExec != nil {
 		err = &types.CommonError{
 			Errors: []types.Error{
 				{
 					HTTPCode: http.StatusInternalServerError,
 					Code:     "INTERNAL_SERVER_ERROR",
-					Message:  "Delete query failed: " + q,
+					Message:  "Delete query failed",
 				},
 			},
 		}
+		return content.Data{}, err
+	}
+	defer rows.Close()
+
+	var id string
+	var owner_id string
+	var payload []byte
+
+	var count int
+	for rows.Next() {
+		err := rows.Scan(&id, &owner_id, &payload)
+		if err != nil {
+			log.Err(err).Msgf("Err %v", err)
+			break
+		}
+		count++
 	}
 
-	return
+	if count == 0 {
+		err = &types.CommonError{
+			Errors: []types.Error{
+				{
+					HTTPCode: http.StatusBadRequest,
+					Code:     "NO_OP",
+					Message:  "Deleted record does not exist",
+				},
+			},
+		}
+		return content.Data{}, err
+	}
+
+	out = content.Data{
+		ID:     id,
+		Data:   payload,
+		UserID: owner_id,
+	}
+
+	return out, nil
 }
 
 func (h *handler) GetByID(ctx context.Context, userID, ID string) (_ content.Data, _ *types.CommonError) {
