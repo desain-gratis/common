@@ -45,13 +45,13 @@ func main() {
 }
 
 func doSingleRefID(db *sqlx.DB) {
-	pgDriver := postgres.New[string](db, "test_table_1")
+	pgDriver := postgres.New(db, "test_table_1")
 
-	pgPostData := content.Data[string]{
-		Data: `{"phones":[{"type":"mobile","phone":"001001"},{"type":"fix","phone":"002002"}]}`,
+	pgPostData := content.Data{
+		Data: []byte(`{"phones":[{"type":"mobile","phone":"001001"},{"type":"fix","phone":"002002"}]}`),
 	}
 
-	err := pgDriver.Post(context.Background(), "user_id_val_1", "id_val_1", []string{"ref_id_1_val_1"}, pgPostData)
+	_, err := pgDriver.Post(context.Background(), "user_id_val_1", "id_val_1", []string{"ref_id_1_val_1"}, pgPostData)
 	if err != nil {
 		log.Println("post error", err)
 		return
@@ -67,8 +67,8 @@ func doSingleRefID(db *sqlx.DB) {
 
 	log.Println("done select", resp)
 
-	pgPutData := content.Data[string]{
-		Data: `{"updated_phones":[{"type":"mobile","phone":"001001"},{"type":"fix","phone":"002002"}]}`,
+	pgPutData := content.Data{
+		Data: []byte(`{"updated_phones":[{"type":"mobile","phone":"001001"},{"type":"fix","phone":"002002"}]}`),
 	}
 	_, err = pgDriver.Put(context.Background(), "user_id_val_1", "id_val_1", []string{"ref_id_1_val_1"}, pgPutData)
 	if err != nil {
@@ -86,7 +86,7 @@ func doSingleRefID(db *sqlx.DB) {
 
 	log.Println("done select payload", resp)
 
-	_, err = pgDriver.Put(context.Background(), "user_id_val_1", "id_val_1", []string{"ref_id_1_val_1"}, content.Data[string]{RefIDs: []string{"updated_ref_id_1_val_1"}})
+	_, err = pgDriver.Put(context.Background(), "user_id_val_1", "id_val_1", []string{"ref_id_1_val_1"}, content.Data{RefIDs: []string{"updated_ref_id_1_val_1"}})
 	if err != nil {
 		log.Println("put ref id error", err)
 		return
@@ -119,13 +119,13 @@ func doSingleRefID(db *sqlx.DB) {
 }
 
 func doMultipleRefID(db *sqlx.DB) {
-	pgDriver := postgres.New[string](db, "test_table_2")
+	pgDriver := postgres.New(db, "test_table_2")
 
-	pgPostData := content.Data[string]{
-		Data: `{"phones":[{"type":"mobile","phone":"001001"},{"type":"fix","phone":"002002"}]}`,
+	pgPostData := content.Data{
+		Data: []byte(`{"phones":[{"type":"mobile","phone":"001001"},{"type":"fix","phone":"002002"}]}`),
 	}
 
-	err := pgDriver.Post(context.Background(), "user_id_val_1", "id_val_1", []string{"ref_id_1_val_1", "ref_id_1_val_2"}, pgPostData)
+	_, err := pgDriver.Post(context.Background(), "user_id_val_1", "id_val_1", []string{"ref_id_1_val_1", "ref_id_1_val_2"}, pgPostData)
 	if err != nil {
 		log.Println("post error", err)
 		return
@@ -141,8 +141,8 @@ func doMultipleRefID(db *sqlx.DB) {
 
 	log.Println("done select", resp)
 
-	pgPutData := content.Data[string]{
-		Data: `{"updated_phones":[{"type":"mobile","phone":"001001"},{"type":"fix","phone":"002002"}]}`,
+	pgPutData := content.Data{
+		Data: []byte(`{"updated_phones":[{"type":"mobile","phone":"001001"},{"type":"fix","phone":"002002"}]}`),
 	}
 
 	_, err = pgDriver.Put(context.Background(), "user_id_val_1", "id_val_1", []string{"ref_id_1_val_1", "ref_id_1_val_2"}, pgPutData)
@@ -161,7 +161,7 @@ func doMultipleRefID(db *sqlx.DB) {
 
 	log.Println("done get payload", resp)
 
-	_, err = pgDriver.Put(context.Background(), "user_id_val_1", "id_val_1", []string{"ref_id_1_val_1", "ref_id_1_val_2"}, content.Data[string]{RefIDs: []string{"updated_ref_id_1_val_1", "ref_id_1_val_2"}})
+	_, err = pgDriver.Put(context.Background(), "user_id_val_1", "id_val_1", []string{"ref_id_1_val_1", "ref_id_1_val_2"}, content.Data{RefIDs: []string{"updated_ref_id_1_val_1", "ref_id_1_val_2"}})
 	if err != nil {
 		log.Println("put ref id error", err)
 		return
