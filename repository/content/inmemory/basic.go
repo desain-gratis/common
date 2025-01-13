@@ -1,9 +1,7 @@
 package inmemory
 
 import (
-	"bytes"
 	"context"
-	"encoding/gob"
 	"net/http"
 	"sort"
 	"strconv"
@@ -14,15 +12,15 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-var _ content.Repository[any] = &handler[any]{}
+var _ content.Repository = &handler{}
 
 // limitation can only handle int
-type handler[T any] struct {
+type handler struct {
 	mtx     *sync.Mutex
 	counter int
 
 	indexByUserID     map[string]map[string]struct{}
-	data              map[string]content.Data[T]
+	data              map[string]content.Data
 	enableOverwriteID bool
 }
 
@@ -34,32 +32,27 @@ type handler[T any] struct {
 // enableOverwriteID is for entity that depend on another entity ID to live
 // it allows to PUT using ID even the current user don't have it.
 // as long is the same as the another entity ID
-func New[T any](enableOverwriteID bool) *handler[T] {
-	return &handler[T]{
+func New(enableOverwriteID bool) *handler {
+	return &handler{
 		mtx:               &sync.Mutex{},
 		indexByUserID:     make(map[string]map[string]struct{}),
-		data:              make(map[string]content.Data[T], 0),
+		data:              make(map[string]content.Data, 0),
 		enableOverwriteID: enableOverwriteID,
 	}
 }
 
-func (h *handler[T]) Post(ctx context.Context, userID, ID string, refIDs []string, data content.Data[T]) *types.CommonError {
-	// not used in memory
-	return nil
-}
-
-func (h *handler[T]) Put(ctx context.Context, userID, ID string, refIDs []string, data content.Data[T]) (content.Data[T], *types.CommonError) {
+func (h *handler) Post(ctx context.Context, userID, ID string, refIDs []string, data content.Data) (content.Data, *types.CommonError) {
 	h.mtx.Lock()
 	defer h.mtx.Unlock()
 
-	var result content.Data[T]
+	var result content.Data
 
 	// Check whether this was a overwrite operation
 	if data.ID != "" {
 		byuserID, ok := h.indexByUserID[userID]
 		if !ok && !h.enableOverwriteID {
 			// short circuit not found
-			return content.Data[T]{}, &types.CommonError{
+			return content.Data{}, &types.CommonError{
 				Errors: []types.Error{
 					{
 						Code:     "NOT_FOUND",
@@ -152,7 +145,11 @@ func (h *handler[T]) Put(ctx context.Context, userID, ID string, refIDs []string
 	return h.data[data.ID], nil
 }
 
-func (h *handler[T]) Get(ctx context.Context, userID, ID string, refIDs []string) ([]content.Data[T], *types.CommonError) {
+func (h *handler) Put(ctx context.Context, userID, ID string, refIDs []string, data content.Data) (content.Data, *types.CommonError) {
+	return h.Post(ctx, userID, ID, refIDs, data)
+}
+
+func (h *handler) Get(ctx context.Context, userID, ID string, refIDs []string) ([]content.Data, *types.CommonError) {
 	ids := h.indexByUserID[userID]
 
 	idsarr := make([]string, 0, len(ids))
@@ -160,7 +157,15 @@ func (h *handler[T]) Get(ctx context.Context, userID, ID string, refIDs []string
 		idsarr = append(idsarr, k)
 	}
 
-	result := make([]content.Data[T], 0, len(ids))
+	if ID != "" {
+		res, err := h.getByID(ctx, userID, ID)
+		if err != nil {
+			return []content.Data{}, err
+		}
+		return []content.Data{res}, err
+	}
+
+	result := make([]content.Data, 0, len(ids))
 	for _, id := range idsarr {
 		item := h.data[id]
 		copied, _ := copyData(item.Data)
@@ -175,14 +180,14 @@ func (h *handler[T]) Get(ctx context.Context, userID, ID string, refIDs []string
 	return result, nil
 }
 
-func (h *handler[T]) Delete(ctx context.Context, userID, ID string, refIDs []string) (content.Data[T], *types.CommonError) {
+func (h *handler) Delete(ctx context.Context, userID, ID string, refIDs []string) (content.Data, *types.CommonError) {
 	h.mtx.Lock()
 	defer h.mtx.Unlock()
 
 	ids, ok := h.indexByUserID[userID]
 	if !ok {
 		// not found
-		return content.Data[T]{}, &types.CommonError{
+		return content.Data{}, &types.CommonError{
 			Errors: []types.Error{
 				{
 					HTTPCode: http.StatusNotFound,
@@ -194,7 +199,7 @@ func (h *handler[T]) Delete(ctx context.Context, userID, ID string, refIDs []str
 	}
 
 	if _, ok := ids[ID]; !ok {
-		return content.Data[T]{}, &types.CommonError{
+		return content.Data{}, &types.CommonError{
 			Errors: []types.Error{
 				{
 					HTTPCode: http.StatusNotFound,
@@ -213,11 +218,11 @@ func (h *handler[T]) Delete(ctx context.Context, userID, ID string, refIDs []str
 	return data, nil
 }
 
-func (h *handler[T]) GetByID(ctx context.Context, userID, ID string) (content.Data[T], *types.CommonError) {
+func (h *handler) getByID(_ context.Context, userID, ID string) (content.Data, *types.CommonError) {
 	ids, ok := h.indexByUserID[userID]
 	if !ok {
 		// not found
-		return content.Data[T]{}, &types.CommonError{
+		return content.Data{}, &types.CommonError{
 			Errors: []types.Error{
 				{
 					HTTPCode: http.StatusNotFound,
@@ -228,20 +233,8 @@ func (h *handler[T]) GetByID(ctx context.Context, userID, ID string) (content.Da
 		}
 	}
 
-	if ID == "" {
-		return content.Data[T]{}, &types.CommonError{
-			Errors: []types.Error{
-				{
-					HTTPCode: http.StatusBadRequest,
-					Code:     "BAD_REQUEST",
-					Message:  "Not a valid ID. ID is empty!",
-				},
-			},
-		}
-	}
-
 	if _, ok := ids[ID]; !ok {
-		return content.Data[T]{}, &types.CommonError{
+		return content.Data{}, &types.CommonError{
 			Errors: []types.Error{
 				{
 					HTTPCode: http.StatusNotFound,
@@ -260,15 +253,20 @@ func (h *handler[T]) GetByID(ctx context.Context, userID, ID string) (content.Da
 	return result, nil
 }
 
-func (w *handler[T]) GetByMainRefID(ctx context.Context, userID, mainRefID string) ([]content.Data[T], *types.CommonError) {
+func (w *handler) GetByMainRefID(ctx context.Context, userID, mainRefID string) ([]content.Data, *types.CommonError) {
 	all, err := w.Get(ctx, userID, "", []string{})
 	if err != nil || len(all) == 0 {
 		return all, err
 	}
 
-	filtered := make([]content.Data[T], 0, len(all))
+	filtered := make([]content.Data, 0, len(all))
 	for _, v := range all {
-		if v.ParentID() == mainRefID {
+		parentID := ""
+		if len(v.RefIDs) > 0 {
+			parentID = v.RefIDs[len(v.RefIDs)-1]
+		}
+
+		if parentID == mainRefID {
 			filtered = append(filtered, v)
 		}
 	}
@@ -276,13 +274,8 @@ func (w *handler[T]) GetByMainRefID(ctx context.Context, userID, mainRefID strin
 	return filtered, nil
 }
 
-func copyData[T any](a T) (T, bool) {
-	_buf := make([]byte, 0, 1000)
-	buf := bytes.NewBuffer(_buf)
-	encoder := gob.NewEncoder(buf)
-	decoder := gob.NewDecoder(buf)
-	encoder.Encode(a)
-	var t T
-	decoder.Decode(&t)
-	return t, true
+func copyData(a []byte) ([]byte, bool) {
+	buf := make([]byte, len(a))
+	copy(buf, a)
+	return buf, true
 }

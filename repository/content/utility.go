@@ -50,13 +50,6 @@ func (w *wrapper) Delete(ctx context.Context, userID, ID string, refIDs []string
 	return w.Repository.Delete(ctx, userID, ID, refIDs)
 }
 
-func (w *wrapper) GetByID(ctx context.Context, userID, ID string) (Data, *types.CommonError) {
-	if w.getByID != nil {
-		return w.getByID(ctx, userID, ID)
-	}
-	return w.Repository.GetByID(ctx, userID, ID)
-}
-
 func (w *wrapper) GetByMainRefID(ctx context.Context, userID, mainRefID string) ([]Data, *types.CommonError) {
 	if w.getByMainRefID != nil {
 		return w.getByMainRefID(ctx, userID, mainRefID)
@@ -118,7 +111,7 @@ func Link(a Repository, b Repository) (Repository, Repository) {
 				lock.Lock()
 				defer lock.Unlock()
 
-				_, err := b.GetByID(ctx, userID, ID)
+				_, err := b.Get(ctx, userID, ID, nil)
 				if err != nil {
 					return a.Delete(ctx, userID, ID, refIDs)
 				}
@@ -152,7 +145,7 @@ func Link(a Repository, b Repository) (Repository, Repository) {
 				}
 				// check if exist in the main DB first.
 				// if not we  fail
-				_, err := a.GetByID(ctx, userID, data.ID)
+				_, err := a.Get(ctx, userID, data.ID, nil)
 				if err != nil {
 					return Data{}, &types.CommonError{
 						Errors: []types.Error{
@@ -223,7 +216,7 @@ func Reference(a Repository, b Repository) (Repository, Repository) {
 				}
 				// check if exist in the main DB first.
 				// if not we  fail
-				_, err := a.GetByID(ctx, userID, parentID)
+				_, err := a.Get(ctx, userID, parentID, nil)
 				if err != nil {
 					return Data{}, &types.CommonError{
 						Errors: []types.Error{

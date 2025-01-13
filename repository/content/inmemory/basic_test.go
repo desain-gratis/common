@@ -5,32 +5,21 @@ import (
 	"testing"
 )
 
-type TestType struct {
-	Name string
-	Role []string
-}
-
 func Test_copyData_TestType(t *testing.T) {
 	type args struct {
-		a TestType
+		a []byte
 	}
 	tests := []struct {
 		name string
 		args args
-		want TestType
+		want []byte
 	}{
 		{
 			name: "Test decode encode",
 			args: args{
-				a: TestType{
-					Name: "HELLO",
-					Role: []string{"WORLD", "HAI"},
-				},
+				a: []byte(`{"name" : "hello", "role": ["world", "hai"]}`),
 			},
-			want: TestType{
-				Name: "HELLO",
-				Role: []string{"WORLD", "HAI"},
-			},
+			want: []byte(`{"name" : "hello", "role": ["world", "hai"]}`),
 		},
 	}
 	for _, tt := range tests {

@@ -43,10 +43,6 @@ type Repository interface {
 	Delete(ctx context.Context, userID, ID string, refIDs []string) (Data, *types.CommonError)
 
 	// not used in sql
-	// Get specific data by ID. If not exist, MUST return error
-	GetByID(ctx context.Context, userID, ID string) (Data, *types.CommonError)
-
-	// not used in sql
 	// Main ref if the data is a dependent
 	GetByMainRefID(ctx context.Context, userID, mainRefID string) ([]Data, *types.CommonError)
 }
