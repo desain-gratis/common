@@ -24,9 +24,8 @@ import (
 
 // TODO might be in different folder
 
-type ContentUploadMetadata struct {
-	*ResourceManagerService[*entity.Attachment]
-	repo         content.Repository
+type uploadService struct {
+	*service[*entity.Attachment]
 	uc           mycontent.Attachable[*entity.Attachment]
 	cacheControl string
 }
@@ -42,7 +41,7 @@ func NewAttachment(
 	namespace string, // in blob storage
 	urlFormat mycontent_crud.URLFormat,
 	cacheControl string,
-) *ContentUploadMetadata {
+) *uploadService {
 
 	uc := mycontent_crud.NewAttachment(
 		repo,
@@ -52,8 +51,8 @@ func NewAttachment(
 		urlFormat,
 	)
 
-	return &ContentUploadMetadata{
-		ResourceManagerService: &ResourceManagerService[*entity.Attachment]{
+	return &uploadService{
+		service: &service[*entity.Attachment]{
 			myContentUC:  uc,
 			refIDsParser: refIDsParser,
 		},
@@ -62,7 +61,7 @@ func NewAttachment(
 	}
 }
 
-func (i *ContentUploadMetadata) Get(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+func (i *uploadService) Get(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	var userID string
 	var ID string
 
@@ -85,7 +84,7 @@ func (i *ContentUploadMetadata) Get(w http.ResponseWriter, r *http.Request, p ht
 	isData := r.URL.Query().Get("data")
 
 	if isData != "true" {
-		i.ResourceManagerService.Get(w, r, p)
+		i.service.Get(w, r, p)
 		return
 	}
 
@@ -116,7 +115,7 @@ func (i *ContentUploadMetadata) Get(w http.ResponseWriter, r *http.Request, p ht
 	}
 }
 
-func (i *ContentUploadMetadata) Upload(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+func (i *uploadService) Upload(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	// Read body parse entity and extract metadata
 	r.Body = http.MaxBytesReader(w, r.Body, maximumRequestLengthAttachment)
 

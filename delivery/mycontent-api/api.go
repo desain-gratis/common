@@ -18,7 +18,7 @@ import (
 const maximumRequestLength = 1 << 20
 const maximumRequestLengthAttachment = 100 << 20
 
-type ResourceManagerService[T mycontent.Data] struct {
+type service[T mycontent.Data] struct {
 	myContentUC  mycontent.Usecase[T]
 	refIDsParser func(url.Values) []string
 }
@@ -28,20 +28,20 @@ func New[T mycontent.Data](
 	validate func(T) *types.CommonError,
 	refIDsParser func(url.Values) []string,
 	urlFormat mycontent_crud.URLFormat,
-) *ResourceManagerService[T] {
+) *service[T] {
 	uc := mycontent_crud.New(
 		repo,
 		validate,
 		urlFormat,
 	)
 
-	return &ResourceManagerService[T]{
+	return &service[T]{
 		myContentUC:  uc,
 		refIDsParser: refIDsParser,
 	}
 }
 
-func (i *ResourceManagerService[T]) Put(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+func (i *service[T]) Put(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	// Read body parse entity and extract metadata
 
 	r.Body = http.MaxBytesReader(w, r.Body, maximumRequestLength)
@@ -107,7 +107,7 @@ func (i *ResourceManagerService[T]) Put(w http.ResponseWriter, r *http.Request, 
 	w.Write(payload)
 }
 
-func (i *ResourceManagerService[T]) Get(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+func (i *service[T]) Get(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	var userID string
 	var ID string
 
@@ -153,7 +153,7 @@ func (i *ResourceManagerService[T]) Get(w http.ResponseWriter, r *http.Request, 
 	w.Write(payload)
 }
 
-func (i *ResourceManagerService[T]) Delete(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+func (i *service[T]) Delete(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	userID := r.URL.Query().Get("user_id")
 	if userID == "" {
 		d := serializeError(&types.CommonError{
