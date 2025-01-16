@@ -3,13 +3,12 @@ package main
 import (
 	"context"
 	"net/http"
-	"net/url"
 	"os"
 	"os/signal"
 	"time"
 
 	mycontentapi "github.com/desain-gratis/common/delivery/mycontent-api"
-	"github.com/desain-gratis/common/example/user-profile/types"
+	"github.com/desain-gratis/common/example/user-profile/entity"
 	blob_gcs "github.com/desain-gratis/common/repository/blob/gcs"
 	content_postgres "github.com/desain-gratis/common/repository/content/postgres"
 	"github.com/julienschmidt/httprouter"
@@ -91,25 +90,16 @@ func enableApplicationAPI(
 	)
 	userPageRepo := content_postgres.New(pg, "user_profile_thumbnail")
 
-	organizationHandler := mycontentapi.New(
+	organizationHandler := mycontentapi.New[*entity.Organization](
 		organizationRepo,
-		types.ValidateOrganization,
-		func(v url.Values) []string {
-			// because user profile is the "base", can only accessed by ID or User ID.
-			return make([]string, 0)
-		},
 		func(url, userID string, refID []string, ID string) string {
 			return baseURL + "/user?user_id=" + userID + "&id=" + ID
 		},
+		[]string{},
 	)
 
-	userProfileHandler := mycontentapi.New(
+	userProfileHandler := mycontentapi.New[*entity.UserProfile](
 		userProfileRepo,
-		types.ValidateUserProfile,
-		func(v url.Values) []string {
-			// allow user profile to be queried by org_id
-			return []string{v.Get("org_id")}
-		},
 		func(url, userID string, refID []string, ID string) string {
 			if len(refID) == 0 {
 				log.Error().Msgf("This should not happen")
@@ -117,29 +107,24 @@ func enableApplicationAPI(
 			}
 			return baseURL + "/user?user_id=" + userID + "&org_id=" + refID[0] + "&id=" + ID
 		},
+		[]string{"org_id"},
 	)
 
 	userThumbnailHandler := mycontentapi.NewAttachment(
 		userProfileThumbnailRepo,
 		userProfileBlobRepo,
-		func(v url.Values) []string {
-			return []string{v.Get("user_id")} // user_id acts as ref_id as well
-		},
 		false,               // hide the s3 URL
 		"assets/user/image", // the location in the s3 compatible bucket
 		func(url, userID string, refID []string, ID string) string {
+			// TODO: integrate
 			return baseURL + "/user/thumbnail?user_id=" + userID + "&id=" + ID
 		},
 		"",
+		[]string{"org_id", "profile_id"},
 	)
 
-	userPageHandler := mycontentapi.New(
+	userPageHandler := mycontentapi.New[*entity.UserPage](
 		userPageRepo,
-		types.ValidateUserPage,
-		func(v url.Values) []string {
-			// allow this page to be queried by org_id and profile_id
-			return []string{v.Get("org_id"), v.Get("profile_id")}
-		},
 		func(url, userID string, refID []string, ID string) string {
 			if len(refID) != 2 {
 				log.Error().Msgf("This should not happen")
@@ -147,30 +132,31 @@ func enableApplicationAPI(
 			}
 			return baseURL + "/user?user_id=" + userID + "&org_id=" + refID[0] + "&profile_id=" + refID[1] + "&id=" + ID
 		},
+		[]string{"org_id", "profile_id"},
 	)
 
 	// Organization
 	router.OPTIONS("/org", Empty)
 	router.GET("/org", organizationHandler.Get)
-	router.PUT("/org", organizationHandler.Put)
+	router.POST("/org", organizationHandler.Put)
 	router.DELETE("/org", organizationHandler.Delete)
 
 	// User profile
 	router.OPTIONS("/org/user", Empty)
 	router.GET("/org/user", userProfileHandler.Get)
-	router.PUT("/org/user", userProfileHandler.Put)
+	router.POST("/org/user", userProfileHandler.Put)
 	router.DELETE("/org/user", userProfileHandler.Delete)
 
 	// User thumbnail
 	router.OPTIONS("/org/user/thumbnail", Empty)
 	router.GET("/org/user/thumbnail", userThumbnailHandler.Get)
-	router.PUT("/org/user/thumbnail", userThumbnailHandler.Upload)
+	router.POST("/org/user/thumbnail", userThumbnailHandler.Upload)
 	router.DELETE("/org/user/thumbnail", userThumbnailHandler.Delete)
 
 	// User page
 	router.OPTIONS("/org/user/page", Empty)
 	router.GET("/org/user/page", userPageHandler.Get)
-	router.PUT("/org/user/page", userPageHandler.Put)
+	router.POST("/org/user/page", userPageHandler.Put)
 	router.DELETE("/org/user/page", userPageHandler.Delete)
 }
 

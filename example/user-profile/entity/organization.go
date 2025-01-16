@@ -1,4 +1,4 @@
-package types
+package entity
 
 import (
 	"time"
@@ -85,4 +85,8 @@ func (c *Organization) CreatedTime() time.Time {
 func (c *Organization) RefIDs() []string {
 	// only accessible by user_id or id
 	return []string{}
+}
+
+func (c *Organization) Validate() *types.CommonError {
+	return nil
 }

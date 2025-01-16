@@ -1,4 +1,4 @@
-package types
+package entity
 
 import (
 	"time"
@@ -87,4 +87,8 @@ func (c *UserProfile) CreatedTime() time.Time {
 
 func (c *UserProfile) RefIDs() []string {
 	return []string{c.OrganizationID}
+}
+
+func (c *UserProfile) Validate() *types.CommonError {
+	return nil
 }

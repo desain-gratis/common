@@ -3,8 +3,26 @@ package entity
 import (
 	"time"
 
+	types "github.com/desain-gratis/common/types/http"
 	mycontent "github.com/desain-gratis/common/usecase/mycontent"
 )
+
+type Attachment struct {
+	Id           string   `json:"id,omitempty"`
+	RefIds       []string `json:"ref_id,omitempty"`
+	OwnerId      string   `json:"owner_id,omitempty"`
+	Path         string   `json:"path,omitempty"` // private path of the resource
+	Name         string   `json:"name,omitempty"` // name of the resource
+	Url          string   `json:"url,omitempty"`  // public URL of the resource
+	ContentType  string   `json:"content_type,omitempty"`
+	ContentSize  int64    `json:"content_size,omitempty"`
+	Description  string   `json:"description,omitempty"`
+	Tags         []string `json:"tags,omitempty"` // meta data
+	Ordering     int32    `json:"ordering,omitempty"`
+	ImageDataUrl string   `json:"image_data_url,omitempty"` // image (thumbnail) data URL if applicable
+	CreatedAt    string   `json:"created_at,omitempty"`
+	Hash         string   `json:"hash,omitempty"` // hash of the attachment
+}
 
 func (c *Attachment) WithID(id string) mycontent.Data {
 	c.Id = id
@@ -61,13 +79,18 @@ func (c *Attachment) WithCreatedTime(t time.Time) mycontent.Data {
 	c.CreatedAt = t.Format(time.RFC3339)
 	return c
 }
+
 func (c *Attachment) CreatedTime() time.Time {
 	t, _ := time.Parse(time.RFC3339, c.CreatedAt)
 	return t
 }
 
 func (c *Attachment) RefIDs() []string {
-	return []string{c.ParentID()}
+	return c.RefIds
+}
+
+func (c *Attachment) Validate() *types.CommonError {
+	return nil
 }
 
 // TODO: compare difference / calculate hash

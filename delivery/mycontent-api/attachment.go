@@ -6,7 +6,6 @@ import (
 	"io"
 	"mime"
 	"net/http"
-	"net/url"
 	"strconv"
 
 	"github.com/julienschmidt/httprouter"
@@ -36,11 +35,11 @@ type uploadService struct {
 func NewAttachment(
 	repo content.Repository, // todo, change catalog.Attachment location to more common location (not uc specific)
 	blobRepo blob.Repository,
-	refIDsParser func(url.Values) []string,
 	hideUrl bool,
 	namespace string, // in blob storage
 	urlFormat mycontent_crud.URLFormat,
 	cacheControl string,
+	refParams []string,
 ) *uploadService {
 
 	uc := mycontent_crud.NewAttachment(
@@ -53,8 +52,8 @@ func NewAttachment(
 
 	return &uploadService{
 		service: &service[*entity.Attachment]{
-			myContentUC:  uc,
-			refIDsParser: refIDsParser,
+			myContentUC: uc,
+			refParams:   refParams,
 		},
 		uc:           uc, // uc with advanced functionality
 		cacheControl: cacheControl,
@@ -79,7 +78,10 @@ func (i *uploadService) Get(w http.ResponseWriter, r *http.Request, p httprouter
 
 	ID = r.URL.Query().Get("id")
 
-	refIDs := i.refIDsParser(r.URL.Query())
+	refIDs := make([]string, 0, len(i.refParams))
+	for _, param := range i.refParams {
+		refIDs = append(refIDs, r.URL.Query().Get(param))
+	}
 
 	isData := r.URL.Query().Get("data")
 

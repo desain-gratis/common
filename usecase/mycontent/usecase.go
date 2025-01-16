@@ -17,7 +17,7 @@ type Usecase[T any] interface {
 
 	// Delete your resource here
 	// the implementation can check whether there are linked resource or not
-	Delete(ctx context.Context, userID string, ID string) (T, *types.CommonError)
+	Delete(ctx context.Context, userID string, refIDs []string, ID string) (T, *types.CommonError)
 }
 
 type Attachable[T any] interface {
@@ -38,6 +38,7 @@ type Data interface {
 	Created[Data]
 	ParentID
 	RefIDs
+	Validator
 }
 
 // Mutator or modifier, fluent style
@@ -69,4 +70,8 @@ type Created[T any] interface {
 // Secondary indexes of the content, allowing to be queried other than user ID, parent ID, & user ID
 type RefIDs interface {
 	RefIDs() []string
+}
+
+type Validator interface {
+	Validate() *types.CommonError
 }

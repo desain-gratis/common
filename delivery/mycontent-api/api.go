@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"net/url"
 
 	"github.com/julienschmidt/httprouter"
 	"github.com/rs/zerolog/log"
@@ -19,25 +18,24 @@ const maximumRequestLength = 1 << 20
 const maximumRequestLengthAttachment = 100 << 20
 
 type service[T mycontent.Data] struct {
-	myContentUC  mycontent.Usecase[T]
-	refIDsParser func(url.Values) []string
+	myContentUC mycontent.Usecase[T]
+	refParams   []string
 }
 
 func New[T mycontent.Data](
 	repo content.Repository,
-	validate func(T) *types.CommonError,
-	refIDsParser func(url.Values) []string,
-	urlFormat mycontent_crud.URLFormat,
+	urlFormat mycontent_crud.URLFormat, // TODO: integrate
+	refParams []string,
 ) *service[T] {
-	uc := mycontent_crud.New(
+	uc := mycontent_crud.New[T](
 		repo,
-		validate,
 		urlFormat,
+		refParams,
 	)
 
 	return &service[T]{
-		myContentUC:  uc,
-		refIDsParser: refIDsParser,
+		myContentUC: uc,
+		refParams:   refParams,
 	}
 }
 
@@ -124,7 +122,10 @@ func (i *service[T]) Get(w http.ResponseWriter, r *http.Request, p httprouter.Pa
 	}
 
 	ID = r.URL.Query().Get("id")
-	refIDs := i.refIDsParser(r.URL.Query())
+	refIDs := make([]string, 0, len(i.refParams))
+	for _, param := range i.refParams {
+		refIDs = append(refIDs, r.URL.Query().Get(param))
+	}
 
 	result, errUC := i.myContentUC.Get(r.Context(), userID, refIDs, ID)
 	if errUC != nil {
@@ -167,8 +168,12 @@ func (i *service[T]) Delete(w http.ResponseWriter, r *http.Request, p httprouter
 	}
 
 	ID := r.URL.Query().Get("id")
+	refIDs := make([]string, 0, len(i.refParams))
+	for _, param := range i.refParams {
+		refIDs = append(refIDs, r.URL.Query().Get(param))
+	}
 
-	result, errUC := i.myContentUC.Delete(r.Context(), userID, ID)
+	result, errUC := i.myContentUC.Delete(r.Context(), userID, refIDs, ID)
 	if errUC != nil {
 		errMessage := serializeError(errUC)
 		w.WriteHeader(http.StatusInternalServerError)

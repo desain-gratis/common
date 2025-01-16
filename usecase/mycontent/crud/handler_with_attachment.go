@@ -14,7 +14,6 @@ import (
 	"github.com/desain-gratis/common/repository/content"
 	"github.com/desain-gratis/common/types/entity"
 	types "github.com/desain-gratis/common/types/http"
-	entity_attachment "github.com/desain-gratis/common/types/protobuf-wrapper/attachment"
 	"github.com/desain-gratis/common/usecase/mycontent"
 )
 
@@ -41,7 +40,6 @@ func NewAttachment(
 	return &crudWithAttachment{
 		crud: &crud[*entity.Attachment]{
 			repo:      repo,
-			validate:  entity_attachment.Validate,
 			urlFormat: urlFormat,
 		},
 		blobRepo:  blobRepo,
@@ -107,7 +105,7 @@ func (c *crudWithAttachment) Attach(ctx context.Context, meta *entity.Attachment
 	// TODO: Get all existing data based on user ID, calculate the total size to do validation
 
 	// Check existing, if exist with the same ID, then use existing
-	existing, errUC := c.crud.Get(ctx, meta.OwnerId, []string{meta.RefId}, meta.Id)
+	existing, errUC := c.crud.Get(ctx, meta.OwnerId, meta.RefIds, meta.Id)
 	if errUC != nil {
 		if errUC.Errors[0].HTTPCode != http.StatusNotFound {
 			return nil, errUC
@@ -141,7 +139,7 @@ func (c *crudWithAttachment) Attach(ctx context.Context, meta *entity.Attachment
 	if result != nil {
 		// Server overwritten properties (cannot be modified by user after creation)
 		meta.Id = result.Id
-		meta.RefId = result.RefId
+		meta.RefIds = result.RefIds
 		meta.Url = result.Url
 		meta.OwnerId = result.OwnerId
 		meta.CreatedAt = result.CreatedAt
@@ -215,7 +213,7 @@ func (c *crudWithAttachment) Attach(ctx context.Context, meta *entity.Attachment
 }
 
 // DeleteAttachment generic binary at path
-func (c *crudWithAttachment) Delete(ctx context.Context, userID string, ID string) (*entity.Attachment, *types.CommonError) {
+func (c *crudWithAttachment) Delete(ctx context.Context, userID string, refIDs []string, ID string) (*entity.Attachment, *types.CommonError) {
 	result, err := c.crud.Get(ctx, userID, nil, ID)
 	if err != nil {
 		return nil, err
@@ -226,7 +224,7 @@ func (c *crudWithAttachment) Delete(ctx context.Context, userID string, ID strin
 		return nil, err
 	}
 
-	at, err := c.crud.Delete(ctx, userID, ID)
+	at, err := c.crud.Delete(ctx, userID, refIDs, ID)
 	if err != nil {
 		return nil, err
 	}

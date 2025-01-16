@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/desain-gratis/common/repository/content"
@@ -20,26 +21,26 @@ type URLFormat func(dataPath string, userID string, refID []string, ID string) s
 
 type crud[T mycontent.Data] struct {
 	repo      content.Repository
-	validate  func(T) *types.CommonError
 	urlFormat URLFormat
+	refParams []string
 }
 
 func New[T mycontent.Data](
 	repo content.Repository,
-	validate func(T) *types.CommonError,
 	urlFormat URLFormat,
+	refParams []string,
 ) *crud[T] {
 	return &crud[T]{
 		repo:      repo,
-		validate:  validate,
 		urlFormat: urlFormat,
+		refParams: refParams,
 	}
 }
 
 // Put (create new or overwrite) resource here
 func (c *crud[T]) Put(ctx context.Context, data T) (T, *types.CommonError) {
 	var t T
-	err := c.validate(data)
+	err := data.Validate()
 	if err != nil {
 		return t, err
 	}
@@ -52,11 +53,11 @@ func (c *crud[T]) Put(ctx context.Context, data T) (T, *types.CommonError) {
 		}
 	}
 
-	refIDs := data.RefIDs()
-	if len(refIDs) > 0 {
-		// make sure parent ID is indexed as last entry of the index
-		if refIDs[len(refIDs)-1] != data.ParentID() {
-			refIDs = append(refIDs, data.ParentID())
+	if !isValid(data.RefIDs()) && len(filterEmpty(data.RefIDs())) != len(c.refParams) {
+		return t, &types.CommonError{
+			Errors: []types.Error{
+				{HTTPCode: http.StatusBadRequest, Code: "INVALID_REF", Message: "Make sure all params--" + strings.Join(c.refParams, ",") + "--are filled and not empty"},
+			},
 		}
 	}
 
@@ -83,11 +84,11 @@ func (c *crud[T]) Put(ctx context.Context, data T) (T, *types.CommonError) {
 		}
 	}
 
-	result, err := c.repo.Post(ctx, data.OwnerID(), data.ID(), refIDs, content.Data{
+	result, err := c.repo.Post(ctx, data.OwnerID(), data.ID(), data.RefIDs(), content.Data{
 		ID:         data.ID(), // might be redundant
 		Data:       payload,
 		LastUpdate: time.Now(),
-		RefIDs:     refIDs, // allow to be queried by this indices
+		RefIDs:     data.RefIDs(), // allow to be queried by this indices
 		UserID:     data.OwnerID(),
 	})
 	if err != nil {
@@ -98,8 +99,6 @@ func (c *crud[T]) Put(ctx context.Context, data T) (T, *types.CommonError) {
 	if err != nil {
 		return t, err
 	}
-
-	parsedResult.WithID(result.ID)
 
 	if c.urlFormat != nil {
 		parsedResult.WithURL(
@@ -120,6 +119,19 @@ func (c *crud[T]) Put(ctx context.Context, data T) (T, *types.CommonError) {
 func (c *crud[T]) Get(ctx context.Context, userID string, refIDs []string, ID string) ([]T, *types.CommonError) {
 	// 1. check if there is ID
 	if ID != "" {
+		if !isValid(refIDs) {
+			result := make([]T, 0, 1)
+			return result, &types.CommonError{
+				Errors: []types.Error{
+					{
+						Code:     "NOT_FOUND",
+						HTTPCode: http.StatusNotFound,
+						Message:  "You specify item ID, but some refs are missing--" + strings.Join(c.refParams, ","),
+					},
+				},
+			}
+		}
+
 		result := make([]T, 0, 1)
 
 		d, err := c.repo.Get(ctx, userID, ID, refIDs)
@@ -144,9 +156,6 @@ func (c *crud[T]) Get(ctx context.Context, userID string, refIDs []string, ID st
 			return nil, err
 		}
 
-		parsedResult.
-			WithID(d[0].ID) // should be already fine without this..
-
 		if c.urlFormat != nil {
 			parsedResult.WithURL(c.urlFormat(parsedResult.URL(), parsedResult.OwnerID(), parsedResult.RefIDs(), parsedResult.ID()))
 		}
@@ -155,9 +164,9 @@ func (c *crud[T]) Get(ctx context.Context, userID string, refIDs []string, ID st
 		return result, nil
 	}
 
-	// 2. check if there is main ref ID
-	if len(refIDs) > 0 {
-		ds, err := c.repo.Get(ctx, userID, "", refIDs)
+	// 2. check if there is main ref ID (without ID)
+	if isValid(refIDs) {
+		ds, err := c.repo.Get(ctx, userID, "", filterEmpty(refIDs))
 		if err != nil {
 			return nil, err
 		}
@@ -170,9 +179,6 @@ func (c *crud[T]) Get(ctx context.Context, userID string, refIDs []string, ID st
 				continue
 			}
 
-			parsedResult.
-				WithID(d.ID)
-
 			if c.urlFormat != nil {
 				parsedResult.WithURL(c.urlFormat(parsedResult.URL(), parsedResult.OwnerID(), parsedResult.RefIDs(), parsedResult.ID()))
 			}
@@ -182,7 +188,7 @@ func (c *crud[T]) Get(ctx context.Context, userID string, refIDs []string, ID st
 		return result, nil
 	}
 
-	// 3. get by user ID
+	// 3. get by user ID | TODO DELETE | redundant with above, because empty refIDs is valid as well..
 	ds, err := c.repo.Get(ctx, userID, "", []string{})
 	if err != nil {
 		return nil, err
@@ -196,9 +202,6 @@ func (c *crud[T]) Get(ctx context.Context, userID string, refIDs []string, ID st
 			continue
 		}
 
-		parsedResult.
-			WithID(d.ID)
-
 		if c.urlFormat != nil {
 			parsedResult.WithURL(c.urlFormat(parsedResult.URL(), parsedResult.OwnerID(), parsedResult.RefIDs(), parsedResult.ID()))
 		}
@@ -211,10 +214,21 @@ func (c *crud[T]) Get(ctx context.Context, userID string, refIDs []string, ID st
 
 // Delete your resource here
 // the implementation can check whether there are linked resource or not
-func (c *crud[T]) Delete(ctx context.Context, userID string, ID string) (t T, err *types.CommonError) {
+func (c *crud[T]) Delete(ctx context.Context, userID string, refIDs []string, ID string) (t T, err *types.CommonError) {
+	if !isValid(refIDs) && len(filterEmpty(refIDs)) != len(c.refParams) {
+		return t, &types.CommonError{
+			Errors: []types.Error{
+				{
+					Code:     "NOT_FOUND",
+					HTTPCode: http.StatusNotFound,
+					Message:  "You specify item ID, but some refs are missing--" + strings.Join(c.refParams, ","),
+				},
+			},
+		}
+	}
 
 	// TODO user ID validation
-	d, err := c.repo.Delete(ctx, userID, ID, []string{})
+	d, err := c.repo.Delete(ctx, userID, ID, refIDs)
 	if err != nil {
 		var t T
 		return t, err
@@ -224,9 +238,6 @@ func (c *crud[T]) Delete(ctx context.Context, userID string, ID string) (t T, er
 	if err != nil {
 		return t, err
 	}
-
-	parsedResult.
-		WithID(d.ID)
 
 	if c.urlFormat != nil {
 		parsedResult.WithURL(c.urlFormat(parsedResult.URL(), parsedResult.OwnerID(), parsedResult.RefIDs(), parsedResult.ID()))
@@ -247,4 +258,29 @@ func Parse[T any](in []byte) (T, *types.CommonError) {
 		}
 	}
 	return t, nil
+}
+
+func filterEmpty(arr []string) []string {
+	result := make([]string, 0, len(arr))
+	for _, ar := range arr {
+		if ar != "" {
+			result = append(result, ar)
+		}
+	}
+	return result
+}
+
+func isValid(arr []string) bool {
+	var notEmptyFound bool
+	for i := len(arr) - 1; i >= 0; i-- {
+		v := arr[i]
+		if v == "" {
+			if !notEmptyFound {
+				continue
+			}
+			return false
+		}
+		notEmptyFound = true
+	}
+	return true
 }
