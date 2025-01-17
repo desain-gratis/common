@@ -119,7 +119,7 @@ func (c *crud[T]) Put(ctx context.Context, data T) (T, *types.CommonError) {
 func (c *crud[T]) Get(ctx context.Context, userID string, refIDs []string, ID string) ([]T, *types.CommonError) {
 	// 1. check if there is ID
 	if ID != "" {
-		if !isValid(refIDs) {
+		if !isValid(refIDs) || len(filterEmpty(refIDs)) != len(c.refParams) {
 			result := make([]T, 0, 1)
 			return result, &types.CommonError{
 				Errors: []types.Error{
