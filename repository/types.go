@@ -26,7 +26,6 @@ type (
 		ID             string              `json:"id"`
 		OwnerID        string              `json:"owner_id"`
 		OrganizationID string              `json:"organization_id"`
-		ParentID       string              `json:"parent_id"`
 		DisplayURL     string              `json:"display_url"`
 		Name           string              `json:"name"`
 		DisplayName    string              `json:"display_name"`

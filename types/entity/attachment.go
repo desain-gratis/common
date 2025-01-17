@@ -51,10 +51,6 @@ func (c *Attachment) WithURL(url string) mycontent.Data {
 	return c
 }
 
-func (c *Attachment) ParentID() string {
-	return ""
-}
-
 func (c *Attachment) WithStartTime(t time.Time) mycontent.Data {
 	c.CreatedAt = t.Format(time.RFC3339)
 	return c

@@ -36,7 +36,6 @@ type Data interface {
 	Locatable[Data]
 	Ownership[Data]
 	Created[Data]
-	ParentID
 	RefIDs
 	Validator
 }
@@ -51,10 +50,6 @@ type ID[T any] interface {
 type Locatable[T any] interface {
 	URL() string
 	WithURL(url string) T
-}
-
-type ParentID interface {
-	ParentID() string
 }
 
 type Ownership[T any] interface {

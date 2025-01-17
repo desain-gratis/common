@@ -46,10 +46,6 @@ func (c *UserPage) WithURL(url string) mycontent.Data {
 	return c
 }
 
-func (c *UserPage) ParentID() string {
-	return ""
-}
-
 func ValidateUserPage(c *UserPage) *types.CommonError {
 	return nil
 }

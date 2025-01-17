@@ -47,10 +47,6 @@ func (c *UserProfile) WithURL(url string) mycontent.Data {
 	return c
 }
 
-func (c *UserProfile) ParentID() string {
-	return ""
-}
-
 func ValidateUserProfile(c *UserProfile) *types.CommonError {
 	return nil
 }

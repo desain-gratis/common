@@ -44,10 +44,6 @@ func (c *Organization) WithURL(url string) mycontent.Data {
 	return c
 }
 
-func (c *Organization) ParentID() string {
-	return ""
-}
-
 func ValidateOrganization(c *Organization) *types.CommonError {
 	return nil
 }
