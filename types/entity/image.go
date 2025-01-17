@@ -2,6 +2,7 @@ package entity
 
 // Image, a special type of attachment (have thumbnails and image display configuration)
 type Image struct {
+	Id             string               `json:"id,omitempty"`
 	ThumbnailUrl   string               `json:"thumbnail_url,omitempty"` // smaller version of the image
 	OffsetX        int32                `json:"offset_x,omitempty"`
 	OffsetY        int32                `json:"offset_y,omitempty"`
