@@ -69,7 +69,7 @@ func (r *repo[T]) Update(ctx context.Context, organizationID, id string, refID [
 		Data: payload,
 	}
 
-	_, errUpdate := r.client.Put(ctx, organizationID, id, refID, updateData)
+	_, errUpdate := r.client.Post(ctx, organizationID, id, refID, updateData)
 	if errUpdate != nil {
 		if len(errUpdate.Errors) > 0 {
 			err = fmt.Errorf("failed to update: %s", errUpdate.Errors[0].Message)
@@ -78,6 +78,7 @@ func (r *repo[T]) Update(ctx context.Context, organizationID, id string, refID [
 
 	return
 }
+
 func (r *repo[T]) Delete(ctx context.Context, organizationID, id string, refID []string) (err error) {
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(r.timeoutMs)*time.Millisecond)
 	defer cancel()

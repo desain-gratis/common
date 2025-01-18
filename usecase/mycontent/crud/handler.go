@@ -17,7 +17,7 @@ import (
 var _ mycontent.Usecase[mycontent.Data] = &crud[mycontent.Data]{}
 
 // URLFormat for custom URL (this should be the URL default)
-type URLFormat func(dataPath string, userID string, refID []string, ID string) string
+type URLFormat func(dataPath string, userID string, refIDs []string, ID string) string
 
 type crud[T mycontent.Data] struct {
 	repo      content.Repository
