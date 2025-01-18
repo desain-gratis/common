@@ -84,12 +84,9 @@ func (c *crud[T]) Put(ctx context.Context, data T) (T, *types.CommonError) {
 		}
 	}
 
-	result, err := c.repo.Post(ctx, data.OwnerID(), data.ID(), data.RefIDs(), content.Data{
-		ID:         data.ID(), // might be redundant
-		Data:       payload,
-		LastUpdate: time.Now(),
-		RefIDs:     data.RefIDs(), // allow to be queried by this indices
-		UserID:     data.OwnerID(),
+	result, err := c.repo.Post(ctx, data.OwnerID(), data.RefIDs(), data.ID(), content.Data{
+		Data: payload,
+		Meta: []byte("test meta"),
 	})
 	if err != nil {
 		return t, err
@@ -134,7 +131,7 @@ func (c *crud[T]) Get(ctx context.Context, userID string, refIDs []string, ID st
 
 		result := make([]T, 0, 1)
 
-		d, err := c.repo.Get(ctx, userID, ID, refIDs)
+		d, err := c.repo.Get(ctx, userID, refIDs, ID)
 		if err != nil {
 			return nil, err
 		}
@@ -166,7 +163,7 @@ func (c *crud[T]) Get(ctx context.Context, userID string, refIDs []string, ID st
 
 	// 2. check if there is main ref ID (without ID)
 	if isValid(refIDs) {
-		ds, err := c.repo.Get(ctx, userID, "", filterEmpty(refIDs))
+		ds, err := c.repo.Get(ctx, userID, filterEmpty(refIDs), "")
 		if err != nil {
 			return nil, err
 		}
@@ -189,7 +186,7 @@ func (c *crud[T]) Get(ctx context.Context, userID string, refIDs []string, ID st
 	}
 
 	// 3. get by user ID | TODO DELETE | redundant with above, because empty refIDs is valid as well..
-	ds, err := c.repo.Get(ctx, userID, "", []string{})
+	ds, err := c.repo.Get(ctx, userID, []string{}, "")
 	if err != nil {
 		return nil, err
 	}
@@ -228,7 +225,7 @@ func (c *crud[T]) Delete(ctx context.Context, userID string, refIDs []string, ID
 	}
 
 	// TODO user ID validation
-	d, err := c.repo.Delete(ctx, userID, ID, refIDs)
+	d, err := c.repo.Delete(ctx, userID, refIDs, ID)
 	if err != nil {
 		var t T
 		return t, err

@@ -81,14 +81,14 @@ func enableApplicationAPI(
 		log.Fatal().Msgf("Failed to obtain postgres connection")
 	}
 
-	organizationRepo := content_postgres.New(pg, "organization") // ID overwrite-able / indemppotent (by github)
-	userProfileRepo := content_postgres.New(pg, "user_profile")  // ID overwrite-able / indemppotent (by github)
-	userProfileThumbnailRepo := content_postgres.New(pg, "user_profile_thumbnail")
+	organizationRepo := content_postgres.New(pg, "organization", 0) // ID overwrite-able / indemppotent (by github)
+	userProfileRepo := content_postgres.New(pg, "user_profile", 1)  // ID overwrite-able / indemppotent (by github)
+	userProfileThumbnailRepo := content_postgres.New(pg, "user_profile_thumbnail", 2)
 	userProfileBlobRepo := blob_gcs.New(
 		privateBucketName,
 		privateBucketBaseURL,
 	)
-	userPageRepo := content_postgres.New(pg, "user_profile_thumbnail")
+	userPageRepo := content_postgres.New(pg, "user_profile_thumbnail", 2)
 
 	organizationHandler := mycontentapi.New[*entity.Organization](
 		organizationRepo,
