@@ -148,7 +148,9 @@ func (c *crudWithAttachment) Attach(ctx context.Context, meta *entity.Attachment
 	}
 
 	// The rest can be modified
-	result, errUC = c.crud.Put(ctx, meta)
+	result, errUC = c.crud.Post(ctx, meta, map[string]string{
+		"created_at": time.Now().Format(time.RFC3339),
+	})
 	if errUC != nil {
 		return nil, errUC
 	}
@@ -204,7 +206,7 @@ func (c *crudWithAttachment) Attach(ctx context.Context, meta *entity.Attachment
 	result.Url = repometa.PublicURL // the blob storage URL, not this metadata for this case
 
 	// write back
-	result, err = c.crud.Put(ctx, result)
+	result, err = c.crud.Post(ctx, result, nil)
 	if err != nil {
 		return nil, err
 	}

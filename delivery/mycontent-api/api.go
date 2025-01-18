@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/julienschmidt/httprouter"
 	"github.com/rs/zerolog/log"
@@ -73,7 +74,9 @@ func (i *service[T]) Put(w http.ResponseWriter, r *http.Request, p httprouter.Pa
 	// Basically, the Use case / Repo for put is to Put Identifier to the object if not exist yet
 	// If identifier already exist, previous data will be overwritten
 
-	result, errUC := i.myContentUC.Put(r.Context(), resource)
+	result, errUC := i.myContentUC.Post(r.Context(), resource, map[string]string{
+		"created_at": time.Now().Format(time.RFC3339),
+	})
 	if errUC != nil {
 		d := serializeError(errUC)
 		w.WriteHeader(http.StatusInternalServerError)

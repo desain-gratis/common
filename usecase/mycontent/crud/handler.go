@@ -37,8 +37,8 @@ func New[T mycontent.Data](
 	}
 }
 
-// Put (create new or overwrite) resource here
-func (c *crud[T]) Put(ctx context.Context, data T) (T, *types.CommonError) {
+// Post (create new or overwrite) resource here
+func (c *crud[T]) Post(ctx context.Context, data T, meta any) (T, *types.CommonError) {
 	var t T
 	err := data.Validate()
 	if err != nil {
@@ -84,9 +84,21 @@ func (c *crud[T]) Put(ctx context.Context, data T) (T, *types.CommonError) {
 		}
 	}
 
+	var metaPayload []byte
+	if meta != nil {
+		metaPayload, errMarshal = json.Marshal(meta)
+		if errMarshal != nil {
+			return t, &types.CommonError{
+				Errors: []types.Error{
+					{HTTPCode: http.StatusBadRequest, Code: "JSON_ENCODE_FAILED", Message: "Failed marshal meta"},
+				},
+			}
+		}
+	}
+
 	result, err := c.repo.Post(ctx, data.OwnerID(), data.RefIDs(), data.ID(), content.Data{
 		Data: payload,
-		Meta: []byte("test meta"),
+		Meta: metaPayload,
 	})
 	if err != nil {
 		return t, err

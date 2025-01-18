@@ -19,8 +19,8 @@ type Repository interface {
 type Data struct {
 	// The location of the data in the repository
 	Namespace string
-	ID        string
 	RefIDs    []string
+	ID        string
 
 	// The actual data
 	Data []byte

@@ -9,8 +9,8 @@ import (
 )
 
 type Usecase[T any] interface {
-	// Put (create new or overwrite) resource here
-	Put(ctx context.Context, data T) (T, *types.CommonError)
+	// Post (create new or overwrite) resource here
+	Post(ctx context.Context, data T, meta any) (T, *types.CommonError)
 
 	// Get all of your resource for your user ID here
 	Get(ctx context.Context, userID string, refIDs []string, ID string) ([]T, *types.CommonError)
@@ -70,3 +70,5 @@ type RefIDs interface {
 type Validator interface {
 	Validate() *types.CommonError
 }
+
+// Todo serializable
