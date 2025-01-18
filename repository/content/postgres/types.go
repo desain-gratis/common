@@ -2,13 +2,13 @@ package postgres
 
 type (
 	PrimaryKey struct {
-		UserID string
-		ID     string
-		RefIDs []string
+		Namespace string
+		RefIDs    []string
+		ID        string
 	}
 
 	UpsertData struct {
-		RefIDs      []string // only be used for update query
-		PayloadJSON []byte
+		Data []byte
+		Meta []byte
 	}
 )

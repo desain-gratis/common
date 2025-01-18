@@ -14,8 +14,8 @@ type repo[T any] struct {
 	timeoutMs int
 }
 
-func New[T any](db *sqlx.DB, tableName string, timeoutMs int) i.Repository[T] {
-	client := postgres.New(db, tableName)
+func New[T any](db *sqlx.DB, tableName string, refSize int, timeoutMs int) i.Repository[T] {
+	client := postgres.New(db, tableName, refSize)
 	return &repo[T]{
 		client:    client,
 		tableName: tableName,

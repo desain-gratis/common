@@ -16,20 +16,22 @@ var _ content.Repository = &handler{}
 type handler struct {
 	db        *sqlx.DB
 	tableName string
+	refSize   int
 }
 
-func New(db *sqlx.DB, tableName string) *handler {
+func New(db *sqlx.DB, tableName string, refSize int) *handler {
 	return &handler{
 		db:        db,
 		tableName: tableName,
+		refSize:   refSize,
 	}
 }
 
-func (h *handler) Get(ctx context.Context, userID, ID string, refIDs []string) (resp []content.Data, err *types.CommonError) {
+func (h *handler) Get(ctx context.Context, namespace string, refIDs []string, ID string) (resp []content.Data, err *types.CommonError) {
 	pKey := PrimaryKey{
-		UserID: userID,
-		ID:     ID,
-		RefIDs: refIDs,
+		Namespace: namespace,
+		RefIDs:    refIDs,
+		ID:        ID,
 	}
 
 	q := generateQuery(h.tableName, "SELECT", pKey, UpsertData{})
@@ -87,14 +89,26 @@ func (h *handler) Get(ctx context.Context, userID, ID string, refIDs []string) (
 	return
 }
 
-func (h *handler) Post(ctx context.Context, userID, ID string, refIDs []string, input content.Data) (out content.Data, err *types.CommonError) {
+func (h *handler) Post(ctx context.Context, namespace string, refIDs []string, ID string, input content.Data) (out content.Data, err *types.CommonError) {
 	pKey := PrimaryKey{
-		UserID: userID,
-		ID:     ID,
-		RefIDs: refIDs,
+		Namespace: namespace,
+		ID:        ID,
+		RefIDs:    refIDs,
 	}
 
-	q := generateQuery(h.tableName, "INSERT", pKey, UpsertData{PayloadJSON: input.Data})
+	if len(refIDs) != h.refSize {
+		return input, &types.CommonError{
+			Errors: []types.Error{
+				{
+					HTTPCode: http.StatusInternalServerError,
+					Code:     "INTERNAL_SERVER_ERROR",
+					Message:  "Please specify complete reference",
+				},
+			},
+		}
+	}
+
+	q := generateQuery(h.tableName, "INSERT", pKey, UpsertData{Data: input.Data, Meta: input.Meta})
 	log.Info().Msgf("query nya adalah: %v", q)
 	rows, errExec := h.db.QueryContext(ctx, q)
 	if errExec != nil {
@@ -127,17 +141,11 @@ func (h *handler) Post(ctx context.Context, userID, ID string, refIDs []string, 
 	return input, nil
 }
 
-// Put(ctx context.Context, userID, ID string, refIDs []string, data Data[T]) (Data[T], *types.CommonError)
-
-func (h *handler) Put(ctx context.Context, userID, ID string, refIDs []string, input content.Data) (out content.Data, err *types.CommonError) {
-	return h.Post(ctx, userID, ID, refIDs, input)
-}
-
-func (h *handler) Delete(ctx context.Context, userID, ID string, refIDs []string) (out content.Data, err *types.CommonError) {
+func (h *handler) Delete(ctx context.Context, namespace string, refIDs []string, ID string) (out content.Data, err *types.CommonError) {
 	pKey := PrimaryKey{
-		UserID: userID,
-		ID:     ID,
-		RefIDs: refIDs,
+		Namespace: namespace,
+		RefIDs:    refIDs,
+		ID:        ID,
 	}
 
 	q := generateQuery(h.tableName, "DELETE", pKey, UpsertData{})
@@ -158,12 +166,12 @@ func (h *handler) Delete(ctx context.Context, userID, ID string, refIDs []string
 	defer rows.Close()
 
 	var id string
-	var owner_id string
+	var resultNamespace string
 	var payload []byte
 
 	var count int
 	for rows.Next() {
-		err := rows.Scan(&id, &owner_id, &payload)
+		err := rows.Scan(&id, &resultNamespace, &payload)
 		if err != nil {
 			log.Err(err).Msgf("Err %v", err)
 			break
@@ -185,20 +193,10 @@ func (h *handler) Delete(ctx context.Context, userID, ID string, refIDs []string
 	}
 
 	out = content.Data{
-		ID:     id,
-		Data:   payload,
-		UserID: owner_id,
+		ID:        id,
+		Data:      payload,
+		Namespace: resultNamespace,
 	}
 
 	return out, nil
-}
-
-func (h *handler) GetByID(ctx context.Context, userID, ID string) (_ content.Data, _ *types.CommonError) {
-	// not used
-	return
-}
-
-func (h *handler) GetByMainRefID(ctx context.Context, userID, mainRefID string) (_ []content.Data, _ *types.CommonError) {
-	// not used
-	return
 }

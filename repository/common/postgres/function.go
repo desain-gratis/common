@@ -13,7 +13,7 @@ func (r repo[T]) Get(ctx context.Context, organizationID, id string, refID []str
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(r.timeoutMs)*time.Millisecond)
 	defer cancel()
 
-	responses, errGet := r.client.Get(ctx, organizationID, id, refID)
+	responses, errGet := r.client.Get(ctx, organizationID, refID, id)
 	if errGet != nil {
 		if len(errGet.Errors) > 0 {
 			err = fmt.Errorf("failed to get: %s", errGet.Errors[0].Message)
@@ -46,7 +46,7 @@ func (r *repo[T]) Insert(ctx context.Context, organizationID, id string, refID [
 		Data: payload,
 	}
 
-	_, errInsert := r.client.Post(ctx, organizationID, id, refID, postData)
+	_, errInsert := r.client.Post(ctx, organizationID, refID, id, postData)
 	if errInsert != nil {
 		if len(errInsert.Errors) > 0 {
 			err = fmt.Errorf("failed to insert: %s", errInsert.Errors[0].Message)
@@ -69,7 +69,7 @@ func (r *repo[T]) Update(ctx context.Context, organizationID, id string, refID [
 		Data: payload,
 	}
 
-	_, errUpdate := r.client.Post(ctx, organizationID, id, refID, updateData)
+	_, errUpdate := r.client.Post(ctx, organizationID, refID, id, updateData)
 	if errUpdate != nil {
 		if len(errUpdate.Errors) > 0 {
 			err = fmt.Errorf("failed to update: %s", errUpdate.Errors[0].Message)
@@ -83,7 +83,7 @@ func (r *repo[T]) Delete(ctx context.Context, organizationID, id string, refID [
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(r.timeoutMs)*time.Millisecond)
 	defer cancel()
 
-	_, errDelete := r.client.Delete(ctx, organizationID, id, refID)
+	_, errDelete := r.client.Delete(ctx, organizationID, refID, id)
 	if errDelete != nil {
 		if len(errDelete.Errors) > 0 {
 			err = fmt.Errorf("failed to delete: %s", errDelete.Errors[0].Message)
