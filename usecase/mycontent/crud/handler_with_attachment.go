@@ -105,7 +105,7 @@ func (c *crudWithAttachment) Attach(ctx context.Context, meta *entity.Attachment
 	// TODO: Get all existing data based on user ID, calculate the total size to do validation
 
 	// Check existing, if exist with the same ID, then use existing
-	existing, errUC := c.crud.Get(ctx, meta.OwnerId, meta.RefIds, meta.Id)
+	existing, errUC := c.crud.Get(ctx, meta.Namespace(), meta.RefIds, meta.Id)
 	if errUC != nil {
 		if errUC.Errors[0].HTTPCode != http.StatusNotFound {
 			return nil, errUC

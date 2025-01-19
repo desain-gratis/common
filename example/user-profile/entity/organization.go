@@ -26,12 +26,12 @@ func (c *Organization) ID() string {
 	return c.Id
 }
 
-func (c *Organization) WithOwnerID(id string) mycontent.Data {
+func (c *Organization) WithNamespace(id string) mycontent.Data {
 	c.OwnerId = id
 	return c
 }
 
-func (c *Organization) OwnerID() string {
+func (c *Organization) Namespace() string {
 	return c.OwnerId
 }
 

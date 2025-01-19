@@ -26,12 +26,12 @@ func (c *File) ID() string {
 	return c.Id
 }
 
-func (c *File) WithOwnerID(id string) mycontent.Data {
+func (c *File) WithNamespace(id string) mycontent.Data {
 	c.OwnerId = id
 	return c
 }
 
-func (c *File) OwnerID() string {
+func (c *File) Namespace() string {
 	return c.OwnerId
 }
 

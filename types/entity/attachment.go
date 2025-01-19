@@ -33,12 +33,12 @@ func (c *Attachment) ID() string {
 	return c.Id
 }
 
-func (c *Attachment) WithOwnerID(id string) mycontent.Data {
+func (c *Attachment) WithNamespace(id string) mycontent.Data {
 	c.OwnerId = id
 	return c
 }
 
-func (c *Attachment) OwnerID() string {
+func (c *Attachment) Namespace() string {
 	return c.OwnerId
 }
 

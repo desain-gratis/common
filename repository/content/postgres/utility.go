@@ -13,7 +13,7 @@ const (
 	COLUMN_NAME_ID        = "id"
 	COLUMN_NAME_DATA      = "data"
 	COLUMN_NAME_META      = "meta"
-	COLUMN_NAME_NAMESPACE = "user_id"
+	COLUMN_NAME_NAMESPACE = "namespace"
 )
 
 func generateQuery(tableName, queryType string, primaryKey PrimaryKey, upsertData UpsertData) (query string) {

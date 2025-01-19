@@ -45,10 +45,10 @@ func (c *crud[T]) Post(ctx context.Context, data T, meta any) (T, *types.CommonE
 		return t, err
 	}
 
-	if data.OwnerID() == "" {
+	if data.Namespace() == "" {
 		return t, &types.CommonError{
 			Errors: []types.Error{
-				{HTTPCode: http.StatusBadRequest, Code: "MISSING_OWNER_ID_IN_DATA", Message: "Please specify content owner ID"},
+				{HTTPCode: http.StatusBadRequest, Code: "MISSING_NAMESPACE_IN_DATA", Message: "Please specify content owner ID"},
 			},
 		}
 	}
@@ -96,7 +96,7 @@ func (c *crud[T]) Post(ctx context.Context, data T, meta any) (T, *types.CommonE
 		}
 	}
 
-	result, err := c.repo.Post(ctx, data.OwnerID(), data.RefIDs(), data.ID(), content.Data{
+	result, err := c.repo.Post(ctx, data.Namespace(), data.RefIDs(), data.ID(), content.Data{
 		Data: payload,
 		Meta: metaPayload,
 	})
@@ -113,7 +113,7 @@ func (c *crud[T]) Post(ctx context.Context, data T, meta any) (T, *types.CommonE
 		parsedResult.WithURL(
 			c.urlFormat(
 				parsedResult.URL(),
-				parsedResult.OwnerID(),
+				parsedResult.Namespace(),
 				parsedResult.RefIDs(),
 				parsedResult.ID(),
 			),
@@ -166,7 +166,7 @@ func (c *crud[T]) Get(ctx context.Context, userID string, refIDs []string, ID st
 		}
 
 		if c.urlFormat != nil {
-			parsedResult.WithURL(c.urlFormat(parsedResult.URL(), parsedResult.OwnerID(), parsedResult.RefIDs(), parsedResult.ID()))
+			parsedResult.WithURL(c.urlFormat(parsedResult.URL(), parsedResult.Namespace(), parsedResult.RefIDs(), parsedResult.ID()))
 		}
 
 		result = append(result, parsedResult)
@@ -189,7 +189,7 @@ func (c *crud[T]) Get(ctx context.Context, userID string, refIDs []string, ID st
 			}
 
 			if c.urlFormat != nil {
-				parsedResult.WithURL(c.urlFormat(parsedResult.URL(), parsedResult.OwnerID(), parsedResult.RefIDs(), parsedResult.ID()))
+				parsedResult.WithURL(c.urlFormat(parsedResult.URL(), parsedResult.Namespace(), parsedResult.RefIDs(), parsedResult.ID()))
 			}
 
 			result = append(result, parsedResult)
@@ -212,7 +212,7 @@ func (c *crud[T]) Get(ctx context.Context, userID string, refIDs []string, ID st
 		}
 
 		if c.urlFormat != nil {
-			parsedResult.WithURL(c.urlFormat(parsedResult.URL(), parsedResult.OwnerID(), parsedResult.RefIDs(), parsedResult.ID()))
+			parsedResult.WithURL(c.urlFormat(parsedResult.URL(), parsedResult.Namespace(), parsedResult.RefIDs(), parsedResult.ID()))
 		}
 
 		result = append(result, parsedResult)
@@ -249,7 +249,7 @@ func (c *crud[T]) Delete(ctx context.Context, userID string, refIDs []string, ID
 	}
 
 	if c.urlFormat != nil {
-		parsedResult.WithURL(c.urlFormat(parsedResult.URL(), parsedResult.OwnerID(), parsedResult.RefIDs(), parsedResult.ID()))
+		parsedResult.WithURL(c.urlFormat(parsedResult.URL(), parsedResult.Namespace(), parsedResult.RefIDs(), parsedResult.ID()))
 	}
 
 	return parsedResult, nil

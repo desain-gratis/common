@@ -34,7 +34,7 @@ type Data interface {
 
 	ID[Data]
 	Locatable[Data]
-	Ownership[Data]
+	Namespace[Data]
 	Created[Data]
 	RefIDs
 	Validator
@@ -52,9 +52,9 @@ type Locatable[T any] interface {
 	WithURL(url string) T
 }
 
-type Ownership[T any] interface {
-	WithOwnerID(id string) T
-	OwnerID() string
+type Namespace[T any] interface {
+	WithNamespace(id string) T
+	Namespace() string
 }
 
 type Created[T any] interface {

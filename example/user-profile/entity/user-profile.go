@@ -29,12 +29,12 @@ func (c *UserProfile) ID() string {
 	return c.Id
 }
 
-func (c *UserProfile) WithOwnerID(id string) mycontent.Data {
+func (c *UserProfile) WithNamespace(id string) mycontent.Data {
 	c.OwnerId = id
 	return c
 }
 
-func (c *UserProfile) OwnerID() string {
+func (c *UserProfile) Namespace() string {
 	return c.OwnerId
 }
 

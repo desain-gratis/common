@@ -43,12 +43,12 @@ func (c *Image) ID() string {
 	return c.Id
 }
 
-func (c *Image) WithOwnerID(id string) mycontent.Data {
+func (c *Image) WithNamespace(id string) mycontent.Data {
 	c.OwnerId = id
 	return c
 }
 
-func (c *Image) OwnerID() string {
+func (c *Image) Namespace() string {
 	return c.OwnerId
 }
 
