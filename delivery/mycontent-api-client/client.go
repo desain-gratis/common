@@ -13,10 +13,10 @@ import (
 )
 
 type client[T mycontent.Data] struct {
-	endpoint string
-	token    string
-	tenantID string
-	userID   string
+	endpoint  string
+	token     string
+	namespace string
+	userID    string
 
 	httpc *http.Client
 }
@@ -24,14 +24,14 @@ type client[T mycontent.Data] struct {
 func New[T mycontent.Data](
 	httpc *http.Client,
 	endpoint string,
-	tenantID string,
+	namespace string,
 	userID string,
 ) *client[T] {
 	return &client[T]{
-		httpc:    httpc,
-		endpoint: endpoint,
-		tenantID: tenantID,
-		userID:   userID,
+		httpc:     httpc,
+		endpoint:  endpoint,
+		namespace: namespace,
+		userID:    userID,
 	}
 }
 
@@ -71,7 +71,7 @@ func (c *client[T]) Delete(ctx context.Context, ownerID string, refIDs map[strin
 	req = req.WithContext(ctx)
 	req.Header.Add("Authorization", "Bearer "+c.token)
 	req.Header.Add("X-User-Id", c.userID)
-	req.Header.Add("X-Tenant-Id", c.tenantID)
+	req.Header.Add("X-Namespace", c.namespace)
 
 	resp, err := c.httpc.Do(req)
 	if err != nil {
@@ -142,7 +142,7 @@ func (c *client[T]) Get(ctx context.Context, ownerID string, refIDs map[string]s
 
 	req.Header.Add("Authorization", "Bearer "+c.token)
 	req.Header.Add("X-User-Id", c.userID)
-	req.Header.Add("X-Tenant-Id", c.tenantID)
+	req.Header.Add("X-Namespace", c.namespace)
 
 	// sff udrt sorg
 
@@ -188,7 +188,7 @@ func (c *client[T]) Get(ctx context.Context, ownerID string, refIDs map[string]s
 
 }
 
-func (c *client[T]) Put(ctx context.Context, data T) (result T, errUC *types.CommonError) {
+func (c *client[T]) Post(ctx context.Context, data T) (result T, errUC *types.CommonError) {
 	var t T
 	payload, err := json.Marshal(data)
 	if err != nil {
@@ -199,7 +199,7 @@ func (c *client[T]) Put(ctx context.Context, data T) (result T, errUC *types.Com
 		}
 	}
 
-	req, err := http.NewRequest(http.MethodPut, c.endpoint, bytes.NewReader(payload))
+	req, err := http.NewRequest(http.MethodPost, c.endpoint, bytes.NewReader(payload))
 	if err != nil {
 		return t, &types.CommonError{
 			Errors: []types.Error{
@@ -212,7 +212,7 @@ func (c *client[T]) Put(ctx context.Context, data T) (result T, errUC *types.Com
 
 	req.Header.Add("Authorization", "Bearer "+c.token)
 	req.Header.Add("X-User-Id", c.userID)
-	req.Header.Add("X-Tenant-Id", c.tenantID)
+	req.Header.Add("X-Namespace", c.namespace)
 
 	resp, err := c.httpc.Do(req)
 	if err != nil {

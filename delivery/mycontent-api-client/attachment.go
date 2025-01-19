@@ -26,7 +26,7 @@ func (a *Attachment) Upload(ctx context.Context, metadata *entity.Attachment, fr
 	mwriter := multipart.NewWriter(writer)
 	defer reqbody.Close()
 
-	req, err := http.NewRequest(http.MethodPut, a.endpoint, reqbody)
+	req, err := http.NewRequest(http.MethodPost, a.endpoint, reqbody)
 	if err != nil {
 		return nil, &types.CommonError{
 			Errors: []types.Error{
@@ -39,7 +39,7 @@ func (a *Attachment) Upload(ctx context.Context, metadata *entity.Attachment, fr
 	req.Header.Add("Content-Type", mwriter.FormDataContentType())
 	req.Header.Add("Authorization", "Bearer "+a.token)
 	req.Header.Add("X-User-Id", a.userID)
-	req.Header.Add("X-Tenant-Id", a.tenantID)
+	req.Header.Add("X-Namespace", a.namespace)
 
 	errChan := make(chan types.CommonError)
 
