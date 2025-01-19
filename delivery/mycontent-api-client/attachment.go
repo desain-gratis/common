@@ -21,7 +21,7 @@ type Attachment struct {
 }
 
 // Upload attachment
-func (a *Attachment) Upload(ctx context.Context, metadata *entity.Attachment, fromPath string, fromMemory []byte) (authResp *entity.Attachment, errUC *types.CommonError) {
+func (a *Attachment) Upload(ctx context.Context, namespace string, metadata *entity.Attachment, fromPath string, fromMemory []byte) (authResp *entity.Attachment, errUC *types.CommonError) {
 	reqbody, writer := io.Pipe()
 	mwriter := multipart.NewWriter(writer)
 	defer reqbody.Close()
@@ -38,8 +38,7 @@ func (a *Attachment) Upload(ctx context.Context, metadata *entity.Attachment, fr
 
 	req.Header.Add("Content-Type", mwriter.FormDataContentType())
 	req.Header.Add("Authorization", "Bearer "+a.token)
-	req.Header.Add("X-User-Id", a.userID)
-	req.Header.Add("X-Namespace", a.namespace)
+	req.Header.Add("X-Namespace", namespace)
 
 	errChan := make(chan types.CommonError)
 

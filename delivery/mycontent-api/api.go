@@ -109,14 +109,11 @@ func (i *service[T]) Put(w http.ResponseWriter, r *http.Request, p httprouter.Pa
 }
 
 func (i *service[T]) Get(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	var userID string
-	var ID string
-
-	userID = r.URL.Query().Get("user_id")
-	if userID == "" {
+	namespace := r.Header.Get("X-Namespace")
+	if namespace == "" {
 		d := serializeError(&types.CommonError{
 			Errors: []types.Error{
-				{HTTPCode: http.StatusBadRequest, Code: "EMPTY_USER_ID", Message: "Please specify 'user_id'"},
+				{HTTPCode: http.StatusBadRequest, Code: "EMPTY_NAMESPACE", Message: "Please specify header 'X-Namespace'"},
 			},
 		})
 		w.WriteHeader(http.StatusBadRequest)
@@ -124,13 +121,13 @@ func (i *service[T]) Get(w http.ResponseWriter, r *http.Request, p httprouter.Pa
 		return
 	}
 
-	ID = r.URL.Query().Get("id")
+	ID := r.URL.Query().Get("id")
 	refIDs := make([]string, 0, len(i.refParams))
 	for _, param := range i.refParams {
 		refIDs = append(refIDs, r.URL.Query().Get(param))
 	}
 
-	result, errUC := i.myContentUC.Get(r.Context(), userID, refIDs, ID)
+	result, errUC := i.myContentUC.Get(r.Context(), namespace, refIDs, ID)
 	if errUC != nil {
 		errMessage := serializeError(errUC)
 		w.WriteHeader(http.StatusInternalServerError)
@@ -158,8 +155,8 @@ func (i *service[T]) Get(w http.ResponseWriter, r *http.Request, p httprouter.Pa
 }
 
 func (i *service[T]) Delete(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	userID := r.URL.Query().Get("user_id")
-	if userID == "" {
+	namespace := r.Header.Get("X-Namespace")
+	if namespace == "" {
 		d := serializeError(&types.CommonError{
 			Errors: []types.Error{
 				{HTTPCode: http.StatusBadRequest, Code: "EMPTY_USER_ID", Message: "Please specify 'user_id'"},
@@ -176,7 +173,7 @@ func (i *service[T]) Delete(w http.ResponseWriter, r *http.Request, p httprouter
 		refIDs = append(refIDs, r.URL.Query().Get(param))
 	}
 
-	result, errUC := i.myContentUC.Delete(r.Context(), userID, refIDs, ID)
+	result, errUC := i.myContentUC.Delete(r.Context(), namespace, refIDs, ID)
 	if errUC != nil {
 		errMessage := serializeError(errUC)
 		w.WriteHeader(http.StatusInternalServerError)

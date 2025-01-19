@@ -13,10 +13,8 @@ import (
 )
 
 type client[T mycontent.Data] struct {
-	endpoint  string
-	token     string
-	namespace string
-	userID    string
+	endpoint string
+	token    string
 
 	httpc *http.Client
 }
@@ -24,14 +22,10 @@ type client[T mycontent.Data] struct {
 func New[T mycontent.Data](
 	httpc *http.Client,
 	endpoint string,
-	namespace string,
-	userID string,
 ) *client[T] {
 	return &client[T]{
-		httpc:     httpc,
-		endpoint:  endpoint,
-		namespace: namespace,
-		userID:    userID,
+		httpc:    httpc,
+		endpoint: endpoint,
 	}
 }
 
@@ -39,7 +33,7 @@ func (c *client[T]) WithToken(token string) {
 	c.token = token
 }
 
-func (c *client[T]) Delete(ctx context.Context, ownerID string, refIDs map[string]string, ID string) (result T, errUC *types.CommonError) {
+func (c *client[T]) Delete(ctx context.Context, namespace string, refIDs map[string]string, ID string) (result T, errUC *types.CommonError) {
 	wer, err := url.Parse(c.endpoint)
 	if err != nil {
 		return result, &types.CommonError{
@@ -50,7 +44,6 @@ func (c *client[T]) Delete(ctx context.Context, ownerID string, refIDs map[strin
 	}
 
 	v := wer.Query()
-	v.Add("owner_id", c.userID)
 	v.Add("id", ID)
 
 	for param, value := range refIDs {
@@ -70,8 +63,7 @@ func (c *client[T]) Delete(ctx context.Context, ownerID string, refIDs map[strin
 
 	req = req.WithContext(ctx)
 	req.Header.Add("Authorization", "Bearer "+c.token)
-	req.Header.Add("X-User-Id", c.userID)
-	req.Header.Add("X-Namespace", c.namespace)
+	req.Header.Add("X-Namespace", namespace)
 
 	resp, err := c.httpc.Do(req)
 	if err != nil {
@@ -109,7 +101,7 @@ func (c *client[T]) Delete(ctx context.Context, ownerID string, refIDs map[strin
 	return cr.Success, nil
 }
 
-func (c *client[T]) Get(ctx context.Context, ownerID string, refIDs map[string]string, ID string) (result []T, errUC *types.CommonError) {
+func (c *client[T]) Get(ctx context.Context, namespace string, refIDs map[string]string, ID string) (result []T, errUC *types.CommonError) {
 	wer, err := url.Parse(c.endpoint)
 	if err != nil {
 		return result, &types.CommonError{
@@ -120,7 +112,7 @@ func (c *client[T]) Get(ctx context.Context, ownerID string, refIDs map[string]s
 	}
 
 	v := wer.Query()
-	v.Add("owner_id", ownerID)
+	v.Add("owner_id", namespace)
 	v.Add("id", ID)
 
 	for param, value := range refIDs {
@@ -141,8 +133,7 @@ func (c *client[T]) Get(ctx context.Context, ownerID string, refIDs map[string]s
 	req = req.WithContext(ctx)
 
 	req.Header.Add("Authorization", "Bearer "+c.token)
-	req.Header.Add("X-User-Id", c.userID)
-	req.Header.Add("X-Namespace", c.namespace)
+	req.Header.Add("X-Namespace", namespace)
 
 	// sff udrt sorg
 
@@ -211,8 +202,7 @@ func (c *client[T]) Post(ctx context.Context, data T) (result T, errUC *types.Co
 	req = req.WithContext(ctx)
 
 	req.Header.Add("Authorization", "Bearer "+c.token)
-	req.Header.Add("X-User-Id", c.userID)
-	req.Header.Add("X-Namespace", c.namespace)
+	req.Header.Add("X-Namespace", data.Namespace())
 
 	resp, err := c.httpc.Do(req)
 	if err != nil {

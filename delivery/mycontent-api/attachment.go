@@ -61,11 +61,8 @@ func NewAttachment(
 }
 
 func (i *uploadService) Get(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	var userID string
-	var ID string
-
-	userID = r.URL.Query().Get("user_id")
-	if userID == "" {
+	namespace := r.Header.Get("X-Namespace")
+	if namespace == "" {
 		d := serializeError(&types.CommonError{
 			Errors: []types.Error{
 				{HTTPCode: http.StatusBadRequest, Code: "EMPTY_USER_ID", Message: "Please specify 'user_id'"},
@@ -76,7 +73,7 @@ func (i *uploadService) Get(w http.ResponseWriter, r *http.Request, p httprouter
 		return
 	}
 
-	ID = r.URL.Query().Get("id")
+	ID := r.URL.Query().Get("id")
 
 	refIDs := make([]string, 0, len(i.refParams))
 	for _, param := range i.refParams {
@@ -90,7 +87,7 @@ func (i *uploadService) Get(w http.ResponseWriter, r *http.Request, p httprouter
 		return
 	}
 
-	payload, meta, errUC := i.uc.GetAttachment(r.Context(), userID, refIDs, ID)
+	payload, meta, errUC := i.uc.GetAttachment(r.Context(), namespace, refIDs, ID)
 	if errUC != nil {
 		errMessage := serializeError(errUC)
 		w.WriteHeader(http.StatusInternalServerError)
