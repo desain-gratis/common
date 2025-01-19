@@ -1,4 +1,4 @@
-package mycontent
+package mycontentapiclient
 
 import (
 	"context"
@@ -16,12 +16,26 @@ import (
 )
 
 // Attachment is a specific type of client
-type Attachment struct {
+type attachmentClient struct {
 	client[*entity.Attachment]
 }
 
+func NewAttachment(
+	httpc *http.Client,
+	endpoint string,
+	refsParam []string,
+) *attachmentClient {
+	return &attachmentClient{
+		client: client[*entity.Attachment]{
+			httpc:     httpc,
+			endpoint:  endpoint,
+			refsParam: refsParam,
+		},
+	}
+}
+
 // Upload attachment
-func (a *Attachment) Upload(ctx context.Context, namespace string, metadata *entity.Attachment, fromPath string, fromMemory []byte) (authResp *entity.Attachment, errUC *types.CommonError) {
+func (a *attachmentClient) Upload(ctx context.Context, namespace string, metadata *entity.Attachment, fromPath string, fromMemory []byte) (authResp *entity.Attachment, errUC *types.CommonError) {
 	reqbody, writer := io.Pipe()
 	mwriter := multipart.NewWriter(writer)
 	defer reqbody.Close()

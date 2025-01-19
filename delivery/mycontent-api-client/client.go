@@ -1,4 +1,4 @@
-package mycontent
+package mycontentapiclient
 
 import (
 	"bytes"
@@ -13,8 +13,9 @@ import (
 )
 
 type client[T mycontent.Data] struct {
-	endpoint string
-	token    string
+	endpoint  string
+	token     string
+	refsParam []string
 
 	httpc *http.Client
 }
@@ -22,10 +23,12 @@ type client[T mycontent.Data] struct {
 func New[T mycontent.Data](
 	httpc *http.Client,
 	endpoint string,
+	refsParam []string,
 ) *client[T] {
 	return &client[T]{
-		httpc:    httpc,
-		endpoint: endpoint,
+		httpc:     httpc,
+		endpoint:  endpoint,
+		refsParam: refsParam,
 	}
 }
 

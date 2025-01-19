@@ -5,6 +5,7 @@ go 1.22.0
 require (
 	cloud.google.com/go/secretmanager v1.13.1
 	cloud.google.com/go/storage v1.42.0
+	github.com/disintegration/imaging v1.6.2
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/golang-jwt/jwt v3.2.2+incompatible
 	github.com/google/uuid v1.6.0
@@ -12,10 +13,12 @@ require (
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/julienschmidt/httprouter v1.3.0
 	github.com/keenangebze/gockle v0.0.0-20230217041857-980d2a32e9d6
+	github.com/kolesa-team/go-webp v1.0.4
 	github.com/lestrrat-go/jwx v1.2.30
 	github.com/lib/pq v1.10.9
 	github.com/rs/zerolog v1.33.0
 	golang.org/x/crypto v0.25.0
+	golang.org/x/image v0.0.0-20210628002857-a66eb6448b8d
 	golang.org/x/oauth2 v0.21.0
 	golang.org/x/sync v0.10.0
 	google.golang.org/api v0.185.0
