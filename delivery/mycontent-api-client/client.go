@@ -35,7 +35,7 @@ func New[T mycontent.Data](
 	}
 }
 
-func (c *client[T]) WithAuthorization(token string) {
+func (c *client[T]) WithToken(token string) {
 	c.token = token
 }
 

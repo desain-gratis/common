@@ -18,6 +18,7 @@ const (
 
 func generateQuery(tableName, queryType string, primaryKey PrimaryKey, upsertData UpsertData) (query string) {
 	// primaryKeys is used by SELECT, UPDATE, DELETE query
+	var pkColumns []string
 	var primaryKeys []string
 	var columns, values []string
 
@@ -44,6 +45,8 @@ func generateQuery(tableName, queryType string, primaryKey PrimaryKey, upsertDat
 		primaryKeys = append(primaryKeys, column+" = "+values[i])
 	}
 
+	pkColumns = columns
+
 	switch queryType {
 	case "SELECT":
 		var whereClause string
@@ -56,7 +59,7 @@ func generateQuery(tableName, queryType string, primaryKey PrimaryKey, upsertDat
 	case "INSERT":
 		columns = append(columns, COLUMN_NAME_DATA, COLUMN_NAME_META)
 		values = append(values, `'`+string(upsertData.Data)+`'::jsonb`, `'`+string(upsertData.Meta)+`'::jsonb`)
-		query = `INSERT INTO ` + tableName + `(` + strings.Join(columns, ", ") + `) VALUES (` + strings.Join(values, ", ") + `)` + ` ON CONFLICT (` + strings.Join(columns[:len(columns)-1], ",") + `) DO UPDATE SET (` + strings.Join(columns, ", ") + `) = ` + `(` + strings.Join(values, ", ") + `) RETURNING id`
+		query = `INSERT INTO ` + tableName + `(` + strings.Join(columns, ", ") + `) VALUES (` + strings.Join(values, ", ") + `)` + ` ON CONFLICT (` + strings.Join(pkColumns, ",") + `) DO UPDATE SET (` + strings.Join(columns, ", ") + `) = ` + `(` + strings.Join(values, ", ") + `) RETURNING id`
 	case "DELETE":
 		query = `DELETE FROM ` + tableName + ` WHERE ` + strings.Join(primaryKeys, " AND ") + ` RETURNING ` + COLUMN_NAME_ID + `, ` + COLUMN_NAME_NAMESPACE + `, ` + COLUMN_NAME_DATA
 	}
