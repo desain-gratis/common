@@ -156,7 +156,7 @@ func (c *crudWithAttachment) Attach(ctx context.Context, meta *entity.Attachment
 	}
 
 	// If it's a new object, generate random ID
-	if existing == nil {
+	if len(existing) != 1 { // can paranoid check id
 		// make random name
 		uid, err := uuid.NewRandom()
 		if err != nil {

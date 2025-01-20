@@ -72,7 +72,7 @@ func enableApplicationAPI(
 	router *httprouter.Router,
 ) {
 
-	baseURL := "http://private-server:9090"
+	baseURL := "http://localhost:9090"
 	privateBucketName := "data.demo.sewatenan.com"
 	privateBucketBaseURL := "https://data.demo.sewatenan.com"
 
@@ -88,7 +88,6 @@ func enableApplicationAPI(
 		privateBucketName,
 		privateBucketBaseURL,
 	)
-	userPageRepo := content_postgres.New(pg, "user_profile_thumbnail", 2)
 
 	organizationHandler := mycontentapi.New[*entity.Organization](
 		organizationRepo,
@@ -117,21 +116,9 @@ func enableApplicationAPI(
 		"assets/user/image", // the location in the s3 compatible bucket
 		func(url, userID string, refID []string, ID string) string {
 			// TODO: integrate
-			return baseURL + "/user/thumbnail?user_id=" + userID + "&id=" + ID
+			return baseURL + "/user/thumbnail?profile_id=" + refID[1] + "&org_id=" + refID[0] + "&id=" + ID
 		},
 		"",
-		[]string{"org_id", "profile_id"},
-	)
-
-	userPageHandler := mycontentapi.New[*entity.UserPage](
-		userPageRepo,
-		func(url, userID string, refID []string, ID string) string {
-			if len(refID) != 2 {
-				log.Error().Msgf("This should not happen")
-				return baseURL + "/user?user_id=" + userID + "&id=" + ID
-			}
-			return baseURL + "/user?user_id=" + userID + "&org_id=" + refID[0] + "&profile_id=" + refID[1] + "&id=" + ID
-		},
 		[]string{"org_id", "profile_id"},
 	)
 
@@ -153,11 +140,6 @@ func enableApplicationAPI(
 	router.POST("/org/user/thumbnail", userThumbnailHandler.Upload)
 	router.DELETE("/org/user/thumbnail", userThumbnailHandler.Delete)
 
-	// User page
-	router.OPTIONS("/org/user/page", Empty)
-	router.GET("/org/user/page", userPageHandler.Get)
-	router.POST("/org/user/page", userPageHandler.Put)
-	router.DELETE("/org/user/page", userPageHandler.Delete)
 }
 
 func Empty(w http.ResponseWriter, r *http.Request, p httprouter.Params) {

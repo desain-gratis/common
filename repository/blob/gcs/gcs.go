@@ -37,7 +37,7 @@ func New(
 func (h *handler) Upload(ctx context.Context, objectPath string, contentType string, payload io.Reader) (*blob.Data, *types.CommonError) {
 	bucket := h.gcsClient.Bucket(h.bucketName)
 	if bucket == nil {
-		log.Err(errors.New("Empty bucket")).Msgf("Cannot get gcs bucket %v", h.bucketName)
+		log.Err(errors.New("empty bucket")).Msgf("Cannot get gcs bucket %v", h.bucketName)
 		return nil, &types.CommonError{
 			Errors: []types.Error{
 				{
@@ -52,6 +52,7 @@ func (h *handler) Upload(ctx context.Context, objectPath string, contentType str
 	object := bucket.Object(objectPath)
 	objWriter := object.NewWriter(ctx)
 	objWriter.ContentType = contentType
+	// objWriter.Name = filepath.Base(objectPath)
 
 	length, err := io.Copy(objWriter, payload)
 	if err != nil {

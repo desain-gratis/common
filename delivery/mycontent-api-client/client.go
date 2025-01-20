@@ -115,8 +115,9 @@ func (c *client[T]) Get(ctx context.Context, namespace string, refIDs map[string
 	}
 
 	v := wer.Query()
-	v.Add("owner_id", namespace)
-	v.Add("id", ID)
+	if ID != "" {
+		v.Add("id", ID)
+	}
 
 	for param, value := range refIDs {
 		v.Add(param, value)

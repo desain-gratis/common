@@ -11,8 +11,13 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-type ExtractImages[T any] func(t []T) []**entity.Image
-type ExtractFiles[T any] func(t []T) []**entity.File
+type ImageContextPair[T mycontent.Data] struct {
+	Base  T
+	Image **entity.Image
+}
+
+type ExtractImages[T mycontent.Data] func(t []T) []ImageContextPair[T]
+type ExtractFiles[T mycontent.Data] func(t []T) []**entity.File
 type ExtractOtherEntities[T any] func(t []T) []mycontent.Data
 
 type fileDep[T mycontent.Data] struct {
@@ -23,18 +28,18 @@ type fileDep[T mycontent.Data] struct {
 }
 
 type sync[T mycontent.Data] struct {
-	directoryContext string
-	namespace        string
-	client           *client[T]
-	imageDeps        []imageDep[T]
-	fileDeps         []fileDep[T]
-	data             []T
+	client    *client[T]
+	imageDeps []imageDep[T]
+	fileDeps  []fileDep[T]
+	data      []T
+	namespace string
 }
 
-func Sync[T mycontent.Data](client *client[T], data []T) *sync[T] {
+func Sync[T mycontent.Data](client *client[T], data []T, namespace string) *sync[T] {
 	return &sync[T]{
-		client: client,
-		data:   data,
+		client:    client,
+		data:      data,
+		namespace: namespace,
 	}
 }
 
