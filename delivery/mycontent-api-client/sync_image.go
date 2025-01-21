@@ -77,7 +77,7 @@ func (i *imageDep[T]) syncImages(dataArr []ImageContext[T]) (stat SyncStat, errU
 		for _, errUC := range errUCs1 {
 			log.Warn().Msgf("\n%v %+v", errUC.Code, errUC.Message)
 		}
-		log.Warn().Msgf(" images with error will be ignored.")
+		log.Warn().Msgf(" images with error will be ignored. Please fix the error")
 	}
 
 	stat.LocalCountError = len(localData) - len(localHash)
