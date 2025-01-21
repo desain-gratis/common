@@ -305,7 +305,7 @@ func processImage(dir string, imgRef **entity.Image) ([]byte, string, *types.Com
 	// for image_data_url (placeholder) ; notice, only 32px bounding rectangle
 	placeholderEncode := ""
 	newWidth, newHeight = scaleParam(&entity.Image{
-		ScalePx:        256, // scale very small for blur placeholder
+		ScalePx:        128, // scale very small for blur placeholder
 		ScaleDirection: entity.SCALE_DIRECTION_HORIZONTAL,
 	}, clean)
 	placeholder := image.NewRGBA(image.Rect(0, 0, newWidth, newHeight))
