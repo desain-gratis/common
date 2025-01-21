@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/julienschmidt/httprouter"
@@ -19,8 +21,9 @@ const maximumRequestLength = 1 << 20
 const maximumRequestLengthAttachment = 100 << 20
 
 type service[T mycontent.Data] struct {
-	myContentUC mycontent.Usecase[T]
-	refParams   []string
+	myContentUC     mycontent.Usecase[T]
+	refParams       []string
+	whitelistParams map[string]struct{}
 }
 
 func New[T mycontent.Data](
@@ -34,6 +37,13 @@ func New[T mycontent.Data](
 		refParams,
 	)
 
+	whitelistParams := map[string]struct{}{
+		"id": {},
+	}
+	for _, refParams := range refParams {
+		whitelistParams[refParams] = struct{}{}
+	}
+
 	return &service[T]{
 		myContentUC: uc,
 		refParams:   refParams,
@@ -42,6 +52,18 @@ func New[T mycontent.Data](
 
 func (i *service[T]) Post(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	// Read body parse entity and extract metadata
+
+	if len(r.URL.Query()) > 0 {
+		errMessage := serializeError(&types.CommonError{
+			Errors: []types.Error{
+				{Message: "Please do not enter URL parameter in Post request", Code: "BAD_REQUEST", HTTPCode: http.StatusBadRequest},
+			},
+		},
+		)
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write(errMessage)
+		return
+	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, maximumRequestLength)
 	payload, err := io.ReadAll(r.Body)
@@ -121,6 +143,18 @@ func (i *service[T]) Get(w http.ResponseWriter, r *http.Request, p httprouter.Pa
 		return
 	}
 
+	invalidParams := validateParams(i.whitelistParams, r.URL.Query())
+	if len(invalidParams) > 0 {
+		d := serializeError(&types.CommonError{
+			Errors: []types.Error{
+				{HTTPCode: http.StatusBadRequest, Code: "INVALID_PARAMS", Message: "Invalid parameter(s):" + strings.Join(invalidParams, ",")},
+			},
+		})
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write(d)
+		return
+	}
+
 	ID := r.URL.Query().Get("id")
 	refIDs := make([]string, 0, len(i.refParams))
 	for _, param := range i.refParams {
@@ -160,6 +194,18 @@ func (i *service[T]) Delete(w http.ResponseWriter, r *http.Request, p httprouter
 		d := serializeError(&types.CommonError{
 			Errors: []types.Error{
 				{HTTPCode: http.StatusBadRequest, Code: "EMPTY_NAMESPACE", Message: "Please specify header 'X-Namespace'"},
+			},
+		})
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write(d)
+		return
+	}
+
+	invalidParams := validateParams(i.whitelistParams, r.URL.Query())
+	if len(invalidParams) > 0 {
+		d := serializeError(&types.CommonError{
+			Errors: []types.Error{
+				{HTTPCode: http.StatusBadRequest, Code: "INVALID_PARAMS", Message: "Invalid parameter(s):" + strings.Join(invalidParams, ",")},
 			},
 		})
 		w.WriteHeader(http.StatusBadRequest)
@@ -210,4 +256,13 @@ func serializeError(err *types.CommonError) []byte {
 		log.Err(errMarshal).Msgf("Failed to parse err")
 	}
 	return d
+}
+
+func validateParams(whitelisted map[string]struct{}, params url.Values) (invalidParams []string) {
+	for param := range params {
+		if _, ok := whitelisted[param]; !ok {
+			invalidParams = append(invalidParams, param)
+		}
+	}
+	return invalidParams
 }

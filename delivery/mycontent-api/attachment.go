@@ -7,6 +7,7 @@ import (
 	"mime"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/julienschmidt/httprouter"
 	"github.com/rs/zerolog/log"
@@ -50,10 +51,19 @@ func NewAttachment(
 		urlFormat,
 	)
 
+	whitelistParams := map[string]struct{}{
+		"id":   {},
+		"data": {},
+	}
+	for _, refParams := range refParams {
+		whitelistParams[refParams] = struct{}{}
+	}
+
 	return &uploadService{
 		service: &service[*entity.Attachment]{
-			myContentUC: uc,
-			refParams:   refParams,
+			myContentUC:     uc,
+			refParams:       refParams,
+			whitelistParams: whitelistParams,
 		},
 		uc:           uc, // uc with advanced functionality
 		cacheControl: cacheControl,
@@ -66,6 +76,28 @@ func (i *uploadService) Get(w http.ResponseWriter, r *http.Request, p httprouter
 		d := serializeError(&types.CommonError{
 			Errors: []types.Error{
 				{HTTPCode: http.StatusBadRequest, Code: "EMPTY_NAMESPACE", Message: "Please specify header 'X-Namespace'"},
+			},
+		})
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write(d)
+		return
+	}
+
+	invalidParams := validateParams(i.whitelistParams, r.URL.Query())
+	if len(invalidParams) > 0 {
+		d := serializeError(&types.CommonError{
+			Errors: []types.Error{
+				{HTTPCode: http.StatusBadRequest, Code: "INVALID_PARAMS", Message: "Invalid parameter(s):" + strings.Join(invalidParams, ",")},
+			},
+		})
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write(d)
+		return
+	}
+	if len(invalidParams) > 0 {
+		d := serializeError(&types.CommonError{
+			Errors: []types.Error{
+				{HTTPCode: http.StatusBadRequest, Code: "INVALID_PARAMS", Message: "Invalid parameter(s):" + strings.Join(invalidParams, ",")},
 			},
 		})
 		w.WriteHeader(http.StatusBadRequest)
