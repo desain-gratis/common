@@ -125,13 +125,13 @@ func enableApplicationAPI(
 	// Organization
 	router.OPTIONS("/org", Empty)
 	router.GET("/org", organizationHandler.Get)
-	router.POST("/org", organizationHandler.Put)
+	router.POST("/org", organizationHandler.Post)
 	router.DELETE("/org", organizationHandler.Delete)
 
 	// User profile
 	router.OPTIONS("/org/user", Empty)
 	router.GET("/org/user", userProfileHandler.Get)
-	router.POST("/org/user", userProfileHandler.Put)
+	router.POST("/org/user", userProfileHandler.Post)
 	router.DELETE("/org/user", userProfileHandler.Delete)
 
 	// User thumbnail

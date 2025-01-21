@@ -125,7 +125,7 @@ func (c *crud[T]) Post(ctx context.Context, data T, meta any) (T, *types.CommonE
 
 // Get all of your resource for your user ID here
 // Simple wrapper for repository
-func (c *crud[T]) Get(ctx context.Context, userID string, refIDs []string, ID string) ([]T, *types.CommonError) {
+func (c *crud[T]) Get(ctx context.Context, namespace string, refIDs []string, ID string) ([]T, *types.CommonError) {
 	// 1. check if there is ID
 	if ID != "" {
 		if !isValid(refIDs) || len(filterEmpty(refIDs)) != len(c.refParams) {
@@ -143,7 +143,7 @@ func (c *crud[T]) Get(ctx context.Context, userID string, refIDs []string, ID st
 
 		result := make([]T, 0, 1)
 
-		d, err := c.repo.Get(ctx, userID, refIDs, ID)
+		d, err := c.repo.Get(ctx, namespace, refIDs, ID)
 		if err != nil {
 			return nil, err
 		}
@@ -175,7 +175,7 @@ func (c *crud[T]) Get(ctx context.Context, userID string, refIDs []string, ID st
 
 	// 2. check if there is main ref ID (without ID)
 	if isValid(refIDs) {
-		ds, err := c.repo.Get(ctx, userID, filterEmpty(refIDs), "")
+		ds, err := c.repo.Get(ctx, namespace, filterEmpty(refIDs), "")
 		if err != nil {
 			return nil, err
 		}
@@ -198,7 +198,7 @@ func (c *crud[T]) Get(ctx context.Context, userID string, refIDs []string, ID st
 	}
 
 	// 3. get by user ID | TODO DELETE | redundant with above, because empty refIDs is valid as well..
-	ds, err := c.repo.Get(ctx, userID, []string{}, "")
+	ds, err := c.repo.Get(ctx, namespace, []string{}, "")
 	if err != nil {
 		return nil, err
 	}

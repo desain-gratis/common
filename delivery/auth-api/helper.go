@@ -60,7 +60,7 @@ func GetCredentials(header http.Header) (string, string, *types.Error) {
 
 	userID := header.Get("X-User-ID")
 	if userID == "" {
-		err := types.Error{HTTPCode: http.StatusBadRequest, Message: "Please specify 'X-User-ID' in header", Code: "EMPTY_USER_ID"}
+		err := types.Error{HTTPCode: http.StatusBadRequest, Message: "Please specify 'X-User-ID' in header", Code: "EMPTY_NAMESPACE"}
 		return organizationID, userID, &err
 	}
 

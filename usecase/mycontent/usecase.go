@@ -13,11 +13,11 @@ type Usecase[T any] interface {
 	Post(ctx context.Context, data T, meta any) (T, *types.CommonError)
 
 	// Get all of your resource for your user ID here
-	Get(ctx context.Context, userID string, refIDs []string, ID string) ([]T, *types.CommonError)
+	Get(ctx context.Context, namespace string, refIDs []string, ID string) ([]T, *types.CommonError)
 
 	// Delete your resource here
 	// the implementation can check whether there are linked resource or not
-	Delete(ctx context.Context, userID string, refIDs []string, ID string) (T, *types.CommonError)
+	Delete(ctx context.Context, namespace string, refIDs []string, ID string) (T, *types.CommonError)
 }
 
 type Attachable[T any] interface {

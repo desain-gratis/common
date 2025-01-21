@@ -40,7 +40,7 @@ func New[T mycontent.Data](
 	}
 }
 
-func (i *service[T]) Put(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+func (i *service[T]) Post(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	// Read body parse entity and extract metadata
 
 	r.Body = http.MaxBytesReader(w, r.Body, maximumRequestLength)
@@ -159,7 +159,7 @@ func (i *service[T]) Delete(w http.ResponseWriter, r *http.Request, p httprouter
 	if namespace == "" {
 		d := serializeError(&types.CommonError{
 			Errors: []types.Error{
-				{HTTPCode: http.StatusBadRequest, Code: "EMPTY_USER_ID", Message: "Please specify 'user_id'"},
+				{HTTPCode: http.StatusBadRequest, Code: "EMPTY_NAMESPACE", Message: "Please specify header 'X-Namespace'"},
 			},
 		})
 		w.WriteHeader(http.StatusBadRequest)

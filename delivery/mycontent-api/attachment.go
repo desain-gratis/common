@@ -65,7 +65,7 @@ func (i *uploadService) Get(w http.ResponseWriter, r *http.Request, p httprouter
 	if namespace == "" {
 		d := serializeError(&types.CommonError{
 			Errors: []types.Error{
-				{HTTPCode: http.StatusBadRequest, Code: "EMPTY_USER_ID", Message: "Please specify 'user_id'"},
+				{HTTPCode: http.StatusBadRequest, Code: "EMPTY_NAMESPACE", Message: "Please specify header 'X-Namespace'"},
 			},
 		})
 		w.WriteHeader(http.StatusBadRequest)
@@ -180,10 +180,10 @@ func (i *uploadService) Upload(w http.ResponseWriter, r *http.Request, p httprou
 		return
 	}
 
-	if attachmentData.OwnerId == "" {
+	if attachmentData.Namespace() == "" {
 		d := serializeError(&types.CommonError{
 			Errors: []types.Error{
-				{HTTPCode: http.StatusBadRequest, Code: "EMPTY_OWNER_ID", Message: "Please specify 'OwnerId'"},
+				{HTTPCode: http.StatusBadRequest, Code: "EMPTY_NAMESPACE", Message: "Please specify 'Namespace'"},
 			},
 		})
 		w.WriteHeader(http.StatusBadRequest)
@@ -238,7 +238,7 @@ func (i *uploadService) Upload(w http.ResponseWriter, r *http.Request, p httprou
 	header := make([]byte, 512)
 	_, err = teeReader.Read(header)
 	if err != nil && err != io.EOF {
-		log.Err(err).Str("owner_id", attachmentData.OwnerId).Msgf("Failed to read. Declared ct %v. Header %v", contentType, string(header))
+		log.Err(err).Str("namespace", attachmentData.Namespace()).Msgf("Failed to read. Declared ct %v. Header %v", contentType, string(header))
 		errMessage := serializeError(&types.CommonError{
 			Errors: []types.Error{
 				{HTTPCode: http.StatusInternalServerError, Message: "Failed to parse media type", Code: "SERVER_ERROR"},
