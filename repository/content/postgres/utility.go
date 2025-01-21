@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/desain-gratis/common/repository/content"
-	"github.com/rs/zerolog/log"
 )
 
 const (
@@ -24,8 +23,12 @@ func generateQuery(tableName, queryType string, primaryKey PrimaryKey, upsertDat
 
 	// init default composite columns & values
 	if primaryKey.Namespace != "" {
-		columns = append(columns, COLUMN_NAME_NAMESPACE)
-		values = append(values, "'"+primaryKey.Namespace+"'")
+		if primaryKey.Namespace == "*" && queryType == "SELECT" {
+			// no need where clause
+		} else {
+			columns = append(columns, COLUMN_NAME_NAMESPACE)
+			values = append(values, "'"+primaryKey.Namespace+"'")
+		}
 	}
 
 	if primaryKey.ID != "" {
@@ -96,7 +99,7 @@ func mergeColumnValue(columns []string, values []interface{}) (resp content.Data
 		case column == COLUMN_NAME_META:
 			resp.Meta = []byte(value)
 		default:
-			log.Info().Msgf("Unrecognized column: %s", column)
+			// log.Info().Msgf("Unrecognized column: %s", column)
 		}
 	}
 	return

@@ -36,27 +36,43 @@ type SyncStat struct {
 }
 
 type imageDep[T mycontent.Data] struct {
-	namespace       string
 	client          *attachmentClient
 	extract         ExtractImages[T]
 	uploadDirectory string
+	namespace       string // filter namespace
 }
 
-func (i *imageDep[T]) syncImages(dataArr []ImageContextPair[T]) (stat SyncStat, errUC *types.CommonError) {
+func (i *imageDep[T]) syncImages(dataArr []ImageContext[T]) (stat SyncStat, errUC *types.CommonError) {
 	ctx := context.Background()
 
-	data := map[string]ImageContextPair[T]{}
-	for idx, pair := range dataArr {
-		completeRefs := pair.Base.RefIDs()
-		completeRefs = append(completeRefs, pair.Base.ID())
-		datum := pair.Image
-		id := getID(completeRefs, (*datum).Id)
-		data[id] = dataArr[idx]
+	// 0. filter local entities inplace based on namespace
+	// double guard... (usually in the i.Base already done its enough..)
+	if i.namespace != "*" {
+		var countValid int
+		for idx := 0; idx < len(dataArr); idx++ {
+			localEntity := dataArr[idx]
+
+			if localEntity.Base.Namespace() != i.namespace {
+				continue
+			}
+
+			dataArr[countValid] = localEntity
+			countValid++
+		}
+		dataArr = dataArr[:countValid]
 	}
 
-	stat.LocalCount = len(data)
+	// 1. build local data map
+	localData := map[string]ImageContext[T]{}
+	for idx, pair := range dataArr {
+		completeRefs := append(pair.Base.RefIDs(), pair.Base.ID())
+		key := getKey(completeRefs, (*pair.Image).Id)
+		localData[key] = dataArr[idx]
+	}
 
-	localHash, errUCs1 := i.computeImageConfigHashMulti(i.uploadDirectory, data)
+	stat.LocalCount = len(localData)
+
+	localHash, errUCs1 := i.computeImageConfigHashMulti(i.uploadDirectory, localData)
 	if len(errUCs1) > 0 {
 		for _, errUC := range errUCs1 {
 			log.Warn().Msgf("\n%v %+v", errUC.Code, errUC.Message)
@@ -64,9 +80,9 @@ func (i *imageDep[T]) syncImages(dataArr []ImageContextPair[T]) (stat SyncStat, 
 		log.Warn().Msgf(" images with error will be ignored.")
 	}
 
-	stat.LocalCountError = len(data) - len(localHash)
+	stat.LocalCountError = len(localData) - len(localHash)
 
-	_remoteAttachments, errUC := i.client.Get(context.Background(), i.namespace, nil, "")
+	_remoteAttachments, errUC := i.client.Get(context.Background(), i.namespace, nil, "") // "*" for all namespace
 	if errUC != nil {
 		log.Error().Msgf("%+v", errUC)
 		return stat, errUC
@@ -77,38 +93,38 @@ func (i *imageDep[T]) syncImages(dataArr []ImageContextPair[T]) (stat SyncStat, 
 
 	intersect := make(map[string]struct{})
 
-	toOverwrite := make(map[string]ImageContextPair[T])
+	toOverwrite := make(map[string]ImageContext[T])
 	toDelete := make(map[string]*content.Attachment)
 
-	for _, pair := range data {
-		completeRefs := pair.Base.RefIDs()
-		completeRefs = append(completeRefs, pair.Base.ID())
-		datum := pair.Image
-		id := getID(completeRefs, (*datum).Id)
+	for _, pair := range localData {
+		completeRefs := append(pair.Base.RefIDs(), pair.Base.ID())
+		key := getKey(completeRefs, (*pair.Image).Id)
 
-		if _, ok := remoteAttachments[id]; ok {
-			intersect[id] = struct{}{}
+		if _, ok := remoteAttachments[key]; ok {
+			intersect[key] = struct{}{}
 			stat.Intersect++
 			continue
 		}
-		toOverwrite[id] = pair
+		toOverwrite[key] = pair
 		stat.ToAdd++
 	}
 
 	for _, remoteAttachment := range remoteAttachments {
-		remoteID := getID((*remoteAttachment).RefIds, (*remoteAttachment).Id)
-		if _, ok := data[remoteID]; ok {
+		remoteID := getKey((*remoteAttachment).RefIds, (*remoteAttachment).Id)
+		if _, ok := localData[remoteID]; ok {
 			continue
 		}
 		toDelete[remoteAttachment.Id] = remoteAttachment
 		stat.ToDelete++
 	}
 
-	for id := range intersect {
-		localData := data[id]
-		remoteAttachment := remoteAttachments[id]
+	uploadDir := i.uploadDirectory
 
-		localHash, ok := localHash[i.uploadDirectory+"|"+(*localData.Image).Url]
+	for key := range intersect {
+		localData := localData[key]
+		remoteAttachment := remoteAttachments[key]
+
+		localHash, ok := localHash[completeImageUploadPath(uploadDir, localData.Image)]
 		if !ok {
 			// likely not valid
 			log.Debug().Msgf("May be a not valid data. Please check for WARNING/WRN messages in the log.")
@@ -124,7 +140,7 @@ func (i *imageDep[T]) syncImages(dataArr []ImageContextPair[T]) (stat SyncStat, 
 		}
 
 		// need re upload
-		toOverwrite[id] = localData
+		toOverwrite[key] = localData
 		stat.ToSync++
 	}
 
@@ -132,43 +148,38 @@ func (i *imageDep[T]) syncImages(dataArr []ImageContextPair[T]) (stat SyncStat, 
 
 	// Delete unused remote data
 	for _, data := range toDelete {
-		_, errUC := i.client.Delete(ctx, i.namespace, convertRefsParam(i.client.refsParam, data.RefIds), data.Id)
+		_, errUC := i.client.Delete(ctx, data.Namespace(), toRefsParam(i.client.refsParam, data.RefIds), data.Id)
 		if errUC != nil {
-			log.Error().Msgf("Failed to delete %v %v %v %v %v", i.client.endpoint, i.namespace, data.RefIds, data.Id, errUC.Err())
+			log.Error().Msgf("Failed to delete %v %v %v %v %v", i.client.endpoint, data.Namespace(), data.RefIDs(), data.ID(), errUC.Err())
 			continue
 		}
 	}
 
 	// Overwrite or create new remote data
 	for _, localData := range toOverwrite {
-		dir := i.uploadDirectory
-
-		completeRefs := localData.Base.RefIDs()
-		completeRefs = append(completeRefs, localData.Base.ID())
-		datum := localData.Image
-		id := getID(completeRefs, (*datum).Id)
-
-		imageData, placeholder, errUC := processImage(dir, *localData.Image)
+		completeRefs := append(localData.Base.RefIDs(), localData.Base.ID())
+		key := getKey(completeRefs, (*localData.Image).Id)
+		imageData, placeholder, errUC := processImage(uploadDir, localData.Image)
 		if errUC != nil {
-			log.Error().Msgf("  failed to process image '%+v', msg: %+v", id, errUC)
+			log.Error().Msgf("  failed to process image '%+v', msg: %+v", key, errUC)
 			continue
 		}
 
 		payload := &content.Attachment{
-			Id:           id,
+			Id:           (*localData.Image).Id,
 			RefIds:       completeRefs,
-			OwnerId:      i.namespace,
+			OwnerId:      localData.Base.Namespace(), // always the namespace of the base
 			Name:         (*localData.Image).Url,
-			Hash:         localHash[dir+"|"+(*localData.Image).Url],
+			Hash:         localHash[completeImageUploadPath(uploadDir, localData.Image)],
 			Description:  (*localData.Image).Description,
 			Tags:         (*localData.Image).Tags,
 			ImageDataUrl: placeholder,
 			CreatedAt:    time.Now().Format(time.RFC3339),
 		}
-		log.Info().Msgf("PAYLOD: %+v", payload)
-		ra, errUC := i.client.Upload(ctx, i.namespace, payload, "", imageData)
+		// log.Info().Msgf("PAYLOD: %+v", payload)
+		ra, errUC := i.client.Upload(ctx, payload.Namespace(), payload, "", imageData)
 		if errUC != nil {
-			log.Error().Msgf("  failed to sync an attachment in remote '%+v', msg: %+v", id, errUC)
+			log.Error().Msgf("  failed to sync an attachment in remote '%+v', msg: %+v", key, errUC)
 			continue
 		}
 
@@ -180,7 +191,7 @@ func (i *imageDep[T]) syncImages(dataArr []ImageContextPair[T]) (stat SyncStat, 
 
 }
 
-func (i *imageDep[T]) computeImageConfigHashMulti(dir string, images map[string]ImageContextPair[T]) (map[string]string, []*types.Error) {
+func (i *imageDep[T]) computeImageConfigHashMulti(dir string, images map[string]ImageContext[T]) (map[string]string, []*types.Error) {
 	id2hash := make(map[string]string)
 	errUC := make([]*types.Error, 0)
 	log.Info().Msgf("Read image path: %v", dir)
@@ -192,7 +203,7 @@ func (i *imageDep[T]) computeImageConfigHashMulti(dir string, images map[string]
 			})
 			continue
 		}
-		id2hash[dir+"|"+(*image.Image).Url] = imgHash
+		id2hash[completeImageUploadPath(dir, image.Image)] = imgHash
 	}
 
 	return id2hash, errUC
@@ -217,7 +228,7 @@ func computeImageConfigHash(dir string, img *entity.Image) (string, error) {
 	// the raw image
 	h.Write(imgData)
 
-	num := make([]byte, 4, 4)
+	num := make([]byte, 4)
 	binary.BigEndian.PutUint32(num, uint32(img.OffsetX))
 	h.Write(num)
 	binary.BigEndian.PutUint32(num, uint32(img.OffsetY))
@@ -241,14 +252,15 @@ func computeImageConfigHash(dir string, img *entity.Image) (string, error) {
 	return result, nil
 }
 
-func processImage(dir string, img *entity.Image) ([]byte, string, *types.CommonError) {
-	id := getID((*img).RefIds, (*img).Id)
+func processImage(dir string, imgRef **entity.Image) ([]byte, string, *types.CommonError) {
+	key := completeImageUploadPath(dir, imgRef)
+	img := *imgRef
 	url := path.Join(dir, img.Url)
 	f, err := os.Open(url)
 	if err != nil {
 		return nil, "", &types.CommonError{
 			Errors: []types.Error{
-				{HTTPCode: http.StatusBadRequest, Code: "CLIENT_ERROR", Message: "Cannot open image '" + id + " ' at '" + url + "': " + err.Error()},
+				{HTTPCode: http.StatusBadRequest, Code: "CLIENT_ERROR", Message: "Cannot open image '" + key + " ' at '" + url + "': " + err.Error()},
 			},
 		}
 	}
@@ -293,7 +305,7 @@ func processImage(dir string, img *entity.Image) ([]byte, string, *types.CommonE
 	// for image_data_url (placeholder) ; notice, only 32px bounding rectangle
 	placeholderEncode := ""
 	newWidth, newHeight = scaleParam(&entity.Image{
-		ScalePx:        16, // scale very small for blur placeholder
+		ScalePx:        256, // scale very small for blur placeholder
 		ScaleDirection: entity.SCALE_DIRECTION_HORIZONTAL,
 	}, clean)
 	placeholder := image.NewRGBA(image.Rect(0, 0, newWidth, newHeight))
@@ -347,8 +359,12 @@ func attachmentToImage(attachment *content.Attachment) *entity.Image {
 func attachmentToMap(attachments []*entity.Attachment) map[string]*entity.Attachment {
 	result := make(map[string]*entity.Attachment)
 	for _, attachment := range attachments {
-		id := getID(attachment.RefIDs(), attachment.ID())
-		result[id] = attachment
+		key := getKey(attachment.RefIDs(), attachment.ID())
+		result[key] = attachment
 	}
 	return result
+}
+
+func completeImageUploadPath(dir string, image **entity.Image) string {
+	return dir + "|" + (**image).Url
 }

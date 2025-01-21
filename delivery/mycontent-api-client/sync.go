@@ -11,12 +11,12 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-type ImageContextPair[T mycontent.Data] struct {
+type ImageContext[T mycontent.Data] struct {
 	Base  T
 	Image **entity.Image
 }
 
-type ExtractImages[T mycontent.Data] func(t []T) []ImageContextPair[T]
+type ExtractImages[T mycontent.Data] func(t []T) []ImageContext[T]
 type ExtractFiles[T mycontent.Data] func(t []T) []**entity.File
 type ExtractOtherEntities[T any] func(t []T) []mycontent.Data
 
@@ -24,22 +24,26 @@ type fileDep[T mycontent.Data] struct {
 	client          *client[*entity.Attachment]
 	extract         ExtractFiles[T]
 	uploadDirectory string
-	namespace       string
 }
 
 type sync[T mycontent.Data] struct {
 	client    *client[T]
+	namespace string // filter namespace
+	data      []T
+
 	imageDeps []imageDep[T]
 	fileDeps  []fileDep[T]
-	data      []T
-	namespace string
 }
 
-func Sync[T mycontent.Data](client *client[T], data []T, namespace string) *sync[T] {
+func Sync[T mycontent.Data](client *client[T], namespace string, data []T) *sync[T] {
+	if namespace == "" {
+		log.Fatal().Msgf("Please provide namespace explicitly. Put '*' to sync all")
+	}
+
 	return &sync[T]{
 		client:    client,
-		data:      data,
 		namespace: namespace,
+		data:      data,
 	}
 }
 
@@ -59,51 +63,66 @@ func (s *sync[T]) WithFiles(client *client[*entity.Attachment], extract ExtractF
 		client:          client,
 		extract:         extract,
 		uploadDirectory: uploadDirectory,
-		namespace:       s.namespace,
 	})
 	return s
 }
 
 func (s *sync[T]) Execute(ctx context.Context) *types.CommonError {
 
-	// 1. get all main entity from remote
-	remoteEntities, errUC := s.client.Get(ctx, s.namespace, nil, "")
+	// 1. get all main entity from remote, for all namespace
+	remoteEntities, errUC := s.client.Get(ctx, s.namespace, nil, "") // "*" special namespace to get all namespace
 	remoteEntitiesMap := make(map[string]T)
 	if errUC != nil {
 		log.Error().Msgf("%+v", errUC)
 		return errUC
 	}
 	for _, remoteEntity := range remoteEntities {
-		remoteID := getID(remoteEntity.RefIDs(), remoteEntity.ID())
+		remoteID := getKey2(remoteEntity)
 		remoteEntitiesMap[remoteID] = remoteEntity
 	}
 
 	// 2. get main entity in local
 	localEntities := s.data
+
+	// 2a. filter local entities inplace based on namespace
+	if s.namespace != "*" {
+		var countValid int
+		for idx := 0; idx < len(localEntities); idx++ {
+			localEntity := localEntities[idx]
+
+			if localEntity.Namespace() != s.namespace {
+				continue
+			}
+
+			localEntities[countValid] = localEntity
+			countValid++
+		}
+		localEntities = localEntities[:countValid]
+	}
+
 	localEntitiesMap := make(map[string]T)
 	for _, localEntity := range localEntities {
-		id := getID(localEntity.RefIDs(), localEntity.ID())
-		localEntitiesMap[id] = localEntity
+		key := getKey2(localEntity)
+		localEntitiesMap[key] = localEntity
 	}
 
 	// 3. check if local project exist in server, if not create one
 	// TODO: using goroutine pool
 	for _, localEntity := range localEntities {
-		id := getID(localEntity.RefIDs(), localEntity.ID())
-		if _, ok := localEntitiesMap[id]; !ok {
+		key := getKey2(localEntity)
+		if _, ok := localEntitiesMap[key]; !ok {
 			_, errUC := s.client.Post(ctx, localEntity)
 			if errUC != nil {
-				log.Error().Msgf("Failed to create entity of type %T with ID %v", localEntity, id)
+				log.Error().Msgf("Failed to create entity of type %T with key %v", localEntity, key)
 			}
 		}
 	}
 
 	// 4. inversely, for all remote project that is not in local, delete them
 	for _, remoteEntity := range remoteEntities {
-		remoteID := getID(remoteEntity.RefIDs(), remoteEntity.ID())
+		remoteID := getKey2(remoteEntity)
 		if _, ok := localEntitiesMap[remoteID]; !ok {
-			// s.namespace instead of not remoteEntity.Namespace()
-			_, errUC := s.client.Delete(ctx, s.namespace, convertRefsParam(s.client.refsParam, remoteEntity.RefIDs()), remoteEntity.ID())
+			_, errUC := s.client.Delete(ctx, remoteEntity.Namespace(), toRefsParam(s.client.refsParam, remoteEntity.RefIDs()), remoteEntity.ID())
 			if errUC != nil {
 				log.Error().Msgf("Failed to delete project Id %v", remoteID)
 			}
@@ -120,13 +139,15 @@ func (s *sync[T]) Execute(ctx context.Context) *types.CommonError {
 	for _, imgDep := range s.imageDeps {
 		imageRefs := imgDep.extract(localEntities) // pointer to images, for inplace update
 		stat, err := imgDep.syncImages(imageRefs)
-		if errUC != nil {
+		if err != nil {
 			log.Error().Msgf("	Failed to sync project thumbnails. Err: %v", err)
 			continue
 		}
 		log.Info().Msgf(`Sync project's thumbnails statistics:
 		%+v`, stat)
 	}
+
+	// TODO: sync file dependencies as well
 
 	// Sync back the project since the data in localProjects have been already modified
 	for _, localEntity := range localEntities {
@@ -156,7 +177,7 @@ func attachmentToThumbnails(input map[string]*content.Attachment) map[string]*en
 	return result
 }
 
-func convertRefsParam(refsParam []string, refIDs []string) map[string]string {
+func toRefsParam(refsParam []string, refIDs []string) map[string]string {
 	if len(refsParam) != len(refIDs) {
 		log.Fatal().Msgf("Parameter not matching!")
 	}
@@ -169,10 +190,15 @@ func convertRefsParam(refsParam []string, refIDs []string) map[string]string {
 }
 
 // for checking differences within connection
-func getID(refIDs []string, ID string) string {
-	result := ID
+func getKey(refIDs []string, ID string) string {
+	var result string
 	if len(refIDs) > 0 {
-		result = strings.Join(refIDs, "|") + "|" + ID
+		result = strings.Join(refIDs, "|") + "|"
 	}
+	result += ID
 	return result
+}
+
+func getKey2(content mycontent.Data) string {
+	return getKey(content.RefIDs(), content.ID())
 }

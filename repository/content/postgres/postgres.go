@@ -113,7 +113,6 @@ func (h *handler) Post(ctx context.Context, namespace string, refIDs []string, I
 	}
 
 	q := generateQuery(h.tableName, "INSERT", pKey, UpsertData{Data: input.Data, Meta: input.Meta})
-	log.Info().Msgf("query nya adalah: %v", q)
 	rows, errExec := h.db.QueryContext(ctx, q)
 	if errExec != nil {
 		err = &types.CommonError{
