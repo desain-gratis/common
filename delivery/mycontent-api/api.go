@@ -45,8 +45,9 @@ func New[T mycontent.Data](
 	}
 
 	return &service[T]{
-		myContentUC: uc,
-		refParams:   refParams,
+		myContentUC:     uc,
+		refParams:       refParams,
+		whitelistParams: whitelistParams,
 	}
 }
 
