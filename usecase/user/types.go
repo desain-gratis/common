@@ -1,5 +1,12 @@
 package user
 
+import (
+	"time"
+
+	types "github.com/desain-gratis/common/types/http"
+	"github.com/desain-gratis/common/usecase/mycontent"
+)
+
 type (
 	Details struct {
 		ID              string                   `json:"id"` // email
@@ -18,12 +25,15 @@ type (
 	}
 
 	Payload struct {
-		ID              string                   `json:"id"` // email
+		Ns              string                   `json:"namespace"`
+		Url             string                   `json:"url"`
+		Id              string                   `json:"id"` // email
 		Profile         UserProfile              `json:"profile"`
 		GSI             GSIConfig                `json:"gsi"`
 		MIP             MIPConfig                `json:"mip"`
 		DefaultHomepage string                   `json:"default_homepage"`
 		Authorization   map[string]Authorization `json:"authorization"` // organization/tenant id as key
+		CreatedAt       string                   `json:"created_at"`
 	}
 
 	UserProfile struct {
@@ -46,3 +56,48 @@ type (
 		Email string `json:"email"`
 	}
 )
+
+func (c *Payload) WithID(id string) mycontent.Data {
+	c.Id = id
+	return c
+}
+
+func (c *Payload) ID() string {
+	return c.Id
+}
+
+func (c *Payload) WithNamespace(id string) mycontent.Data {
+	c.Ns = id
+	return c
+}
+
+func (c *Payload) Namespace() string {
+	return c.Ns
+}
+
+func (c *Payload) URL() string {
+	return c.Url
+}
+
+func (c *Payload) WithURL(url string) mycontent.Data {
+	c.Url = url
+	return c
+}
+
+func (c *Payload) WithCreatedTime(t time.Time) mycontent.Data {
+	c.CreatedAt = t.Format(time.RFC3339)
+	return c
+}
+
+func (c *Payload) CreatedTime() time.Time {
+	t, _ := time.Parse(time.RFC3339, c.CreatedAt)
+	return t
+}
+
+func (c *Payload) RefIDs() []string {
+	return nil
+}
+
+func (c *Payload) Validate() *types.CommonError {
+	return nil
+}

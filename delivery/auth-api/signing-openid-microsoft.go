@@ -19,6 +19,7 @@ import (
 	"github.com/desain-gratis/common/delivery/helper"
 	types "github.com/desain-gratis/common/types/http"
 	"github.com/desain-gratis/common/types/protobuf/session"
+	"github.com/desain-gratis/common/usecase/mycontent"
 	"github.com/desain-gratis/common/usecase/signing"
 	"github.com/desain-gratis/common/usecase/user"
 )
@@ -43,18 +44,18 @@ type MicrosoftClaims struct {
 
 type microsoftSignInService struct {
 	*signingService
-	userUsecase user.UseCase
+	userUC mycontent.Usecase[*user.Payload]
 }
 
 func NewMicrosoftSignInService(
 	signing signing.Usecase,
-	user user.UseCase,
+	userUC mycontent.Usecase[*user.Payload],
 ) *microsoftSignInService {
 	return &microsoftSignInService{
 		signingService: &signingService{
 			signing: signing,
 		},
-		userUsecase: user,
+		userUC: userUC,
 	}
 }
 
@@ -99,33 +100,8 @@ func (s *microsoftSignInService) UpdateAuth(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// var resource GSIData
-	// err = json.Unmarshal(payload, &resource)
-	// if err != nil {
-	// 	errMessage := types.SerializeError(&types.CommonError{
-	// 		Errors: []types.Error{
-	// 			{Message: "Failed to parse body (content API). Make sure file size does not exceed 200 Kb: " + err.Error(), Code: "BAD_REQUEST"},
-	// 		},
-	// 	},
-	// 	)
-	// 	w.WriteHeader(http.StatusBadRequest)
-	// 	w.Write(errMessage)
-	// 	return
-	// }
-
-	// resource.OwnerId = "root" // hardcoded
-	// // resource.Url = s // should fill
-
-	// result, errUC := s.myContentAuth.Put(r.Context(), &resource)
-	// if errUC != nil {
-	// 	d := types.SerializeError(errUC)
-	// 	w.WriteHeader(http.StatusInternalServerError)
-	// 	w.Write(d)
-	// 	return
-	// }
-
-	var clientPayload Payload
-	err = json.Unmarshal(payload, &clientPayload)
+	var parsed user.Payload
+	err = json.Unmarshal(payload, &parsed)
 	if err != nil {
 		errMessage := types.SerializeError(&types.CommonError{
 			Errors: []types.Error{
@@ -136,13 +112,13 @@ func (s *microsoftSignInService) UpdateAuth(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	ucPayload := convertUpdatePayload(clientPayload)
-
-	erruser := s.userUsecase.Insert(r.Context(), ucPayload)
-	if erruser != nil {
+	_, errUserUC := s.userUC.Post(r.Context(), &parsed, map[string]any{
+		"updated_at": time.Now().Format(time.RFC3339),
+	})
+	if errUserUC != nil {
 		errMessage := types.SerializeError(&types.CommonError{
 			Errors: []types.Error{
-				{Message: "Failed to insert user: " + erruser.Error(), Code: "SERVER_ERROR"},
+				{Message: "Failed to insert user: " + errUserUC.Err().Error(), Code: "SERVER_ERROR"},
 			}})
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write(errMessage)
@@ -185,17 +161,30 @@ func (s *microsoftSignInService) SignIn(w http.ResponseWriter, r *http.Request, 
 	grants := make(map[string]*session.Grant)
 
 	// For sign-in, always use "root" as userId
-	authData, erruser := s.userUsecase.GetDetail(r.Context(), claims.Email)
-	if erruser != nil {
-		helper.SetError(w, types.Error{Message: "Failed to get user auth: " + erruser.Error(), Code: "SERVER_ERROR"}, http.StatusInternalServerError)
+	authData, errUserUC := s.userUC.Get(r.Context(), "root", []string{}, claims.Email)
+	if errUserUC != nil {
+		helper.SetError(w, types.Error{Message: "Failed to get user auth: " + errUserUC.Err().Error(), Code: "SERVER_ERROR"}, http.StatusInternalServerError)
 		return
 	}
-	if authData.MIP.Email != claims.Email {
+
+	if len(authData) != 1 {
+		errMessage := types.SerializeError(&types.CommonError{
+			Errors: []types.Error{
+				{Message: "Failed to get user auth: " + errUserUC.Err().Error(), Code: "NOT_FOUND"},
+			}})
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write(errMessage)
+		return
+	}
+
+	userData := authData[0]
+
+	if userData.MIP.Email != claims.Email {
 		helper.SetError(w, types.Error{HTTPCode: http.StatusBadRequest, Message: "Credentials not valid", Code: "CREDENTIALS_NOT_VALID"}, http.StatusBadRequest)
 		return
 	}
 
-	for tenantID, auth := range authData.Authorization {
+	for tenantID, auth := range userData.Authorization {
 		var arrUserGroup []string
 		for ug := range auth.UserGroupID {
 			arrUserGroup = append(arrUserGroup, ug)
@@ -210,7 +199,7 @@ func (s *microsoftSignInService) SignIn(w http.ResponseWriter, r *http.Request, 
 		grants[tenantID] = grant
 	}
 
-	if authData.ID == "" {
+	if userData.ID() == "" {
 		helper.SetError(w, types.Error{
 			HTTPCode: http.StatusUnauthorized,
 			Code:     "UNAUTHORIZED",
@@ -223,7 +212,7 @@ func (s *microsoftSignInService) SignIn(w http.ResponseWriter, r *http.Request, 
 		NonRegisteredId: &session.OIDCClaim{
 			Iss:      claims.Issuer,
 			Sub:      claims.Subject,
-			Name:     authData.Profile.DisplayName,
+			Name:     userData.Profile.DisplayName,
 			Nickname: claims.Username,
 			Email:    claims.Email,
 		},
@@ -260,11 +249,11 @@ func (s *microsoftSignInService) SignIn(w http.ResponseWriter, r *http.Request, 
 		Success: SignInResponse{
 			IDToken: &newToken,
 			LoginProfile: &Profile{
-				DisplayName:      authData.Profile.DisplayName,
+				DisplayName:      userData.Profile.DisplayName,
 				Email:            claims.Email,
-				ImageURL:         authData.Profile.ImageURL,
-				Avatar1x1URL:     authData.Profile.Avatar1x1URL,
-				Background3x1URL: authData.Profile.Background3x1URL,
+				ImageURL:         userData.Profile.ImageURL,
+				Avatar1x1URL:     userData.Profile.Avatar1x1URL,
+				Background3x1URL: userData.Profile.Background3x1URL,
 			},
 			Locale: lang,
 			// collection of grants NOT signed, for debugging.

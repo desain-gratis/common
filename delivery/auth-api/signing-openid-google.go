@@ -16,8 +16,9 @@ import (
 
 	types "github.com/desain-gratis/common/types/http"
 	"github.com/desain-gratis/common/types/protobuf/session"
+	"github.com/desain-gratis/common/usecase/mycontent"
 	"github.com/desain-gratis/common/usecase/signing"
-	userUC "github.com/desain-gratis/common/usecase/user"
+	"github.com/desain-gratis/common/usecase/user"
 )
 
 type SignInResponse struct {
@@ -83,8 +84,7 @@ type googleSignInService struct {
 	*signingService
 	googleAuth  signing.VerifierOf[idtoken.Payload]
 	adminEmails map[string]struct{}
-	// myContentAuth mycontent.Usecase[*GSIData]
-	userUsecase userUC.UseCase
+	userUC      mycontent.Usecase[*user.Payload]
 }
 
 // I think should return authorization token for verifying login
@@ -93,8 +93,7 @@ func NewGoogleSignInService(
 	googleAuth signing.VerifierOf[idtoken.Payload],
 	signing signing.Usecase,
 	adminEmails map[string]struct{},
-	// myContentAuth mycontent.Usecase[*GSIData],
-	userUC userUC.UseCase,
+	userUC mycontent.Usecase[*user.Payload],
 ) *googleSignInService {
 	return &googleSignInService{
 		googleAuth: googleAuth,
@@ -102,7 +101,7 @@ func NewGoogleSignInService(
 			signing: signing,
 		},
 		adminEmails: adminEmails,
-		userUsecase: userUC,
+		// userUsecase: userUC,
 		// myContentAuth: myContentAuth,
 	}
 }
@@ -148,8 +147,8 @@ func (s *googleSignInService) UpdateAuth(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
-	var clientPayload Payload
-	err = json.Unmarshal(payload, &clientPayload)
+	var parsed user.Payload
+	err = json.Unmarshal(payload, &parsed)
 	if err != nil {
 		errMessage := types.SerializeError(&types.CommonError{
 			Errors: []types.Error{
@@ -162,13 +161,13 @@ func (s *googleSignInService) UpdateAuth(w http.ResponseWriter, r *http.Request,
 
 	// TODO: use bcrypt to hash email
 
-	ucPayload := convertUpdatePayload(clientPayload)
-
-	errUserUC := s.userUsecase.Insert(r.Context(), ucPayload)
+	_, errUserUC := s.userUC.Post(r.Context(), &parsed, map[string]any{
+		"updated_at": time.Now().Format(time.RFC3339),
+	})
 	if errUserUC != nil {
 		errMessage := types.SerializeError(&types.CommonError{
 			Errors: []types.Error{
-				{Message: "Failed to insert user: " + errUserUC.Error(), Code: "SERVER_ERROR"},
+				{Message: "Failed to insert user: " + errUserUC.Err().Error(), Code: "SERVER_ERROR"},
 			}})
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write(errMessage)
@@ -220,18 +219,30 @@ func (s *googleSignInService) SignIn(w http.ResponseWriter, r *http.Request, p h
 	// 	return
 	// }
 
-	authData, errUserUC := s.userUsecase.GetDetail(r.Context(), claim.Email)
+	authData, errUserUC := s.userUC.Get(r.Context(), "root", []string{}, claim.Email)
 	if errUserUC != nil {
 		errMessage := types.SerializeError(&types.CommonError{
 			Errors: []types.Error{
-				{Message: "Failed to get user auth: " + errUserUC.Error(), Code: "SERVER_ERROR"},
+				{Message: "Failed to get user auth: " + errUserUC.Err().Error(), Code: "SERVER_ERROR"},
 			}})
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write(errMessage)
 		return
 	}
 
-	for tenantID, auth := range authData.Authorization {
+	if len(authData) != 1 {
+		errMessage := types.SerializeError(&types.CommonError{
+			Errors: []types.Error{
+				{Message: "Failed to get user auth: " + errUserUC.Err().Error(), Code: "NOT_FOUND"},
+			}})
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write(errMessage)
+		return
+	}
+
+	userData := authData[0]
+
+	for tenantID, auth := range userData.Authorization {
 		var arrUserGroup []string
 		for ug := range auth.UserGroupID {
 			arrUserGroup = append(arrUserGroup, ug)
@@ -246,7 +257,7 @@ func (s *googleSignInService) SignIn(w http.ResponseWriter, r *http.Request, p h
 		grants[tenantID] = grant
 	}
 
-	if authData.ID == "" {
+	if userData.ID() == "" {
 		errUC := &types.CommonError{
 			Errors: []types.Error{
 				{
@@ -261,19 +272,6 @@ func (s *googleSignInService) SignIn(w http.ResponseWriter, r *http.Request, p h
 		w.Write(errMessage)
 		return
 	}
-
-	// authDatum := authData[0]
-
-	// for org, auth := range authDatum.Authorization {
-	// 	// collection of grants to be signed
-	// 	grant := &session.Grant{
-	// 		UserId:             auth.UserId,
-	// 		GroupId:            auth.GroupId,
-	// 		Name:               auth.Name,
-	// 		UiAndApiPermission: auth.UiAndApiPermission,
-	// 	}
-	// 	grants[org] = grant
-	// }
 
 	newPayload, err := proto.Marshal(&session.SessionData{
 		NonRegisteredId: &session.OIDCClaim{
@@ -332,10 +330,11 @@ func (s *googleSignInService) SignIn(w http.ResponseWriter, r *http.Request, p h
 			LoginProfile: &Profile{
 				DisplayName:      claim.Name,
 				Email:            claim.Email,
-				ImageURL:         authData.Profile.ImageURL,
-				Avatar1x1URL:     authData.Profile.Avatar1x1URL,
-				Background3x1URL: authData.Profile.Background3x1URL,
+				ImageURL:         userData.Profile.ImageURL,
+				Avatar1x1URL:     userData.Profile.Avatar1x1URL,
+				Background3x1URL: userData.Profile.Background3x1URL,
 			},
+
 			Locale: lang,
 			// collection of grants NOT signed, for debugging.
 			// DO NOT USE THIS FOR BACK END VALIDATION
