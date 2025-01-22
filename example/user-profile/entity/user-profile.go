@@ -12,7 +12,7 @@ var _ mycontent.Data = &UserProfile{}
 
 type UserProfile struct {
 	Id             string        `json:"id"`
-	OwnerId        string        `json:"owner_id"`
+	Ns             string        `json:"namespace"`
 	Url            string        `json:"url"`
 	Name           string        `json:"name"`
 	CreatedAt      string        `json:"created_at"`
@@ -30,12 +30,12 @@ func (c *UserProfile) ID() string {
 }
 
 func (c *UserProfile) WithNamespace(id string) mycontent.Data {
-	c.OwnerId = id
+	c.Ns = id
 	return c
 }
 
 func (c *UserProfile) Namespace() string {
-	return c.OwnerId
+	return c.Ns
 }
 
 func (c *UserProfile) URL() string {

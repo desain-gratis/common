@@ -10,8 +10,8 @@ import (
 var _ mycontent.Data = &Organization{}
 
 type Organization struct {
+	Ns        string `json:"namespace"`
 	Id        string `json:"id"`
-	OwnerId   string `json:"owner_id"`
 	Url       string `json:"url"`
 	Name      string `json:"name"`
 	CreatedAt string `json:"created_at"`
@@ -27,12 +27,12 @@ func (c *Organization) ID() string {
 }
 
 func (c *Organization) WithNamespace(id string) mycontent.Data {
-	c.OwnerId = id
+	c.Ns = id
 	return c
 }
 
 func (c *Organization) Namespace() string {
-	return c.OwnerId
+	return c.Ns
 }
 
 func (c *Organization) URL() string {

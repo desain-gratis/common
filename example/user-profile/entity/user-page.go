@@ -10,8 +10,8 @@ import (
 var _ mycontent.Data = &UserPage{}
 
 type UserPage struct {
+	Ns             string `json:"namespace"`
 	Id             string `json:"id"`
-	OwnerId        string `json:"owner_id"`
 	Url            string `json:"url"`
 	Name           string `json:"name"`
 	CreatedAt      string `json:"created_at"`
@@ -29,12 +29,12 @@ func (c *UserPage) ID() string {
 }
 
 func (c *UserPage) WithNamespace(id string) mycontent.Data {
-	c.OwnerId = id
+	c.Ns = id
 	return c
 }
 
 func (c *UserPage) Namespace() string {
-	return c.OwnerId
+	return c.Ns
 }
 
 func (c *UserPage) URL() string {

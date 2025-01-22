@@ -7,7 +7,6 @@ import (
 
 	mycontentapiclient "github.com/desain-gratis/common/delivery/mycontent-api-client"
 	"github.com/desain-gratis/common/example/user-profile/entity"
-	common_entity "github.com/desain-gratis/common/types/entity"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
@@ -39,86 +38,4 @@ func getUserProfileImage(users []*entity.UserProfile) (imageRefs []mycontentapic
 		})
 	}
 	return imageRefs
-}
-
-var sampleOrg []*entity.Organization = []*entity.Organization{
-	{
-		Id:      "pt-angin-ribut",
-		OwnerId: "pt-angin-ribut",
-		Name:    "PT. Angin Ribut",
-	},
-	{
-		Id:      "mantap-corps-llc",
-		OwnerId: "mantap-corps-llc",
-		Name:    "Mantap Corps LLC",
-	},
-	{
-		Id:      "sedan-berat-sdn-bhd",
-		OwnerId: "sedan-berat-sdn-bhd",
-		Name:    "Sedan Berat Sdn. Bhd.",
-	},
-	{
-		Id:      "private-and-limited-pte-lte",
-		OwnerId: "private-and-limited-pte-lte",
-		Name:    "Private and Limited Pte. Ltd",
-	},
-}
-
-var sampleUser []*entity.UserProfile = []*entity.UserProfile{
-	{
-		OwnerId:        "pt-angin-ribut",
-		Id:             "0",
-		Name:           "Budi",
-		OrganizationID: "pt-angin-ribut",
-		Thumbnail_1x1: &common_entity.Image{
-			Id:             "pt-angin-ribut|budi.png",
-			Url:            "assets/budi.png",
-			ScalePx:        100,
-			ScaleDirection: common_entity.SCALE_DIRECTION_HORIZONTAL,
-			RatioX:         1,
-			RatioY:         1,
-		},
-	},
-	{
-		OwnerId:        "pt-angin-ribut",
-		Id:             "1",
-		Name:           "Sarah",
-		OrganizationID: "pt-angin-ribut",
-		Thumbnail_1x1: &common_entity.Image{
-			Id:             "pt-angin-ribut|sarah.png",
-			Url:            "assets/sarah.png",
-			ScalePx:        100,
-			ScaleDirection: common_entity.SCALE_DIRECTION_HORIZONTAL,
-			RatioX:         1,
-			RatioY:         1,
-		},
-	},
-	{
-		OwnerId:        "pt-angin-ribut",
-		Id:             "2",
-		Name:           "Patile",
-		OrganizationID: "pt-angin-ribut",
-		Thumbnail_1x1: &common_entity.Image{
-			Id:             "pt-angin-ribut|patile.png",
-			Url:            "assets/patile.png",
-			ScalePx:        100,
-			ScaleDirection: common_entity.SCALE_DIRECTION_HORIZONTAL,
-			RatioX:         1,
-			RatioY:         1,
-		},
-	},
-	{
-		OwnerId:        "mantap-corps-llc",
-		Id:             "0",
-		Name:           "Mark Papandayan",
-		OrganizationID: "mantap-corps-llc",
-		Thumbnail_1x1: &common_entity.Image{
-			Id:             "mantap-corps-llc|mark.png",
-			Url:            "assets/mark.png",
-			ScalePx:        100,
-			ScaleDirection: common_entity.SCALE_DIRECTION_HORIZONTAL,
-			RatioX:         1,
-			RatioY:         1,
-		},
-	},
 }
