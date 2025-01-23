@@ -91,34 +91,27 @@ func enableApplicationAPI(
 
 	organizationHandler := mycontentapi.New[*entity.Organization](
 		organizationRepo,
-		func(url, userID string, refID []string, ID string) string {
-			return baseURL + "/org?id=" + ID
-		},
+		baseURL+"/org",
 		[]string{},
 		mycontentapi.EmptyAuthorizationFactory,
 	)
 
 	userProfileHandler := mycontentapi.New[*entity.UserProfile](
 		userProfileRepo,
-		func(url, userID string, refID []string, ID string) string {
-			return baseURL + "/org/user?user_id=" + userID + "&org_id=" + refID[0] + "&id=" + ID
-		},
+		baseURL+"/org/user",
 		[]string{"org_id"},
 		mycontentapi.EmptyAuthorizationFactory,
 	)
 
 	userThumbnailHandler := mycontentapi.NewAttachment(
 		userProfileThumbnailRepo,
+		baseURL+"/org/user/thumbnail",
+		[]string{"org_id", "profile_id"},
+		mycontentapi.EmptyAuthorizationFactory,
 		userProfileBlobRepo,
 		false,               // hide the s3 URL
 		"assets/user/image", // the location in the s3 compatible bucket
-		func(url, userID string, refID []string, ID string) string {
-			// TODO: integrate
-			return baseURL + "/org/user/thumbnail?org_id=" + refID[0] + "&profile_id=" + refID[1] + "&id=" + ID
-		},
 		"",
-		[]string{"org_id", "profile_id"},
-		mycontentapi.EmptyAuthorizationFactory,
 	)
 
 	// Organization

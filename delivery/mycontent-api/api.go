@@ -29,14 +29,16 @@ type service[T mycontent.Data] struct {
 
 func New[T mycontent.Data](
 	repo content.Repository,
-	urlFormat mycontent_crud.URLFormat, // TODO: integrate
+	baseURL string,
 	refParams []string,
 	initAuthorization AuthorizationFactory[T],
 ) *service[T] {
-	uc := mycontent_crud.New[T](
+	uc := mycontent_crud.New(
 		repo,
-		urlFormat,
-		refParams,
+		len(refParams),
+		[]mycontent.PostProcess[T]{
+			FormatURL[T](baseURL, refParams),
+		},
 	)
 
 	whitelistParams := map[string]struct{}{

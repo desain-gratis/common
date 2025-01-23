@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/desain-gratis/common/repository/content"
@@ -16,24 +15,21 @@ import (
 
 var _ mycontent.Usecase[mycontent.Data] = &crud[mycontent.Data]{}
 
-// URLFormat for custom URL (this should be the URL default)
-type URLFormat func(dataPath string, userID string, refIDs []string, ID string) string
-
 type crud[T mycontent.Data] struct {
-	repo      content.Repository
-	urlFormat URLFormat
-	refParams []string
+	repo            content.Repository
+	expectedRefSize int // TODO: change to just size (eg. expected refIDs size)
+	postProcess     []mycontent.PostProcess[T]
 }
 
 func New[T mycontent.Data](
 	repo content.Repository,
-	urlFormat URLFormat,
-	refParams []string,
+	expectedRefSize int,
+	postProcess []mycontent.PostProcess[T],
 ) *crud[T] {
 	return &crud[T]{
-		repo:      repo,
-		urlFormat: urlFormat,
-		refParams: refParams,
+		repo:            repo,
+		expectedRefSize: expectedRefSize,
+		postProcess:     postProcess,
 	}
 }
 
@@ -45,6 +41,7 @@ func (c *crud[T]) Post(ctx context.Context, data T, meta any) (T, *types.CommonE
 		return t, err
 	}
 
+	// TODO: !!!! ALL VALIDATION TO MOVE TO DELIVERY..
 	if data.Namespace() == "" {
 		return t, &types.CommonError{
 			Errors: []types.Error{
@@ -53,13 +50,15 @@ func (c *crud[T]) Post(ctx context.Context, data T, meta any) (T, *types.CommonE
 		}
 	}
 
-	if !isValid(data.RefIDs()) && len(filterEmpty(data.RefIDs())) != len(c.refParams) {
+	if !isValid(data.RefIDs()) && len(filterEmpty(data.RefIDs())) != c.expectedRefSize {
 		return t, &types.CommonError{
 			Errors: []types.Error{
-				{HTTPCode: http.StatusBadRequest, Code: "INVALID_REF", Message: "Make sure all params--" + strings.Join(c.refParams, ",") + "--are filled and not empty"},
+				{HTTPCode: http.StatusBadRequest, Code: "INVALID_REF", Message: "Make sure all params are specified"},
 			},
 		}
 	}
+
+	// delivery --- up to here -----
 
 	// if create new and no id, assign new id
 	id := data.ID()
@@ -109,15 +108,8 @@ func (c *crud[T]) Post(ctx context.Context, data T, meta any) (T, *types.CommonE
 		return t, err
 	}
 
-	if c.urlFormat != nil {
-		parsedResult.WithURL(
-			c.urlFormat(
-				parsedResult.URL(),
-				parsedResult.Namespace(),
-				parsedResult.RefIDs(),
-				parsedResult.ID(),
-			),
-		)
+	for _, pp := range c.postProcess {
+		pp(parsedResult)
 	}
 
 	return parsedResult, nil
@@ -128,14 +120,14 @@ func (c *crud[T]) Post(ctx context.Context, data T, meta any) (T, *types.CommonE
 func (c *crud[T]) Get(ctx context.Context, namespace string, refIDs []string, ID string) ([]T, *types.CommonError) {
 	// 1. check if there is ID
 	if ID != "" {
-		if !isValid(refIDs) || len(filterEmpty(refIDs)) != len(c.refParams) {
+		if !isValid(refIDs) || len(filterEmpty(refIDs)) != c.expectedRefSize {
 			result := make([]T, 0, 1)
 			return result, &types.CommonError{
 				Errors: []types.Error{
 					{
 						Code:     "NOT_FOUND",
 						HTTPCode: http.StatusNotFound,
-						Message:  "You specify item ID, but some refs are missing--" + strings.Join(c.refParams, ","),
+						Message:  "You specify item ID, but some refs are missing",
 					},
 				},
 			}
@@ -165,8 +157,8 @@ func (c *crud[T]) Get(ctx context.Context, namespace string, refIDs []string, ID
 			return nil, err
 		}
 
-		if c.urlFormat != nil {
-			parsedResult.WithURL(c.urlFormat(parsedResult.URL(), parsedResult.Namespace(), parsedResult.RefIDs(), parsedResult.ID()))
+		for _, pp := range c.postProcess {
+			pp(parsedResult)
 		}
 
 		result = append(result, parsedResult)
@@ -188,8 +180,8 @@ func (c *crud[T]) Get(ctx context.Context, namespace string, refIDs []string, ID
 				continue
 			}
 
-			if c.urlFormat != nil {
-				parsedResult.WithURL(c.urlFormat(parsedResult.URL(), parsedResult.Namespace(), parsedResult.RefIDs(), parsedResult.ID()))
+			for _, pp := range c.postProcess {
+				pp(parsedResult)
 			}
 
 			result = append(result, parsedResult)
@@ -211,8 +203,8 @@ func (c *crud[T]) Get(ctx context.Context, namespace string, refIDs []string, ID
 			continue
 		}
 
-		if c.urlFormat != nil {
-			parsedResult.WithURL(c.urlFormat(parsedResult.URL(), parsedResult.Namespace(), parsedResult.RefIDs(), parsedResult.ID()))
+		for _, pp := range c.postProcess {
+			pp(parsedResult)
 		}
 
 		result = append(result, parsedResult)
@@ -224,13 +216,13 @@ func (c *crud[T]) Get(ctx context.Context, namespace string, refIDs []string, ID
 // Delete your resource here
 // the implementation can check whether there are linked resource or not
 func (c *crud[T]) Delete(ctx context.Context, userID string, refIDs []string, ID string) (t T, err *types.CommonError) {
-	if !isValid(refIDs) && len(filterEmpty(refIDs)) != len(c.refParams) {
+	if !isValid(refIDs) && len(filterEmpty(refIDs)) != c.expectedRefSize {
 		return t, &types.CommonError{
 			Errors: []types.Error{
 				{
 					Code:     "NOT_FOUND",
 					HTTPCode: http.StatusNotFound,
-					Message:  "You specify item ID, but some refs are missing--" + strings.Join(c.refParams, ","),
+					Message:  "You specify item ID, but some refs are missing",
 				},
 			},
 		}
@@ -248,8 +240,8 @@ func (c *crud[T]) Delete(ctx context.Context, userID string, refIDs []string, ID
 		return t, err
 	}
 
-	if c.urlFormat != nil {
-		parsedResult.WithURL(c.urlFormat(parsedResult.URL(), parsedResult.Namespace(), parsedResult.RefIDs(), parsedResult.ID()))
+	for _, pp := range c.postProcess {
+		pp(parsedResult)
 	}
 
 	return parsedResult, nil

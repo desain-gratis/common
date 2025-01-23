@@ -28,37 +28,37 @@ type Attachable[T any] interface {
 	GetAttachment(ctx context.Context, userID string, refIDs []string, ID string) (payload io.ReadCloser, meta T, err *types.CommonError)
 }
 
+type PostProcess[T Data] func(t T)
+
 // Data is the main data structure used in the my content usecase
 type Data interface {
-	any
-
-	ID[Data]
-	Locatable[Data]
-	Namespace[Data]
-	Created[Data]
+	ID
+	Locatable
+	Namespace
+	Created
 	RefIDs
 	Validator
 }
 
 // Mutator or modifier, fluent style
 // It enables the usecase to get and modify the underlying data
-type ID[T any] interface {
-	WithID(id string) T
+type ID interface {
+	WithID(id string) Data
 	ID() string
 }
 
-type Locatable[T any] interface {
+type Locatable interface {
 	URL() string
-	WithURL(url string) T
+	WithURL(url string) Data
 }
 
-type Namespace[T any] interface {
-	WithNamespace(id string) T
+type Namespace interface {
+	WithNamespace(id string) Data
 	Namespace() string
 }
 
-type Created[T any] interface {
-	WithCreatedTime(t time.Time) T
+type Created interface {
+	WithCreatedTime(t time.Time) Data
 	CreatedTime() time.Time
 }
 

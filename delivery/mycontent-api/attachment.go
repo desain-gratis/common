@@ -32,16 +32,15 @@ type uploadService struct {
 
 // Behave exatctly like the other API, but
 // Can only do repository "Put" via Upload API
-// Can on
 func NewAttachment(
 	repo content.Repository, // todo, change catalog.Attachment location to more common location (not uc specific)
+	baseURL string,
+	refParams []string,
+	initAuthorization AuthorizationFactory[*entity.Attachment],
 	blobRepo blob.Repository,
 	hideUrl bool,
 	namespace string, // in blob storage
-	urlFormat mycontent_crud.URLFormat,
 	cacheControl string,
-	refParams []string,
-	initAuthorization AuthorizationFactory[*entity.Attachment],
 ) *uploadService {
 
 	uc := mycontent_crud.NewAttachment(
@@ -49,7 +48,10 @@ func NewAttachment(
 		blobRepo,
 		hideUrl,
 		namespace,
-		urlFormat,
+		len(refParams),
+		[]mycontent.PostProcess[*entity.Attachment]{
+			FormatURL[*entity.Attachment](baseURL, refParams),
+		},
 	)
 
 	whitelistParams := map[string]struct{}{
