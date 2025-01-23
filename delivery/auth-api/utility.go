@@ -19,7 +19,7 @@ func convertUpdatePayload(clientPayload Payload) (ucPayload user.Payload) {
 		// later improvemetns:
 		//   for Google ID, should use "sub" field later improvement
 		//   but user need to signin first to create the account
-		ID:              clientPayload.Email,
+		Id:              clientPayload.Email,
 		Profile:         user.UserProfile(clientPayload.Profile),
 		GSI:             user.GSIConfig(clientPayload.GSI),
 		MIP:             user.MIPConfig(clientPayload.MIP),

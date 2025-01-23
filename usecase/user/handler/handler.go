@@ -109,7 +109,7 @@ func (u *usecase) Insert(ctx context.Context, payload m.Payload) (err error) {
 		}
 	}
 	userPayload := mRepo.AuthorizedUser{
-		ID: payload.ID,
+		ID: payload.Id,
 		Profile: mRepo.UserProfile{
 			ID:               payload.Profile.ID,
 			ImageURL:         payload.Profile.ImageURL,
@@ -127,7 +127,7 @@ func (u *usecase) Insert(ctx context.Context, payload m.Payload) (err error) {
 		Authorization:   auths,
 	}
 
-	err = u.userPGRepo.Insert(ctx, "root", payload.ID, []string{}, userPayload)
+	err = u.userPGRepo.Insert(ctx, "root", payload.Id, []string{}, userPayload)
 	return
 }
 
@@ -142,7 +142,7 @@ func (u *usecase) Update(ctx context.Context, email string, payload m.Payload) (
 		}
 	}
 	userPayload := mRepo.AuthorizedUser{
-		ID: payload.ID,
+		ID: payload.Id,
 		Profile: mRepo.UserProfile{
 			ID:               payload.Profile.ID,
 			ImageURL:         payload.Profile.ImageURL,
