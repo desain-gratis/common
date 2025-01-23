@@ -21,15 +21,17 @@ const maximumRequestLength = 1 << 20
 const maximumRequestLengthAttachment = 100 << 20
 
 type service[T mycontent.Data] struct {
-	myContentUC     mycontent.Usecase[T]
-	refParams       []string
-	whitelistParams map[string]struct{}
+	myContentUC       mycontent.Usecase[T]
+	refParams         []string
+	whitelistParams   map[string]struct{}
+	initAuthorization AuthorizationFactory[T]
 }
 
 func New[T mycontent.Data](
 	repo content.Repository,
 	urlFormat mycontent_crud.URLFormat, // TODO: integrate
 	refParams []string,
+	initAuthorization AuthorizationFactory[T],
 ) *service[T] {
 	uc := mycontent_crud.New[T](
 		repo,
@@ -45,9 +47,10 @@ func New[T mycontent.Data](
 	}
 
 	return &service[T]{
-		myContentUC:     uc,
-		refParams:       refParams,
-		whitelistParams: whitelistParams,
+		myContentUC:       uc,
+		refParams:         refParams,
+		whitelistParams:   whitelistParams,
+		initAuthorization: initAuthorization,
 	}
 }
 
@@ -91,6 +94,21 @@ func (i *service[T]) Post(w http.ResponseWriter, r *http.Request, p httprouter.P
 		)
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write(errMessage)
+		return
+	}
+
+	// Initialize authorization handler
+	authorization, errUC := i.initAuthorization(r.Context(), r.Header.Get("Authorization"))
+	if errUC != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write(serializeError(errUC))
+		return
+	}
+
+	// Check authorization on before post
+	if errUC := authorization.CanPost(resource); errUC != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write(serializeError(errUC))
 		return
 	}
 
@@ -162,6 +180,22 @@ func (i *service[T]) Get(w http.ResponseWriter, r *http.Request, p httprouter.Pa
 		refIDs = append(refIDs, r.URL.Query().Get(param))
 	}
 
+	// Initialize authorization logic
+	authorization, errUC := i.initAuthorization(r.Context(), r.Header.Get("Authorization"))
+	if errUC != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write(serializeError(errUC))
+		return
+	}
+
+	// Check parameter to obtain the data
+	if errUC := authorization.CheckBeforeGet(namespace, refIDs, ID); errUC != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write(serializeError(errUC))
+		return
+	}
+
+	// Actually get the data
 	result, errUC := i.myContentUC.Get(r.Context(), namespace, refIDs, ID)
 	if errUC != nil {
 		errMessage := serializeError(errUC)
@@ -169,6 +203,18 @@ func (i *service[T]) Get(w http.ResponseWriter, r *http.Request, p httprouter.Pa
 		w.Write(errMessage)
 		return
 	}
+
+	// Check authorization for entity level authorization
+	var count int
+	for i := 0; i < len(result); i++ {
+		datum := result[i]
+		if errUC := authorization.CanGet(datum); errUC != nil {
+			continue
+		}
+		result[count] = datum
+		count++
+	}
+	result = result[:count]
 
 	payload, err := json.Marshal(&types.CommonResponse{
 		Success: result,
@@ -220,6 +266,50 @@ func (i *service[T]) Delete(w http.ResponseWriter, r *http.Request, p httprouter
 		refIDs = append(refIDs, r.URL.Query().Get(param))
 	}
 
+	// Initialize authorization logic
+	authorization, errUC := i.initAuthorization(r.Context(), r.Header.Get("Authorization"))
+	if errUC != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write(serializeError(errUC))
+		return
+	}
+
+	// Check parameter to obtain the data
+	if errUC := authorization.CheckBeforeDelete(namespace, refIDs, ID); errUC != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write(serializeError(errUC))
+		return
+	}
+
+	// Get the data first.
+	getBeforeDeleteResult, errUC := i.myContentUC.Get(r.Context(), namespace, refIDs, ID)
+	if errUC != nil {
+		errMessage := serializeError(errUC)
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write(errMessage)
+		return
+	}
+
+	if len(getBeforeDeleteResult) != 1 {
+		errMessage := serializeError(errUC)
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write(errMessage)
+		log.Error().Msgf("Should not happen")
+		return
+	}
+
+	// Can we delete the data ..?
+	if errUC := authorization.CanDelete(getBeforeDeleteResult[0]); errUC != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write(serializeError(&types.CommonError{
+			Errors: []types.Error{
+				{HTTPCode: http.StatusBadRequest, Code: "UNAUTHORIZED", Message: "Unauthorized to delete"},
+			},
+		}))
+		return
+	}
+
+	// Do the actual deletion
 	result, errUC := i.myContentUC.Delete(r.Context(), namespace, refIDs, ID)
 	if errUC != nil {
 		errMessage := serializeError(errUC)

@@ -92,21 +92,19 @@ func enableApplicationAPI(
 	organizationHandler := mycontentapi.New[*entity.Organization](
 		organizationRepo,
 		func(url, userID string, refID []string, ID string) string {
-			return baseURL + "/user?user_id=" + userID + "&id=" + ID
+			return baseURL + "/org?id=" + ID
 		},
 		[]string{},
+		mycontentapi.EmptyAuthorizationFactory,
 	)
 
 	userProfileHandler := mycontentapi.New[*entity.UserProfile](
 		userProfileRepo,
 		func(url, userID string, refID []string, ID string) string {
-			if len(refID) == 0 {
-				log.Error().Msgf("This should not happen")
-				return baseURL + "/user?user_id=" + userID + "&id=" + ID
-			}
-			return baseURL + "/user?user_id=" + userID + "&org_id=" + refID[0] + "&id=" + ID
+			return baseURL + "/org/user?user_id=" + userID + "&org_id=" + refID[0] + "&id=" + ID
 		},
 		[]string{"org_id"},
+		mycontentapi.EmptyAuthorizationFactory,
 	)
 
 	userThumbnailHandler := mycontentapi.NewAttachment(
@@ -116,10 +114,11 @@ func enableApplicationAPI(
 		"assets/user/image", // the location in the s3 compatible bucket
 		func(url, userID string, refID []string, ID string) string {
 			// TODO: integrate
-			return baseURL + "/user/thumbnail?profile_id=" + refID[1] + "&org_id=" + refID[0] + "&id=" + ID
+			return baseURL + "/org/user/thumbnail?org_id=" + refID[0] + "&profile_id=" + refID[1] + "&id=" + ID
 		},
 		"",
 		[]string{"org_id", "profile_id"},
+		mycontentapi.EmptyAuthorizationFactory,
 	)
 
 	// Organization

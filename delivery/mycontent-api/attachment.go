@@ -41,6 +41,7 @@ func NewAttachment(
 	urlFormat mycontent_crud.URLFormat,
 	cacheControl string,
 	refParams []string,
+	initAuthorization AuthorizationFactory[*entity.Attachment],
 ) *uploadService {
 
 	uc := mycontent_crud.NewAttachment(
@@ -61,9 +62,10 @@ func NewAttachment(
 
 	return &uploadService{
 		service: &service[*entity.Attachment]{
-			myContentUC:     uc,
-			refParams:       refParams,
-			whitelistParams: whitelistParams,
+			myContentUC:       uc,
+			refParams:         refParams,
+			whitelistParams:   whitelistParams,
+			initAuthorization: initAuthorization,
 		},
 		uc:           uc, // uc with advanced functionality
 		cacheControl: cacheControl,
@@ -116,6 +118,32 @@ func (i *uploadService) Get(w http.ResponseWriter, r *http.Request, p httprouter
 
 	if isData != "true" {
 		i.service.Get(w, r, p)
+		return
+	}
+
+	if ID == "" {
+		d := serializeError(&types.CommonError{
+			Errors: []types.Error{
+				{HTTPCode: http.StatusBadRequest, Code: "INVALID_PARAMS", Message: "You specify data=true but does not provide 'id' parameter"},
+			},
+		})
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write(d)
+		return
+	}
+
+	// Initialize authorization logic
+	authorization, errUC := i.initAuthorization(r.Context(), r.Header.Get("Authorization"))
+	if errUC != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write(serializeError(errUC))
+		return
+	}
+
+	// Check parameter to obtain the data
+	if errUC := authorization.CheckBeforeGet(namespace, refIDs, ID); errUC != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write(serializeError(errUC))
 		return
 	}
 
@@ -223,6 +251,21 @@ func (i *uploadService) Upload(w http.ResponseWriter, r *http.Request, p httprou
 		return
 	}
 
+	// Initialize authorization handler
+	authorization, errUC := i.initAuthorization(r.Context(), r.Header.Get("Authorization"))
+	if errUC != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write(serializeError(errUC))
+		return
+	}
+
+	// Check authorization on before post
+	if errUC := authorization.CanPost(attachmentData); errUC != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write(serializeError(errUC))
+		return
+	}
+
 	part, err = reader.NextPart()
 	if err != nil {
 		errMessage := serializeError(&types.CommonError{
@@ -237,17 +280,15 @@ func (i *uploadService) Upload(w http.ResponseWriter, r *http.Request, p httprou
 	}
 
 	if part.FormName() != "attachment" {
-		if err != nil {
-			errMessage := serializeError(&types.CommonError{
-				Errors: []types.Error{
-					{HTTPCode: http.StatusBadRequest, Message: "Expecting data with form name 'attachment'", Code: "BAD_REQUEST"},
-				},
+		errMessage := serializeError(&types.CommonError{
+			Errors: []types.Error{
+				{HTTPCode: http.StatusBadRequest, Message: "Expecting data with form name 'attachment'", Code: "BAD_REQUEST"},
 			},
-			)
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write(errMessage)
-			return
-		}
+		},
+		)
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write(errMessage)
+		return
 	}
 
 	contentType, _, err := mime.ParseMediaType(part.Header.Get("Content-Type"))
@@ -306,19 +347,6 @@ func (i *uploadService) Upload(w http.ResponseWriter, r *http.Request, p httprou
 		return
 	}
 
-	// naise. the wrap can be considered as message!
-	// result := res.(any)
-	// payload, err = protojson.MarshalOptions{
-	// 	UseProtoNames: true,
-	// 	EmitUnpopulated: true,
-	// }.Marshal(result)
-
-	// since we wrap using types.CommonResponse, it cannot use protojson to unmarshal
-	// for now can remove omitempty manually in the generated proto, based on the usecase
-	// or trade offs, convert common response / common error to their proto counterpart
-	// (either use adaptar or change the whole code)
-	// let's assess them later
-	// eg. (the need for, for example, price 0) to be shown. or we can just determine implicitly
 	payload, err := json.Marshal(&types.CommonResponse{
 		Success: &result,
 	})
