@@ -34,10 +34,9 @@ type uploadService struct {
 // Can only do repository "Put" via Upload API
 func NewAttachment(
 	repo content.Repository, // todo, change catalog.Attachment location to more common location (not uc specific)
+	blobRepo blob.Repository,
 	baseURL string,
 	refParams []string,
-	initAuthorization AuthorizationFactory[*entity.Attachment],
-	blobRepo blob.Repository,
 	hideUrl bool,
 	namespace string, // in blob storage
 	cacheControl string,

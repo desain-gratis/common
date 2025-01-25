@@ -21,22 +21,20 @@ const maximumRequestLength = 1 << 20
 const maximumRequestLengthAttachment = 100 << 20
 
 type service[T mycontent.Data] struct {
-	myContentUC       mycontent.Usecase[T]
-	refParams         []string
-	whitelistParams   map[string]struct{}
-	initAuthorization AuthorizationFactory[T]
+	myContentUC     mycontent.Usecase[T]
+	refParams       []string
+	whitelistParams map[string]struct{}
 }
 
 func New[T mycontent.Data](
 	repo content.Repository,
 	baseURL string,
 	refParams []string,
-	initAuthorization AuthorizationFactory[T],
 ) *service[T] {
 	uc := mycontent_crud.New(
 		repo,
 		len(refParams),
-		[]mycontent.PostProcess[T]{
+		[]mycontent.PostProcess[T]{ // TODO: not clean, just use delivery in place
 			FormatURL[T](baseURL, refParams),
 		},
 	)
@@ -49,10 +47,9 @@ func New[T mycontent.Data](
 	}
 
 	return &service[T]{
-		myContentUC:       uc,
-		refParams:         refParams,
-		whitelistParams:   whitelistParams,
-		initAuthorization: initAuthorization,
+		myContentUC:     uc,
+		refParams:       refParams,
+		whitelistParams: whitelistParams,
 	}
 }
 
@@ -99,20 +96,12 @@ func (i *service[T]) Post(w http.ResponseWriter, r *http.Request, p httprouter.P
 		return
 	}
 
-	// Initialize authorization handler
-	authorization, errUC := i.initAuthorization(r.Context(), r.Header.Get("Authorization"))
-	if errUC != nil {
-		w.WriteHeader(http.StatusUnauthorized)
-		w.Write(serializeError(errUC))
-		return
-	}
-
 	// Check authorization on before post
-	if errUC := authorization.CanPost(resource); errUC != nil {
-		w.WriteHeader(http.StatusUnauthorized)
-		w.Write(serializeError(errUC))
-		return
-	}
+	// if authorization != nil && authorization.CanPost(resource); errUC != nil {
+	// 	w.WriteHeader(http.StatusUnauthorized)
+	// 	w.Write(serializeError(errUC))
+	// 	return
+	// }
 
 	// Basically, the Use case / Repo for put is to Put Identifier to the object if not exist yet
 	// If identifier already exist, previous data will be overwritten

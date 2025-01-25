@@ -35,14 +35,12 @@ func NewAttachment(
 	hideUrl bool,
 	namespace string,
 	expectedRefSize int,
-	postProcess []mycontent.PostProcess[*entity.Attachment],
 ) *crudWithAttachment {
 
 	return &crudWithAttachment{
-		crud: New(
+		crud: New[*entity.Attachment](
 			repo,
 			expectedRefSize,
-			postProcess,
 		),
 		blobRepo:  blobRepo,
 		hideUrl:   hideUrl,

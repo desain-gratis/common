@@ -18,18 +18,15 @@ var _ mycontent.Usecase[mycontent.Data] = &crud[mycontent.Data]{}
 type crud[T mycontent.Data] struct {
 	repo            content.Repository
 	expectedRefSize int // TODO: change to just size (eg. expected refIDs size)
-	postProcess     []mycontent.PostProcess[T]
 }
 
 func New[T mycontent.Data](
 	repo content.Repository,
 	expectedRefSize int,
-	postProcess []mycontent.PostProcess[T],
 ) *crud[T] {
 	return &crud[T]{
 		repo:            repo,
 		expectedRefSize: expectedRefSize,
-		postProcess:     postProcess,
 	}
 }
 
@@ -108,10 +105,6 @@ func (c *crud[T]) Post(ctx context.Context, data T, meta any) (T, *types.CommonE
 		return t, err
 	}
 
-	for _, pp := range c.postProcess {
-		pp(parsedResult)
-	}
-
 	return parsedResult, nil
 }
 
@@ -157,10 +150,6 @@ func (c *crud[T]) Get(ctx context.Context, namespace string, refIDs []string, ID
 			return nil, err
 		}
 
-		for _, pp := range c.postProcess {
-			pp(parsedResult)
-		}
-
 		result = append(result, parsedResult)
 		return result, nil
 	}
@@ -180,10 +169,6 @@ func (c *crud[T]) Get(ctx context.Context, namespace string, refIDs []string, ID
 				continue
 			}
 
-			for _, pp := range c.postProcess {
-				pp(parsedResult)
-			}
-
 			result = append(result, parsedResult)
 		}
 		return result, nil
@@ -201,10 +186,6 @@ func (c *crud[T]) Get(ctx context.Context, namespace string, refIDs []string, ID
 		if err != nil {
 			log.Error().Msgf("Should not happend")
 			continue
-		}
-
-		for _, pp := range c.postProcess {
-			pp(parsedResult)
 		}
 
 		result = append(result, parsedResult)
@@ -238,10 +219,6 @@ func (c *crud[T]) Delete(ctx context.Context, userID string, refIDs []string, ID
 	parsedResult, err := Parse[T](d.Data)
 	if err != nil {
 		return t, err
-	}
-
-	for _, pp := range c.postProcess {
-		pp(parsedResult)
 	}
 
 	return parsedResult, nil
