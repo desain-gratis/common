@@ -24,19 +24,19 @@ type service[T mycontent.Data] struct {
 	myContentUC     mycontent.Usecase[T]
 	refParams       []string
 	whitelistParams map[string]struct{}
+	postProcess     []PostProcess[T]
 }
+
+type PostProcess[T mycontent.Data] func(t T)
 
 func New[T mycontent.Data](
 	repo content.Repository,
 	baseURL string,
 	refParams []string,
 ) *service[T] {
-	uc := mycontent_crud.New(
+	uc := mycontent_crud.New[T](
 		repo,
 		len(refParams),
-		[]mycontent.PostProcess[T]{ // TODO: not clean, just use delivery in place
-			FormatURL[T](baseURL, refParams),
-		},
 	)
 
 	whitelistParams := map[string]struct{}{
@@ -50,7 +50,14 @@ func New[T mycontent.Data](
 		myContentUC:     uc,
 		refParams:       refParams,
 		whitelistParams: whitelistParams,
+		postProcess: []PostProcess[T]{
+			FormatURL[T](baseURL, refParams),
+		},
 	}
+}
+
+func (i *service[T]) GetUsecase() mycontent.Usecase[T] {
+	return i.myContentUC
 }
 
 func (i *service[T]) Post(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
@@ -96,16 +103,6 @@ func (i *service[T]) Post(w http.ResponseWriter, r *http.Request, p httprouter.P
 		return
 	}
 
-	// Check authorization on before post
-	// if authorization != nil && authorization.CanPost(resource); errUC != nil {
-	// 	w.WriteHeader(http.StatusUnauthorized)
-	// 	w.Write(serializeError(errUC))
-	// 	return
-	// }
-
-	// Basically, the Use case / Repo for put is to Put Identifier to the object if not exist yet
-	// If identifier already exist, previous data will be overwritten
-
 	result, errUC := i.myContentUC.Post(r.Context(), resource, map[string]string{
 		"created_at": time.Now().Format(time.RFC3339),
 	})
@@ -114,6 +111,11 @@ func (i *service[T]) Post(w http.ResponseWriter, r *http.Request, p httprouter.P
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write(d)
 		return
+	}
+
+	// post-process
+	for _, pp := range i.postProcess {
+		pp(result)
 	}
 
 	// since we wrap using types.CommonResponse, it cannot use protojson to unmarshal
@@ -171,21 +173,6 @@ func (i *service[T]) Get(w http.ResponseWriter, r *http.Request, p httprouter.Pa
 		refIDs = append(refIDs, r.URL.Query().Get(param))
 	}
 
-	// Initialize authorization logic
-	authorization, errUC := i.initAuthorization(r.Context(), r.Header.Get("Authorization"))
-	if errUC != nil {
-		w.WriteHeader(http.StatusUnauthorized)
-		w.Write(serializeError(errUC))
-		return
-	}
-
-	// Check parameter to obtain the data
-	if errUC := authorization.CheckBeforeGet(namespace, refIDs, ID); errUC != nil {
-		w.WriteHeader(http.StatusUnauthorized)
-		w.Write(serializeError(errUC))
-		return
-	}
-
 	// Actually get the data
 	result, errUC := i.myContentUC.Get(r.Context(), namespace, refIDs, ID)
 	if errUC != nil {
@@ -199,9 +186,6 @@ func (i *service[T]) Get(w http.ResponseWriter, r *http.Request, p httprouter.Pa
 	var count int
 	for i := 0; i < len(result); i++ {
 		datum := result[i]
-		if errUC := authorization.CanGet(datum); errUC != nil {
-			continue
-		}
 		result[count] = datum
 		count++
 	}
@@ -257,21 +241,6 @@ func (i *service[T]) Delete(w http.ResponseWriter, r *http.Request, p httprouter
 		refIDs = append(refIDs, r.URL.Query().Get(param))
 	}
 
-	// Initialize authorization logic
-	authorization, errUC := i.initAuthorization(r.Context(), r.Header.Get("Authorization"))
-	if errUC != nil {
-		w.WriteHeader(http.StatusUnauthorized)
-		w.Write(serializeError(errUC))
-		return
-	}
-
-	// Check parameter to obtain the data
-	if errUC := authorization.CheckBeforeDelete(namespace, refIDs, ID); errUC != nil {
-		w.WriteHeader(http.StatusUnauthorized)
-		w.Write(serializeError(errUC))
-		return
-	}
-
 	// Get the data first.
 	getBeforeDeleteResult, errUC := i.myContentUC.Get(r.Context(), namespace, refIDs, ID)
 	if errUC != nil {
@@ -286,17 +255,6 @@ func (i *service[T]) Delete(w http.ResponseWriter, r *http.Request, p httprouter
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write(errMessage)
 		log.Error().Msgf("Should not happen")
-		return
-	}
-
-	// Can we delete the data ..?
-	if errUC := authorization.CanDelete(getBeforeDeleteResult[0]); errUC != nil {
-		w.WriteHeader(http.StatusUnauthorized)
-		w.Write(serializeError(&types.CommonError{
-			Errors: []types.Error{
-				{HTTPCode: http.StatusBadRequest, Code: "UNAUTHORIZED", Message: "Unauthorized to delete"},
-			},
-		}))
 		return
 	}
 

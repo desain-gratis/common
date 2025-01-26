@@ -28,8 +28,6 @@ type Attachable[T any] interface {
 	GetAttachment(ctx context.Context, userID string, refIDs []string, ID string) (payload io.ReadCloser, meta T, err *types.CommonError)
 }
 
-type PostProcess[T Data] func(t T)
-
 // Data is the main data structure used in the my content usecase
 type Data interface {
 	ID

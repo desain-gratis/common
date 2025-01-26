@@ -1,0 +1,10 @@
+{
+    "postgres.example.host": "",
+    "postgres.example.port": "5432",
+    "postgres.example.database_name": "",
+    "postgres.example.user": "",
+    "postgres.example.password": "",
+    "postgres.example.ctx_timeout_ms": "1000",
+    "postgres.example.max_conn": "100",
+    "postgres.example.max_conn_lifetime_sec": "8s"
+}

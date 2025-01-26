@@ -93,22 +93,19 @@ func enableApplicationAPI(
 		organizationRepo,
 		baseURL+"/org",
 		[]string{},
-		mycontentapi.EmptyAuthorizationFactory,
 	)
 
 	userProfileHandler := mycontentapi.New[*entity.UserProfile](
 		userProfileRepo,
 		baseURL+"/org/user",
 		[]string{"org_id"},
-		mycontentapi.EmptyAuthorizationFactory,
 	)
 
 	userThumbnailHandler := mycontentapi.NewAttachment(
 		userProfileThumbnailRepo,
+		userProfileBlobRepo,
 		baseURL+"/org/user/thumbnail",
 		[]string{"org_id", "profile_id"},
-		mycontentapi.EmptyAuthorizationFactory,
-		userProfileBlobRepo,
 		false,               // hide the s3 URL
 		"assets/user/image", // the location in the s3 compatible bucket
 		"",

@@ -48,9 +48,6 @@ func NewAttachment(
 		hideUrl,
 		namespace,
 		len(refParams),
-		[]mycontent.PostProcess[*entity.Attachment]{
-			FormatURL[*entity.Attachment](baseURL, refParams),
-		},
 	)
 
 	whitelistParams := map[string]struct{}{
@@ -63,10 +60,12 @@ func NewAttachment(
 
 	return &uploadService{
 		service: &service[*entity.Attachment]{
-			myContentUC:       uc,
-			refParams:         refParams,
-			whitelistParams:   whitelistParams,
-			initAuthorization: initAuthorization,
+			myContentUC:     uc,
+			refParams:       refParams,
+			whitelistParams: whitelistParams,
+			postProcess: []PostProcess[*entity.Attachment]{
+				FormatURL[*entity.Attachment](baseURL, refParams),
+			},
 		},
 		uc:           uc, // uc with advanced functionality
 		cacheControl: cacheControl,
@@ -130,21 +129,6 @@ func (i *uploadService) Get(w http.ResponseWriter, r *http.Request, p httprouter
 		})
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write(d)
-		return
-	}
-
-	// Initialize authorization logic
-	authorization, errUC := i.initAuthorization(r.Context(), r.Header.Get("Authorization"))
-	if errUC != nil {
-		w.WriteHeader(http.StatusUnauthorized)
-		w.Write(serializeError(errUC))
-		return
-	}
-
-	// Check parameter to obtain the data
-	if errUC := authorization.CheckBeforeGet(namespace, refIDs, ID); errUC != nil {
-		w.WriteHeader(http.StatusUnauthorized)
-		w.Write(serializeError(errUC))
 		return
 	}
 
@@ -249,21 +233,6 @@ func (i *uploadService) Upload(w http.ResponseWriter, r *http.Request, p httprou
 		})
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write(d)
-		return
-	}
-
-	// Initialize authorization handler
-	authorization, errUC := i.initAuthorization(r.Context(), r.Header.Get("Authorization"))
-	if errUC != nil {
-		w.WriteHeader(http.StatusUnauthorized)
-		w.Write(serializeError(errUC))
-		return
-	}
-
-	// Check authorization on before post
-	if errUC := authorization.CanPost(attachmentData); errUC != nil {
-		w.WriteHeader(http.StatusUnauthorized)
-		w.Write(serializeError(errUC))
 		return
 	}
 

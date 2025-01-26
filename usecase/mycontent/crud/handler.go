@@ -174,7 +174,7 @@ func (c *crud[T]) Get(ctx context.Context, namespace string, refIDs []string, ID
 		return result, nil
 	}
 
-	// 3. get by user ID | TODO DELETE | redundant with above, because empty refIDs is valid as well..
+	// 3. get by namespace
 	ds, err := c.repo.Get(ctx, namespace, []string{}, "")
 	if err != nil {
 		return nil, err
