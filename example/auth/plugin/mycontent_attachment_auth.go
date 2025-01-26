@@ -7,10 +7,11 @@ import (
 
 	common_entity "github.com/desain-gratis/common/types/entity"
 	types "github.com/desain-gratis/common/types/http"
+	"github.com/desain-gratis/common/usecase/mycontent"
 	mycontent_base "github.com/desain-gratis/common/usecase/mycontent/base"
 )
 
-// var _ mycontent.Usecase[mycontent.Data] = &mcAuth[mycontent.Data]{}
+var _ mycontent.Usecase[*common_entity.Attachment] = &mcAttachAuth{}
 
 type mcAttachAuth struct {
 	*mycontent_base.HandlerWithAttachment
