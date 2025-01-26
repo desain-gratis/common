@@ -80,6 +80,15 @@ func New(
 	rsaStore jwtrsa.Provider,
 	secretkvStore secretkv.Provider,
 ) *oidcLogin {
+
+	if secretkvStore == nil {
+		log.Fatal().Msgf("Please configure the kv secret store")
+	}
+
+	if rsaStore == nil {
+		log.Fatal().Msgf("Please configure the rsa secret store")
+	}
+
 	s := &oidcLogin{
 		config:        config,
 		group:         &singleflight.Group{},
