@@ -13,11 +13,9 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/desain-gratis/common/repository/blob"
-	"github.com/desain-gratis/common/repository/content"
 	entity "github.com/desain-gratis/common/types/entity"
 	types "github.com/desain-gratis/common/types/http"
 	"github.com/desain-gratis/common/usecase/mycontent"
-	mycontent_crud "github.com/desain-gratis/common/usecase/mycontent/crud"
 )
 
 // maybe later change it to mycontentapi
@@ -33,7 +31,7 @@ type uploadService struct {
 // Behave exatctly like the other API, but
 // Can only do repository "Put" via Upload API
 func NewAttachment(
-	repo content.Repository, // todo, change catalog.Attachment location to more common location (not uc specific)
+	base mycontent.UsecaseAttachment[*entity.Attachment],
 	blobRepo blob.Repository,
 	baseURL string,
 	refParams []string,
@@ -41,15 +39,6 @@ func NewAttachment(
 	namespace string, // in blob storage
 	cacheControl string,
 ) *uploadService {
-
-	uc := mycontent_crud.NewAttachment(
-		repo,
-		blobRepo,
-		hideUrl,
-		namespace,
-		len(refParams),
-	)
-
 	whitelistParams := map[string]struct{}{
 		"id":   {},
 		"data": {},
@@ -60,14 +49,14 @@ func NewAttachment(
 
 	return &uploadService{
 		service: &service[*entity.Attachment]{
-			myContentUC:     uc,
+			uc:              base,
 			refParams:       refParams,
 			whitelistParams: whitelistParams,
 			postProcess: []PostProcess[*entity.Attachment]{
 				FormatURL[*entity.Attachment](baseURL, refParams),
 			},
 		},
-		uc:           uc, // uc with advanced functionality
+		uc:           base, // uc with advanced functionality
 		cacheControl: cacheControl,
 	}
 }

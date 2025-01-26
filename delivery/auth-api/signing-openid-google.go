@@ -98,7 +98,7 @@ func getToken(authorizationToken string) (string, *types.CommonError) {
 				{
 					HTTPCode: http.StatusBadRequest,
 					Code:     "INVALID_OR_EMPTY_AUTHORIZATION",
-					Message:  "Authorization header is no valid",
+					Message:  "Authorization header is not valid",
 				},
 			},
 		}
@@ -106,23 +106,33 @@ func getToken(authorizationToken string) (string, *types.CommonError) {
 	return token[1], nil
 }
 
-// It's a http handler
-func WithGoogleAuth(
-	verif signing.VerifierOf[idtoken.Payload],
-	handler httprouter.Handle,
-) httprouter.Handle {
-	return func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-		// ....
+type tokenExchanger struct {
+	verifier signing.VerifierOf[idtoken.Payload]
+	signer   signing.Usecase
+}
 
+func TokenExchanger(
+	verifier signing.VerifierOf[idtoken.Payload],
+	signer signing.Usecase,
+) *tokenExchanger {
+	return &tokenExchanger{verifier, signer}
+}
+
+func (g *tokenExchanger) WithAuthorization(handler httprouter.Handle) httprouter.Handle {
+	return func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 		token, err := getToken(r.Header.Get("Authorization"))
 		if err != nil {
-			// unauthorized
+			errMessage := types.SerializeError(err)
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write(errMessage)
 			return
 		}
 
-		payload, err := verif.VerifyAs(r.Context(), token)
+		payload, err := g.verifier.VerifyAs(r.Context(), token)
 		if err != nil {
-			// unauthorized
+			errMessage := types.SerializeError(err)
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write(errMessage)
 			return
 		}
 
@@ -130,49 +140,28 @@ func WithGoogleAuth(
 	}
 }
 
-// I think should return authorization token for verifying login
-// and also hash of user ID contained inside of JWT Token
-func NewIDTokenParser(
-	signing signing.Usecase,
-) *googleSignInService {
-	return &googleSignInService{
-		signingService: &signingService{
-			signing: signing,
-		},
-	}
-}
-
-// GoogleSignIn
-// expect to receive google token, and then call the publisher
-func (s *googleSignInService) PublishToken(authParser AuthParser, tokenBuilder TokenBuilder) httprouter.Handle {
-	var authKey key
-	switch authParser {
-	case AuthParserGoogle:
-		authKey = keyGoogleAuth
-	}
-
-	// send error
-	if authKey == key("") {
-		return func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-			errUC := &types.CommonError{
-				Errors: []types.Error{
-					{
-						HTTPCode: http.StatusInternalServerError,
-						Code:     "EMPTY_AUTHORIZATION_TYPE",
-						Message:  "authorization is configured by the server, but it's empty. Contact server owner.",
-					},
-				},
-			}
-			errMessage := types.SerializeError(errUC)
+// Exchange google auth (open ID) token with our own token
+func (g *tokenExchanger) ExchangeToken(
+	tokenBuilder TokenBuilder,
+) httprouter.Handle {
+	return func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+		token, err := getToken(r.Header.Get("Authorization"))
+		if err != nil {
+			errMessage := types.SerializeError(err)
 			w.WriteHeader(http.StatusBadRequest)
 			w.Write(errMessage)
+			return
 		}
-	}
 
-	return func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-		// 1. Get google ID token, injected by (WithGoogleAuth)
-		auth, ok := r.Context().Value(authKey).(*idtoken.Payload)
-		if auth == nil || !ok {
+		auth, err := g.verifier.VerifyAs(r.Context(), token)
+		if err != nil {
+			errMessage := types.SerializeError(err)
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write(errMessage)
+			return
+		}
+
+		if auth == nil {
 			errUC := &types.CommonError{
 				Errors: []types.Error{
 					{
@@ -201,8 +190,9 @@ func (s *googleSignInService) PublishToken(authParser AuthParser, tokenBuilder T
 		}
 
 		// 3. Serialize proto token to bytes
-		payload, err := proto.Marshal(signedData)
-		if err != nil {
+		payload, errProto := proto.Marshal(signedData)
+		if errProto != nil {
+			log.Err(errProto).Msgf("Proto token build error")
 			errMessage := types.SerializeError(&types.CommonError{
 				Errors: []types.Error{
 					{Code: "SERVER_ERROR", HTTPCode: http.StatusInternalServerError, Message: "Failed to build token"},
@@ -214,7 +204,7 @@ func (s *googleSignInService) PublishToken(authParser AuthParser, tokenBuilder T
 		}
 
 		// 4. Sign the proto token
-		newToken, errUC := s.signing.Sign(r.Context(), payload, expiry)
+		newToken, errUC := g.signer.Sign(r.Context(), payload, expiry)
 		if errUC != nil {
 			if r.Context().Err() != nil {
 				return
@@ -226,18 +216,18 @@ func (s *googleSignInService) PublishToken(authParser AuthParser, tokenBuilder T
 		}
 
 		// 5. Publish in our API
-		resp, err := json.Marshal(&types.CommonResponse{
+		resp, errJson := json.Marshal(&types.CommonResponse{
 			Success: SignInResponse{
 				IDToken: &newToken,
 				Data:    apiData, // DO NOT USE THIS FOR BACK END VALIDATION
 			},
 		})
-		if err != nil {
+		if errJson != nil {
 			if r.Context().Err() != nil {
 				return
 			}
 
-			log.Err(err).Msgf("Failed to parse payload")
+			log.Err(errJson).Msgf("Failed to marshal payload as JSON")
 			errMessage := types.SerializeError(&types.CommonError{
 				Errors: []types.Error{
 					{Message: "Failed to parse response", Code: "SERVER_ERROR"},
@@ -285,7 +275,7 @@ func GetGoogleClaim(claims map[string]interface{}) *session.OIDCClaim {
 	return &claim
 }
 
-func (s *googleSignInService) MultiKeys(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+func (s *signingService) MultiKeys(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	orgID := r.URL.Query().Get("org")
 	if orgID == "" {
 		cer := &types.CommonError{

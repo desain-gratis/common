@@ -1,4 +1,4 @@
-package crud
+package base
 
 import (
 	"context"
@@ -17,11 +17,11 @@ import (
 	"github.com/desain-gratis/common/usecase/mycontent"
 )
 
-var _ mycontent.Usecase[*entity.Attachment] = &crudWithAttachment{}
-var _ mycontent.Attachable[*entity.Attachment] = &crudWithAttachment{}
+var _ mycontent.Usecase[*entity.Attachment] = &HandlerWithAttachment{}
+var _ mycontent.Attachable[*entity.Attachment] = &HandlerWithAttachment{}
 
-type crudWithAttachment struct {
-	*crud[*entity.Attachment]
+type HandlerWithAttachment struct {
+	*Handler[*entity.Attachment]
 	blobRepo  blob.Repository
 	hideUrl   bool // if data are quite sensitive
 	namespace string
@@ -30,18 +30,15 @@ type crudWithAttachment struct {
 // NewWithAttachment creates the basic CRUD handle, but enables attachment
 // Whether this is private or not will mostly be depended by the blob repository
 func NewAttachment(
-	repo content.Repository, // todo, change catalog.Attachment location to more common location (not uc specific)
+	repo content.Repository,
+	refSize int,
 	blobRepo blob.Repository,
 	hideUrl bool,
 	namespace string,
-	expectedRefSize int,
-) *crudWithAttachment {
+) *HandlerWithAttachment {
 
-	return &crudWithAttachment{
-		crud: New[*entity.Attachment](
-			repo,
-			expectedRefSize,
-		),
+	return &HandlerWithAttachment{
+		Handler:   New[*entity.Attachment](repo, refSize),
 		blobRepo:  blobRepo,
 		hideUrl:   hideUrl,
 		namespace: namespace,
@@ -49,8 +46,8 @@ func NewAttachment(
 }
 
 // Overwrite for censoring
-func (c *crudWithAttachment) Get(ctx context.Context, userID string, refIDs []string, ID string) ([]*entity.Attachment, *types.CommonError) {
-	result, err := c.crud.Get(ctx, userID, refIDs, ID)
+func (c *HandlerWithAttachment) Get(ctx context.Context, userID string, refIDs []string, ID string) ([]*entity.Attachment, *types.CommonError) {
+	result, err := c.Handler.Get(ctx, userID, refIDs, ID)
 	if err != nil {
 		return nil, err
 	}
@@ -64,8 +61,8 @@ func (c *crudWithAttachment) Get(ctx context.Context, userID string, refIDs []st
 }
 
 // BETA
-func (c *crudWithAttachment) GetAttachment(ctx context.Context, userID string, refIDs []string, ID string) (payload io.ReadCloser, meta *entity.Attachment, err *types.CommonError) {
-	result, err := c.crud.Get(ctx, userID, refIDs, ID)
+func (c *HandlerWithAttachment) GetAttachment(ctx context.Context, userID string, refIDs []string, ID string) (payload io.ReadCloser, meta *entity.Attachment, err *types.CommonError) {
+	result, err := c.Handler.Get(ctx, userID, refIDs, ID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -89,7 +86,7 @@ func (c *crudWithAttachment) GetAttachment(ctx context.Context, userID string, r
 
 // Put
 // disables the default put behaviour
-func (c *crudWithAttachment) Put(ctx context.Context, content *entity.Attachment) (*entity.Attachment, *types.CommonError) {
+func (c *HandlerWithAttachment) Put(ctx context.Context, content *entity.Attachment) (*entity.Attachment, *types.CommonError) {
 	return nil, &types.CommonError{
 		Errors: []types.Error{
 			{
@@ -101,11 +98,11 @@ func (c *crudWithAttachment) Put(ctx context.Context, content *entity.Attachment
 	}
 }
 
-func (c *crudWithAttachment) Attach(ctx context.Context, meta *entity.Attachment, payload io.Reader) (*entity.Attachment, *types.CommonError) {
+func (c *HandlerWithAttachment) Attach(ctx context.Context, meta *entity.Attachment, payload io.Reader) (*entity.Attachment, *types.CommonError) {
 	// TODO: Get all existing data based on user ID, calculate the total size to do validation
 
 	// Check existing, if exist with the same ID, then use existing
-	existing, errUC := c.crud.Get(ctx, meta.Namespace(), meta.RefIds, meta.Id)
+	existing, errUC := c.Handler.Get(ctx, meta.Namespace(), meta.RefIds, meta.Id)
 	if errUC != nil {
 		if errUC.Errors[0].HTTPCode != http.StatusNotFound {
 			return nil, errUC
@@ -148,7 +145,7 @@ func (c *crudWithAttachment) Attach(ctx context.Context, meta *entity.Attachment
 	}
 
 	// The rest can be modified
-	result, errUC = c.crud.Post(ctx, meta, map[string]string{
+	result, errUC = c.Handler.Post(ctx, meta, map[string]string{
 		"created_at": time.Now().Format(time.RFC3339),
 	})
 	if errUC != nil {
@@ -206,7 +203,7 @@ func (c *crudWithAttachment) Attach(ctx context.Context, meta *entity.Attachment
 	result.Url = repometa.PublicURL // the blob storage URL, not this metadata for this case
 
 	// write back
-	result, err = c.crud.Post(ctx, result, nil)
+	result, err = c.Handler.Post(ctx, result, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -215,8 +212,8 @@ func (c *crudWithAttachment) Attach(ctx context.Context, meta *entity.Attachment
 }
 
 // DeleteAttachment generic binary at path
-func (c *crudWithAttachment) Delete(ctx context.Context, userID string, refIDs []string, ID string) (*entity.Attachment, *types.CommonError) {
-	result, err := c.crud.Get(ctx, userID, nil, ID)
+func (c *HandlerWithAttachment) Delete(ctx context.Context, userID string, refIDs []string, ID string) (*entity.Attachment, *types.CommonError) {
+	result, err := c.Handler.Get(ctx, userID, nil, ID)
 	if err != nil {
 		return nil, err
 	}
@@ -226,7 +223,7 @@ func (c *crudWithAttachment) Delete(ctx context.Context, userID string, refIDs [
 		return nil, err
 	}
 
-	at, err := c.crud.Delete(ctx, userID, refIDs, ID)
+	at, err := c.Handler.Delete(ctx, userID, refIDs, ID)
 	if err != nil {
 		return nil, err
 	}

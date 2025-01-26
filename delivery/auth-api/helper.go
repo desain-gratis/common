@@ -20,7 +20,7 @@ func ParseAuthorizationToken(ctx context.Context, uc signing.Verifier, authoriza
 				{
 					HTTPCode: http.StatusBadRequest,
 					Code:     "INVALID_OR_EMPTY_AUTHORIZATION",
-					Message:  "Authorization header is no valid",
+					Message:  "Authorization header is not valid",
 				},
 			},
 		}

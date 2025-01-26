@@ -4,7 +4,7 @@ import (
 	"time"
 
 	types "github.com/desain-gratis/common/types/http"
-	mycontent "github.com/desain-gratis/common/usecase/mycontent"
+	"github.com/desain-gratis/common/usecase/mycontent"
 )
 
 type Attachment struct {

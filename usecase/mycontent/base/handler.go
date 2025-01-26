@@ -1,4 +1,4 @@
-package crud
+package base
 
 import (
 	"context"
@@ -13,9 +13,9 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-var _ mycontent.Usecase[mycontent.Data] = &crud[mycontent.Data]{}
+var _ mycontent.Usecase[mycontent.Data] = &Handler[mycontent.Data]{}
 
-type crud[T mycontent.Data] struct {
+type Handler[T mycontent.Data] struct {
 	repo            content.Repository
 	expectedRefSize int // TODO: change to just size (eg. expected refIDs size)
 }
@@ -23,15 +23,15 @@ type crud[T mycontent.Data] struct {
 func New[T mycontent.Data](
 	repo content.Repository,
 	expectedRefSize int,
-) *crud[T] {
-	return &crud[T]{
+) *Handler[T] {
+	return &Handler[T]{
 		repo:            repo,
 		expectedRefSize: expectedRefSize,
 	}
 }
 
 // Post (create new or overwrite) resource here
-func (c *crud[T]) Post(ctx context.Context, data T, meta any) (T, *types.CommonError) {
+func (c *Handler[T]) Post(ctx context.Context, data T, meta any) (T, *types.CommonError) {
 	var t T
 	err := data.Validate()
 	if err != nil {
@@ -110,7 +110,7 @@ func (c *crud[T]) Post(ctx context.Context, data T, meta any) (T, *types.CommonE
 
 // Get all of your resource for your user ID here
 // Simple wrapper for repository
-func (c *crud[T]) Get(ctx context.Context, namespace string, refIDs []string, ID string) ([]T, *types.CommonError) {
+func (c *Handler[T]) Get(ctx context.Context, namespace string, refIDs []string, ID string) ([]T, *types.CommonError) {
 	// 1. check if there is ID
 	if ID != "" {
 		if !isValid(refIDs) || len(filterEmpty(refIDs)) != c.expectedRefSize {
@@ -196,7 +196,7 @@ func (c *crud[T]) Get(ctx context.Context, namespace string, refIDs []string, ID
 
 // Delete your resource here
 // the implementation can check whether there are linked resource or not
-func (c *crud[T]) Delete(ctx context.Context, userID string, refIDs []string, ID string) (t T, err *types.CommonError) {
+func (c *Handler[T]) Delete(ctx context.Context, userID string, refIDs []string, ID string) (t T, err *types.CommonError) {
 	if !isValid(refIDs) && len(filterEmpty(refIDs)) != c.expectedRefSize {
 		return t, &types.CommonError{
 			Errors: []types.Error{

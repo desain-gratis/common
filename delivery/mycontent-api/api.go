@@ -11,17 +11,15 @@ import (
 	"github.com/julienschmidt/httprouter"
 	"github.com/rs/zerolog/log"
 
-	"github.com/desain-gratis/common/repository/content"
 	types "github.com/desain-gratis/common/types/http"
 	"github.com/desain-gratis/common/usecase/mycontent"
-	mycontent_crud "github.com/desain-gratis/common/usecase/mycontent/crud"
 )
 
 const maximumRequestLength = 1 << 20
 const maximumRequestLengthAttachment = 100 << 20
 
 type service[T mycontent.Data] struct {
-	myContentUC     mycontent.Usecase[T]
+	uc              mycontent.Usecase[T]
 	refParams       []string
 	whitelistParams map[string]struct{}
 	postProcess     []PostProcess[T]
@@ -30,15 +28,10 @@ type service[T mycontent.Data] struct {
 type PostProcess[T mycontent.Data] func(t T)
 
 func New[T mycontent.Data](
-	repo content.Repository,
+	uc mycontent.Usecase[T],
 	baseURL string,
 	refParams []string,
 ) *service[T] {
-	uc := mycontent_crud.New[T](
-		repo,
-		len(refParams),
-	)
-
 	whitelistParams := map[string]struct{}{
 		"id": {},
 	}
@@ -47,7 +40,7 @@ func New[T mycontent.Data](
 	}
 
 	return &service[T]{
-		myContentUC:     uc,
+		uc:              uc,
 		refParams:       refParams,
 		whitelistParams: whitelistParams,
 		postProcess: []PostProcess[T]{
@@ -57,7 +50,7 @@ func New[T mycontent.Data](
 }
 
 func (i *service[T]) GetUsecase() mycontent.Usecase[T] {
-	return i.myContentUC
+	return i.uc
 }
 
 func (i *service[T]) Post(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
@@ -103,7 +96,7 @@ func (i *service[T]) Post(w http.ResponseWriter, r *http.Request, p httprouter.P
 		return
 	}
 
-	result, errUC := i.myContentUC.Post(r.Context(), resource, map[string]string{
+	result, errUC := i.uc.Post(r.Context(), resource, map[string]string{
 		"created_at": time.Now().Format(time.RFC3339),
 	})
 	if errUC != nil {
@@ -174,7 +167,7 @@ func (i *service[T]) Get(w http.ResponseWriter, r *http.Request, p httprouter.Pa
 	}
 
 	// Actually get the data
-	result, errUC := i.myContentUC.Get(r.Context(), namespace, refIDs, ID)
+	result, errUC := i.uc.Get(r.Context(), namespace, refIDs, ID)
 	if errUC != nil {
 		errMessage := serializeError(errUC)
 		w.WriteHeader(http.StatusInternalServerError)
@@ -242,7 +235,7 @@ func (i *service[T]) Delete(w http.ResponseWriter, r *http.Request, p httprouter
 	}
 
 	// Get the data first.
-	getBeforeDeleteResult, errUC := i.myContentUC.Get(r.Context(), namespace, refIDs, ID)
+	getBeforeDeleteResult, errUC := i.uc.Get(r.Context(), namespace, refIDs, ID)
 	if errUC != nil {
 		errMessage := serializeError(errUC)
 		w.WriteHeader(http.StatusInternalServerError)
@@ -259,7 +252,7 @@ func (i *service[T]) Delete(w http.ResponseWriter, r *http.Request, p httprouter
 	}
 
 	// Do the actual deletion
-	result, errUC := i.myContentUC.Delete(r.Context(), namespace, refIDs, ID)
+	result, errUC := i.uc.Delete(r.Context(), namespace, refIDs, ID)
 	if errUC != nil {
 		errMessage := serializeError(errUC)
 		w.WriteHeader(http.StatusInternalServerError)
