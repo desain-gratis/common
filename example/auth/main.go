@@ -201,11 +201,8 @@ func enableApplicationAPI(
 	// Thumbnail for user authorization
 	userAuthThumbnailService := mycontentapi.NewAttachment(
 		authorizedUserThumbnailUsecase,
-		authorizedUserThumbnailBlobRepo,
 		baseURL+"/auth/thumbnail",
 		[]string{"org_id", "profile_id"},
-		false,                   // hide the s3 URL
-		"assets/user/thumbnail", // the location in the s3 compatible bucket
 		"",
 	)
 

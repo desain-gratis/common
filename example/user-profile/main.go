@@ -11,6 +11,7 @@ import (
 	"github.com/desain-gratis/common/example/user-profile/entity"
 	blob_gcs "github.com/desain-gratis/common/repository/blob/gcs"
 	content_postgres "github.com/desain-gratis/common/repository/content/postgres"
+	mycontent_base "github.com/desain-gratis/common/usecase/mycontent/base"
 	"github.com/julienschmidt/httprouter"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -89,25 +90,28 @@ func enableApplicationAPI(
 		privateBucketBaseURL,
 	)
 
-	organizationHandler := mycontentapi.New[*entity.Organization](
-		organizationRepo,
+	organizationHandler := mycontentapi.New(
+		mycontent_base.New[*entity.Organization](organizationRepo, 0),
 		baseURL+"/org",
 		[]string{},
 	)
 
-	userProfileHandler := mycontentapi.New[*entity.UserProfile](
-		userProfileRepo,
+	userProfileHandler := mycontentapi.New(
+		mycontent_base.New[*entity.UserProfile](userProfileRepo, 1),
 		baseURL+"/org/user",
 		[]string{"org_id"},
 	)
 
 	userThumbnailHandler := mycontentapi.NewAttachment(
-		userProfileThumbnailRepo,
-		userProfileBlobRepo,
+		mycontent_base.NewAttachment(
+			userProfileThumbnailRepo,
+			2,
+			userProfileBlobRepo,
+			false,               // hide the s3 URL
+			"assets/user/image", // the location in the s3 compatible bucket
+		),
 		baseURL+"/org/user/thumbnail",
 		[]string{"org_id", "profile_id"},
-		false,               // hide the s3 URL
-		"assets/user/image", // the location in the s3 compatible bucket
 		"",
 	)
 

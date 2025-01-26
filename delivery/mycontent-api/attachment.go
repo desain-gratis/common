@@ -12,7 +12,6 @@ import (
 	"github.com/julienschmidt/httprouter"
 	"github.com/rs/zerolog/log"
 
-	"github.com/desain-gratis/common/repository/blob"
 	entity "github.com/desain-gratis/common/types/entity"
 	types "github.com/desain-gratis/common/types/http"
 	"github.com/desain-gratis/common/usecase/mycontent"
@@ -32,11 +31,8 @@ type uploadService struct {
 // Can only do repository "Put" via Upload API
 func NewAttachment(
 	base mycontent.UsecaseAttachment[*entity.Attachment],
-	blobRepo blob.Repository,
 	baseURL string,
 	refParams []string,
-	hideUrl bool,
-	namespace string, // in blob storage
 	cacheControl string,
 ) *uploadService {
 	whitelistParams := map[string]struct{}{
