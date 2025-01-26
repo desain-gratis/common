@@ -3,7 +3,7 @@ module github.com/desain-gratis/common/example/auth
 go 1.23.4
 
 require (
-	github.com/desain-gratis/common v0.0.0-20250123185930-d582b04671bd
+	github.com/desain-gratis/common v0.0.0-20250126181134-fb609c8780e3
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/julienschmidt/httprouter v1.3.0
 	github.com/rs/zerolog v1.33.0
