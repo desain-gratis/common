@@ -1,4 +1,4 @@
-package session
+package plugin
 
 import (
 	"context"
@@ -16,9 +16,17 @@ const (
 
 type key string
 
-func WithAuth(uc signing.Verifier, handle httprouter.Handle) httprouter.Handle {
+type verifier struct {
+	uc signing.Verifier
+}
+
+func AuthProvider(uc signing.Verifier) *verifier {
+	return &verifier{uc}
+}
+
+func (v *verifier) User(handle httprouter.Handle) httprouter.Handle {
 	return func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-		authData, errUC := parseAuthorizationToken(r.Context(), uc, r.Header.Get("Authorization"))
+		authData, errUC := parseAuthorizationToken(r.Context(), v.uc, r.Header.Get("Authorization"))
 		if errUC != nil {
 			errMessage := types.SerializeError(errUC)
 			w.WriteHeader(http.StatusUnauthorized)
@@ -33,9 +41,9 @@ func WithAuth(uc signing.Verifier, handle httprouter.Handle) httprouter.Handle {
 	}
 }
 
-func WithAdminAuth(uc signing.Verifier, handle httprouter.Handle) httprouter.Handle {
+func (v *verifier) AdminOnly(handle httprouter.Handle) httprouter.Handle {
 	return func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-		authData, errUC := parseAuthorizationToken(r.Context(), uc, r.Header.Get("Authorization"))
+		authData, errUC := parseAuthorizationToken(r.Context(), v.uc, r.Header.Get("Authorization"))
 		if errUC != nil {
 			errMessage := types.SerializeError(errUC)
 			w.WriteHeader(http.StatusUnauthorized)

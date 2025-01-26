@@ -1,4 +1,4 @@
-package tokenbuilder
+package plugin
 
 import (
 	"net/http"
@@ -24,7 +24,7 @@ type auth struct {
 	adminEmail map[string]struct{}
 }
 
-func New(authUser mycontent.Usecase[*entity.Payload], adminEmail map[string]struct{}) *auth {
+func TokenPublisher(authUser mycontent.Usecase[*entity.Payload], adminEmail map[string]struct{}) *auth {
 	return &auth{
 		authUser:   authUser,
 		adminEmail: adminEmail,
@@ -47,17 +47,9 @@ func (a *auth) AdminToken(r *http.Request, auth *idtoken.Payload) (tokenData pro
 		return nil, nil, expiry, errUC
 	}
 
-	expiry = time.Now().Add(time.Duration(60*9) * time.Minute) // long-lived token
+	expiry = time.Now().Add(time.Duration(5) * time.Minute) // long-lived token
 
-	apiData = &authapi.SignInResponse{
-		LoginProfile: &authapi.Profile{
-			DisplayName: claim.Name,
-			Email:       claim.Email,
-		},
-		Expiry: expiry.Format(time.RFC3339),
-	}
-
-	return &session.SessionData{
+	tokenData = &session.SessionData{
 		NonRegisteredId: &session.OIDCClaim{
 			Iss:      claim.Iss,
 			Sub:      claim.Sub,
@@ -68,7 +60,9 @@ func (a *auth) AdminToken(r *http.Request, auth *idtoken.Payload) (tokenData pro
 		SignInMethod: "GSI",
 		SignInEmail:  claim.Email,
 		IsSuperAdmin: true, // ADMIN
-	}, apiData, expiry, nil
+	}
+
+	return tokenData, tokenData, expiry, nil
 }
 
 func (a *auth) UserToken(r *http.Request, auth *idtoken.Payload) (tokenData proto.Message, apiData any, expiry time.Time, err *types.CommonError) {

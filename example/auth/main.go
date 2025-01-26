@@ -11,6 +11,7 @@ import (
 	mycontentapi "github.com/desain-gratis/common/delivery/mycontent-api"
 	blob_gcs "github.com/desain-gratis/common/repository/blob/gcs"
 	content_postgres "github.com/desain-gratis/common/repository/content/postgres"
+	mycontent_base "github.com/desain-gratis/common/usecase/mycontent/base"
 	"github.com/desain-gratis/common/usecase/signing"
 	signing_handler "github.com/desain-gratis/common/usecase/signing/handler"
 	jwtrsa "github.com/desain-gratis/common/utility/secret/rsa"
@@ -21,8 +22,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/desain-gratis/common/example/auth/entity"
-	"github.com/desain-gratis/common/example/auth/session"
-	"github.com/desain-gratis/common/example/auth/tokenbuilder"
+	"github.com/desain-gratis/common/example/auth/plugin"
 )
 
 func init() {
@@ -30,7 +30,7 @@ func init() {
 }
 
 var (
-	googleProjectID            = 146991647918
+	googleProjectID            = 1015170299395
 	googleOAuth2SecretJSONPath = "google-sign-in"   // GSM key to the Google Sign In JSON secret
 	signingKey                 = "auth-signing-key" // GSM key to the private key used for JWT token Sign In
 	tokenIssuer                = "desain.gratis"
@@ -39,6 +39,20 @@ var (
 func main() {
 	ctx := context.Background()
 
+	// init secret connection
+	secretkv.Default = gsm.NewCached(
+		googleProjectID,
+		map[string]map[int]gsm.CacheConfig{
+			signingKey: {
+				0: gsm.CacheConfig{
+					PollDuration: 180 * time.Minute,
+				},
+			},
+		},
+		map[string]gsm.CacheConfig{},
+	)
+
+	// init config
 	initConfig(ctx, "config/", "development")
 
 	router := httprouter.New()
@@ -81,7 +95,6 @@ func main() {
 
 	<-idleConnsClosed
 	log.Info().Msgf("Bye bye")
-
 }
 
 func enableApplicationAPI(
@@ -97,47 +110,50 @@ func enableApplicationAPI(
 		log.Fatal().Msgf("Failed to obtain postgres connection")
 	}
 
+	// Initialize datasources for mycontent
 	authorizedUserRepo := content_postgres.New(pg, "gsi_authorized_user", 0)
 	authorizedUserThumbnailRepo := content_postgres.New(pg, "gsi_authorized_user_thumbnail", 1)
+	projectRepo := content_postgres.New(pg, "project", 0)
 	authorizedUserThumbnailBlobRepo := blob_gcs.New(
 		privateBucketName,
 		privateBucketBaseURL,
 	)
 
-	authorizedUserService := mycontentapi.New[*entity.Payload](
-		authorizedUserRepo,
-		baseURL+"/auth/user",
-		[]string{},
+	// Initialize usecase logic
+	authorizedUserUsecase := plugin.MyContentWithAuth(
+		mycontent_base.New[*entity.Payload](
+			authorizedUserRepo,
+			0,
+		),
 	)
 
-	authorizedUserThumbnailService := mycontentapi.NewAttachment(
-		authorizedUserThumbnailRepo,
-		authorizedUserThumbnailBlobRepo,
-		baseURL+"/auth/thumbnail",
-		[]string{"org_id", "profile_id"},
-		false,                   // hide the s3 URL
-		"assets/user/thumbnail", // the location in the s3 compatible bucket
-		"",
+	authorizedUserThumbnailUsecase := plugin.MyContentAttachmentWithAuth(
+		mycontent_base.NewAttachment(
+			authorizedUserThumbnailRepo,
+			1,
+			authorizedUserThumbnailBlobRepo,
+			false,
+			"assets/user/thumbnail",
+		),
 	)
 
-	secretkv.Default = gsm.NewCached(
-		googleProjectID,
-		map[string]map[int]gsm.CacheConfig{
-			signingKey: {
-				0: gsm.CacheConfig{
-					PollDuration: 180 * time.Minute,
-				},
-			},
-		},
-		map[string]gsm.CacheConfig{
-			// "suite-api-secret": gsm.CacheConfig{
-			// 	PollDuration: 1000 * time.Minute,
-			// },
+	projectUsecase := plugin.MyContentWithAuth(
+		mycontent_base.New[*entity.Project](
+			projectRepo,
+			0,
+		),
+	)
+
+	// Plugin to publish token
+	tokenBuilder := plugin.TokenPublisher(
+		authorizedUserUsecase,
+		map[string]struct{}{
+			"keenan.gebze@gmail.com": {},
 		},
 	)
 
 	// Google ID token verifier
-	googleIDTokenVerifier := signing_handler.NewGoogleAuth(
+	googleVerifier := signing_handler.NewGoogleAuth(
 		signing_handler.GoogleSignInConfig{
 			GoogleOAuth2SecretJSONPath: googleOAuth2SecretJSONPath,
 			PollTime:                   180 * time.Second,
@@ -162,47 +178,74 @@ func enableApplicationAPI(
 	)
 
 	// Unecessary, but allow you to see polymorphism in action
-	var signer signing.Usecase = tokenSignerAndVerifier
-	var verifier signing.Verifier = tokenSignerAndVerifier
+	var appTokenSigner signing.Usecase = tokenSignerAndVerifier
+	var appTokenVerifier signing.Verifier = tokenSignerAndVerifier
 
-	tokenBuilder := tokenbuilder.New(
-		authorizedUserService.GetUsecase(),
-		map[string]struct{}{
-			"keenan.gebze@gmail.com": {},
-		},
+	googleauth := authapi.TokenExchanger(googleVerifier, appTokenSigner)
+	appauth := plugin.AuthProvider(appTokenVerifier)
+
+	// --- Initialize HTTP services handler ---
+
+	// Service related to token publishing
+	signingService := authapi.New(
+		appTokenSigner,
 	)
 
-	signingService := authapi.NewIDTokenParser(
-		signer,
+	// Service for user authorization management
+	userAuthService := mycontentapi.New(
+		authorizedUserUsecase,
+		baseURL+"/auth/user",
+		[]string{},
 	)
+
+	// Thumbnail for user authorization
+	userAuthThumbnailService := mycontentapi.NewAttachment(
+		authorizedUserThumbnailUsecase,
+		authorizedUserThumbnailBlobRepo,
+		baseURL+"/auth/thumbnail",
+		[]string{"org_id", "profile_id"},
+		false,                   // hide the s3 URL
+		"assets/user/thumbnail", // the location in the s3 compatible bucket
+		"",
+	)
+
+	// Sample API
+	projectService := mycontentapi.New(
+		projectUsecase,
+		baseURL+"/project",
+		[]string{},
+	)
+
+	// Http router
 
 	router.OPTIONS("/auth/admin", Empty)
 	router.OPTIONS("/auth/idtoken/google", Empty)
 	router.OPTIONS("/auth/idtoken", Empty)
 	router.OPTIONS("/auth/keys", Empty)
 
-	router.GET("/auth/admin", authapi.WithGoogleAuth(
-		googleIDTokenVerifier,
-		signingService.PublishToken(authapi.AuthParserGoogle, tokenBuilder.AdminToken),
-	))
-	router.GET("/auth/signin/google", authapi.WithGoogleAuth(
-		googleIDTokenVerifier,
-		signingService.PublishToken(authapi.AuthParserGoogle, tokenBuilder.UserToken),
-	))
-	router.GET("/auth/signin/debug", authapi.WithGoogleAuth(googleIDTokenVerifier, signingService.Debug))
+	// Sign-in
+	router.GET("/auth/admin", googleauth.ExchangeToken(tokenBuilder.AdminToken))
+	router.GET("/auth/signin/google", googleauth.ExchangeToken(tokenBuilder.UserToken))
+	router.GET("/auth/signin/debug", googleauth.WithAuthorization(signingService.Debug))
 	router.GET("/auth/signin/keys", signingService.Keys)
 
 	// Mycontent Authorized user (admin only) endpoint
 	router.OPTIONS("/auth/user", Empty)
-	router.GET("/auth/user", session.WithAdminAuth(verifier, authorizedUserService.Get))
-	router.POST("/auth/user", session.WithAdminAuth(verifier, authorizedUserService.Post))
-	router.DELETE("/auth/user", session.WithAdminAuth(verifier, authorizedUserService.Delete))
+	router.GET("/auth/user", appauth.AdminOnly(userAuthService.Get))
+	router.POST("/auth/user", appauth.AdminOnly(userAuthService.Post))
+	router.DELETE("/auth/user", appauth.AdminOnly(userAuthService.Delete))
 
 	// Mycontent Authorized user thumbnail (admin only) endpoint
 	router.OPTIONS("/auth/user/thumbnail", Empty)
-	router.GET("/auth/user/thumbnail", session.WithAdminAuth(verifier, authorizedUserThumbnailService.Get))
-	router.POST("/auth/user/thumbnail", session.WithAdminAuth(verifier, authorizedUserThumbnailService.Upload))
-	router.DELETE("/auth/user/thumbnail", session.WithAdminAuth(verifier, authorizedUserThumbnailService.Delete))
+	router.GET("/auth/user/thumbnail", appauth.AdminOnly(userAuthThumbnailService.Get))
+	router.POST("/auth/user/thumbnail", appauth.AdminOnly(userAuthThumbnailService.Upload))
+	router.DELETE("/auth/user/thumbnail", appauth.AdminOnly(userAuthThumbnailService.Delete))
+
+	// Mycontent sample entity
+	router.OPTIONS("/project", Empty)
+	router.GET("/project", appauth.User(projectService.Get))
+	router.POST("/project", appauth.User(projectService.Post))
+	router.DELETE("/project", appauth.User(projectService.Delete))
 }
 
 func Empty(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
