@@ -86,10 +86,6 @@ type key string
 type AuthParser string
 type TokenBuilder func(req *http.Request, payload *idtoken.Payload) (tokenData proto.Message, apiData any, expiry time.Time, err *types.CommonError)
 
-type googleSignInService struct {
-	*signingService
-}
-
 func getToken(authorizationToken string) (string, *types.CommonError) {
 	token := strings.Split(authorizationToken, " ")
 	if len(token) < 2 {
@@ -108,12 +104,12 @@ func getToken(authorizationToken string) (string, *types.CommonError) {
 
 type tokenExchanger struct {
 	verifier signing.VerifierOf[idtoken.Payload]
-	signer   signing.Usecase
+	signer   signing.Signer
 }
 
 func TokenExchanger(
 	verifier signing.VerifierOf[idtoken.Payload],
-	signer signing.Usecase,
+	signer signing.Signer,
 ) *tokenExchanger {
 	return &tokenExchanger{verifier, signer}
 }

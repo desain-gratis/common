@@ -18,7 +18,7 @@ import (
 	"github.com/desain-gratis/common/utility/secretkv"
 )
 
-var _ signing.Publisher = &oidcLogin{}
+var _ signing.Signer = &oidcLogin{}
 var _ signing.Verifier = &oidcLogin{}
 
 type Config struct {

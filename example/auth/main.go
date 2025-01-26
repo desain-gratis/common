@@ -178,18 +178,16 @@ func enableApplicationAPI(
 	)
 
 	// Unecessary, but allow you to see polymorphism in action
-	var appTokenSigner signing.Usecase = tokenSignerAndVerifier
+	var appTokenSigner signing.Signer = tokenSignerAndVerifier
 	var appTokenVerifier signing.Verifier = tokenSignerAndVerifier
 
+	// Validate google token, exchange with out app token
 	googleauth := authapi.TokenExchanger(googleVerifier, appTokenSigner)
-	appauth := plugin.AuthProvider(appTokenVerifier)
+
+	// Token usage
+	appauth := plugin.AuthProvider(appTokenVerifier, appTokenSigner)
 
 	// --- Initialize HTTP services handler ---
-
-	// Service related to token publishing
-	signingService := authapi.New(
-		appTokenSigner,
-	)
 
 	// Service for user authorization management
 	userAuthService := mycontentapi.New(
@@ -220,13 +218,15 @@ func enableApplicationAPI(
 	router.OPTIONS("/auth/idtoken", Empty)
 	router.OPTIONS("/auth/keys", Empty)
 
-	// Sign-in
+	// Sign-in as admin, sign-in as user
 	router.GET("/auth/admin", googleauth.ExchangeToken(tokenBuilder.AdminToken))
 	router.GET("/auth/signin/google", googleauth.ExchangeToken(tokenBuilder.UserToken))
-	router.GET("/auth/signin/debug", googleauth.WithAuthorization(signingService.Debug))
-	router.GET("/auth/signin/keys", signingService.Keys)
 
-	// Mycontent Authorized user (admin only) endpoint
+	// Debug app token and verify using public key
+	router.GET("/auth/signin/debug", appauth.Debug)
+	router.GET("/auth/signin/keys", appauth.Keys)
+
+	// Mycontent authorized user (admin only) endpoint
 	router.OPTIONS("/auth/user", Empty)
 	router.GET("/auth/user", appauth.AdminOnly(userAuthService.Get))
 	router.POST("/auth/user", appauth.AdminOnly(userAuthService.Post))

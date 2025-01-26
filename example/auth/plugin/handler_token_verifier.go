@@ -2,12 +2,14 @@ package plugin
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 
 	types "github.com/desain-gratis/common/types/http"
 	"github.com/desain-gratis/common/types/protobuf/session"
 	"github.com/desain-gratis/common/usecase/signing"
 	"github.com/julienschmidt/httprouter"
+	"github.com/rs/zerolog/log"
 )
 
 const (
@@ -16,17 +18,18 @@ const (
 
 type key string
 
-type verifier struct {
-	uc signing.Verifier
+type authProvider struct {
+	verifier signing.Verifier
+	signer   signing.Signer
 }
 
-func AuthProvider(uc signing.Verifier) *verifier {
-	return &verifier{uc}
+func AuthProvider(verifier signing.Verifier, signer signing.Signer) *authProvider {
+	return &authProvider{verifier, signer}
 }
 
-func (v *verifier) User(handle httprouter.Handle) httprouter.Handle {
+func (v *authProvider) User(handle httprouter.Handle) httprouter.Handle {
 	return func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-		authData, errUC := parseAuthorizationToken(r.Context(), v.uc, r.Header.Get("Authorization"))
+		authData, errUC := parseAuthorizationToken(r.Context(), v.verifier, r.Header.Get("Authorization"))
 		if errUC != nil {
 			errMessage := types.SerializeError(errUC)
 			w.WriteHeader(http.StatusUnauthorized)
@@ -41,9 +44,9 @@ func (v *verifier) User(handle httprouter.Handle) httprouter.Handle {
 	}
 }
 
-func (v *verifier) AdminOnly(handle httprouter.Handle) httprouter.Handle {
+func (v *authProvider) AdminOnly(handle httprouter.Handle) httprouter.Handle {
 	return func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-		authData, errUC := parseAuthorizationToken(r.Context(), v.uc, r.Header.Get("Authorization"))
+		authData, errUC := parseAuthorizationToken(r.Context(), v.verifier, r.Header.Get("Authorization"))
 		if errUC != nil {
 			errMessage := types.SerializeError(errUC)
 			w.WriteHeader(http.StatusUnauthorized)
@@ -71,6 +74,70 @@ func (v *verifier) AdminOnly(handle httprouter.Handle) httprouter.Handle {
 
 		handle(w, reqWithAuth, p)
 	}
+}
+
+func (v *authProvider) Debug(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+	authData, errUC := parseAuthorizationToken(r.Context(), v.verifier, r.Header.Get("Authorization"))
+	if errUC != nil {
+		errMessage := types.SerializeError(errUC)
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write(errMessage)
+		return
+	}
+
+	payload, err := json.Marshal(authData)
+	if err != nil {
+		log.Err(err).Msgf("Error json debug")
+		errMessage := types.SerializeError(&types.CommonError{
+			Errors: []types.Error{
+				{Message: "failed to marshal json", Code: "INTERNAL_SERVER_ERROR"},
+			},
+		})
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write(errMessage)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write(payload)
+}
+
+// Keys allows other service to verify this published delivery Open ID credential
+func (v *authProvider) Keys(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+	keys, errUC := v.signer.Keys(r.Context())
+	if errUC != nil {
+		if r.Context().Err() != nil {
+			return
+		}
+
+		log.Err(errUC.Err()).Msgf("Failed to get keys")
+		errMessage := types.SerializeError(errUC)
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write(errMessage)
+		return
+	}
+
+	payload, err := json.Marshal(&types.CommonResponse{
+		Success: keys,
+	})
+	if err != nil {
+		if r.Context().Err() != nil {
+			return
+		}
+
+		log.Err(err).Msgf("Failed to parse payload")
+		errMessage := types.SerializeError(&types.CommonError{
+			Errors: []types.Error{
+				{Message: "Failed to parse response", Code: "SERVER_ERROR"},
+			},
+		})
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write(errMessage)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write(payload)
 }
 
 func getAuth(ctx context.Context) *session.SessionData {

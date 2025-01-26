@@ -10,14 +10,14 @@ import (
 )
 
 type Usecase interface {
-	Publisher
+	Signer
 	Verifier
 }
 
 // Usecase converts OIDC credential to another identity token
 // With Subject and Issuer field changed
 // TOKEN Based authorization
-type Publisher interface {
+type Signer interface {
 	// Convert any data proto to signed JWT token
 	Sign(ctx context.Context, claim []byte, expire time.Time) (token string, errUC *types.CommonError)
 
