@@ -3,7 +3,6 @@ package authapi
 import (
 	"context"
 	"encoding/json"
-	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -16,9 +15,7 @@ import (
 
 	types "github.com/desain-gratis/common/types/http"
 	"github.com/desain-gratis/common/types/protobuf/session"
-	"github.com/desain-gratis/common/usecase/mycontent"
 	"github.com/desain-gratis/common/usecase/signing"
-	"github.com/desain-gratis/common/usecase/user"
 )
 
 type SignInResponse struct {
@@ -31,6 +28,7 @@ type SignInResponse struct {
 	// DO NOT USE THIS FOR BACK END VALIDATION!!!
 	Grants map[string]*session.Grant `json:"grants"`
 	Expiry string                    `json:"expiry,omitempty"`
+	Data   any                       `json:"data,omitempty"`
 }
 
 type Profile struct {
@@ -78,308 +76,183 @@ const (
 	AUTH_GSI Auth = "gsi"
 
 	maximumRequestLength = 1 << 20
+
+	keyGoogleAuth key = "google-auth"
+
+	AuthParserGoogle AuthParser = "gsi"
 )
+
+type key string
+type AuthParser string
+type TokenBuilder func(req *http.Request, payload *idtoken.Payload) (tokenData proto.Message, apiData any, expiry time.Time, err *types.CommonError)
 
 type googleSignInService struct {
 	*signingService
-	googleAuth  signing.VerifierOf[idtoken.Payload]
-	adminEmails map[string]struct{}
-	userUC      mycontent.Usecase[*user.Payload]
+}
+
+func getToken(authorizationToken string) (string, *types.CommonError) {
+	token := strings.Split(authorizationToken, " ")
+	if len(token) < 2 {
+		return "", &types.CommonError{
+			Errors: []types.Error{
+				{
+					HTTPCode: http.StatusBadRequest,
+					Code:     "INVALID_OR_EMPTY_AUTHORIZATION",
+					Message:  "Authorization header is no valid",
+				},
+			},
+		}
+	}
+	return token[1], nil
+}
+
+// It's a http handler
+func WithGoogleAuth(
+	verif signing.VerifierOf[idtoken.Payload],
+	handler httprouter.Handle,
+) httprouter.Handle {
+	return func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+		// ....
+
+		token, err := getToken(r.Header.Get("Authorization"))
+		if err != nil {
+			// unauthorized
+			return
+		}
+
+		payload, err := verif.VerifyAs(r.Context(), token)
+		if err != nil {
+			// unauthorized
+			return
+		}
+
+		handler(w, r.WithContext(context.WithValue(r.Context(), keyGoogleAuth, payload)), p)
+	}
 }
 
 // I think should return authorization token for verifying login
 // and also hash of user ID contained inside of JWT Token
-func NewGoogleSignInService(
-	googleAuth signing.VerifierOf[idtoken.Payload],
+func NewIDTokenParser(
 	signing signing.Usecase,
-	adminEmails map[string]struct{},
-	userUC mycontent.Usecase[*user.Payload],
 ) *googleSignInService {
 	return &googleSignInService{
-		googleAuth: googleAuth,
 		signingService: &signingService{
 			signing: signing,
 		},
-		adminEmails: adminEmails,
-		// userUsecase: userUC,
-		// myContentAuth: myContentAuth,
 	}
 }
 
-func (s *googleSignInService) UpdateAuth(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	sessionData, errUC := ParseAuthorizationToken(r.Context(), s.signing, r.Header.Get("Authorization"))
-	if errUC != nil {
-		errMessage := types.SerializeError(errUC)
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write(errMessage)
-		return
+// GoogleSignIn
+// expect to receive google token, and then call the publisher
+func (s *googleSignInService) PublishToken(authParser AuthParser, tokenBuilder TokenBuilder) httprouter.Handle {
+	var authKey key
+	switch authParser {
+	case AuthParserGoogle:
+		authKey = keyGoogleAuth
 	}
 
-	if !sessionData.IsSuperAdmin {
-		errUC := &types.CommonError{
-			Errors: []types.Error{
-				{
-					HTTPCode: http.StatusUnauthorized,
-					Code:     "UNAUTHORIZED",
-					Message:  "Cannot update user authorization. You're not super-admin!🚨🚨🚨",
+	// send error
+	if authKey == key("") {
+		return func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+			errUC := &types.CommonError{
+				Errors: []types.Error{
+					{
+						HTTPCode: http.StatusInternalServerError,
+						Code:     "EMPTY_AUTHORIZATION_TYPE",
+						Message:  "authorization is configured by the server, but it's empty. Contact server owner.",
+					},
 				},
-			},
+			}
+			errMessage := types.SerializeError(errUC)
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write(errMessage)
 		}
-		errMessage := types.SerializeError(errUC)
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write(errMessage)
-		return
 	}
 
-	// Read body parse entity and extract metadata
-
-	r.Body = http.MaxBytesReader(w, r.Body, maximumRequestLength)
-	payload, err := io.ReadAll(r.Body)
-	if err != nil {
-		errMessage := types.SerializeError(&types.CommonError{
-			Errors: []types.Error{
-				{Message: "Failed to read all body", Code: "SERVER_ERROR"},
-			},
-		},
-		)
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write(errMessage)
-		return
-	}
-
-	var parsed user.Payload
-	err = json.Unmarshal(payload, &parsed)
-	if err != nil {
-		errMessage := types.SerializeError(&types.CommonError{
-			Errors: []types.Error{
-				{Message: "Failed to parse body (content API). Make sure file size does not exceed 200 Kb: " + err.Error(), Code: "BAD_REQUEST"},
-			}})
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write(errMessage)
-		return
-	}
-
-	// TODO: use bcrypt to hash email
-
-	_, errUserUC := s.userUC.Post(r.Context(), &parsed, map[string]any{
-		"updated_at": time.Now().Format(time.RFC3339),
-	})
-	if errUserUC != nil {
-		errMessage := types.SerializeError(&types.CommonError{
-			Errors: []types.Error{
-				{Message: "Failed to insert user: " + errUserUC.Err().Error(), Code: "SERVER_ERROR"},
-			}})
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write(errMessage)
-		return
-	}
-
-	payload, err = json.Marshal(&types.CommonResponse{
-		Success: "Success updated user authorization",
-	})
-	if err != nil {
-		log.Err(err).Msgf("Failed to parse payload")
-		errMessage := types.SerializeError(&types.CommonError{
-			Errors: []types.Error{
-				{Message: "Failed to parse response", Code: "SERVER_ERROR"},
-			},
-		})
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write(errMessage)
-		return
-	}
-	w.WriteHeader(http.StatusOK)
-	w.Write(payload)
-}
-
-func (s *googleSignInService) SignIn(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	payload, errUC := s.verifyAuthorizationHeader(r.Context(), r.Header.Get("Authorization"))
-	if errUC != nil {
-		errMessage := types.SerializeError(errUC)
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write(errMessage)
-		return
-	}
-
-	claim := getClaim(payload.Claims)
-
-	// Locale
-	// TODO parse to clean string
-	lang := strings.Split(r.Header.Get("Accept-Language"), ";")
-
-	// Enterprise capability (login based on organization)
-	grants := make(map[string]*session.Grant)
-
-	// For sign-in, always use "root" as userId
-	// authData, errUC := s.myContentAuth.Get(r.Context(), "root", "", claim.Email)
-	// if errUC != nil {
-	// 	errMessage := types.SerializeError(errUC)
-	// 	w.WriteHeader(http.StatusBadRequest)
-	// 	w.Write(errMessage)
-	// 	return
-	// }
-
-	authData, errUserUC := s.userUC.Get(r.Context(), "root", []string{}, claim.Email)
-	if errUserUC != nil {
-		errMessage := types.SerializeError(&types.CommonError{
-			Errors: []types.Error{
-				{Message: "Failed to get user auth: " + errUserUC.Err().Error(), Code: "SERVER_ERROR"},
-			}})
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write(errMessage)
-		return
-	}
-
-	if len(authData) != 1 {
-		errMessage := types.SerializeError(&types.CommonError{
-			Errors: []types.Error{
-				{Message: "Failed to get user auth: " + errUserUC.Err().Error(), Code: "NOT_FOUND"},
-			}})
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write(errMessage)
-		return
-	}
-
-	userData := authData[0]
-
-	for tenantID, auth := range userData.Authorization {
-		var arrUserGroup []string
-		for ug := range auth.UserGroupID {
-			arrUserGroup = append(arrUserGroup, ug)
-		}
-		userGroup := strings.Join(arrUserGroup, ",")
-		grant := &session.Grant{
-			UserId:             tenantID,
-			GroupId:            userGroup, // multiple group id separated by ','
-			Name:               auth.Name,
-			UiAndApiPermission: auth.UiAndApiPermission,
-		}
-		grants[tenantID] = grant
-	}
-
-	if userData.ID() == "" {
-		errUC := &types.CommonError{
-			Errors: []types.Error{
-				{
-					HTTPCode: http.StatusUnauthorized,
-					Code:     "UNAUTHORIZED",
-					Message:  "You do not have access to any organization! Please contact API owner team for getting one ☎️",
+	return func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+		// 1. Get google ID token, injected by (WithGoogleAuth)
+		auth, ok := r.Context().Value(authKey).(*idtoken.Payload)
+		if auth == nil || !ok {
+			errUC := &types.CommonError{
+				Errors: []types.Error{
+					{
+						HTTPCode: http.StatusInternalServerError,
+						Code:     "EMPTY_AUTHORIZATION",
+						Message:  "authorization is configured by the server, but it's empty. Contact server owner.",
+					},
 				},
-			},
-		}
-		errMessage := types.SerializeError(errUC)
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write(errMessage)
-		return
-	}
-
-	newPayload, err := proto.Marshal(&session.SessionData{
-		NonRegisteredId: &session.OIDCClaim{
-			Iss:      claim.Iss,
-			Sub:      claim.Sub,
-			Name:     claim.Name,
-			Nickname: claim.Nickname,
-			Email:    claim.Email,
-		},
-		Grants:       grants,
-		SignInMethod: "GSI",
-		SignInEmail:  claim.Email,
-		IsSuperAdmin: false,
-	})
-	if err != nil {
-		errMessage := types.SerializeError(&types.CommonError{
-			Errors: []types.Error{
-				{Code: "SERVER_ERROR", HTTPCode: http.StatusInternalServerError, Message: "Failed to build token"},
-			},
-		})
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write(errMessage)
-		return
-	}
-
-	if s.signing == nil {
-		log.Error().Msg("SIGNING NIL LOH")
-		if r.Context().Err() != nil {
-			return
-		}
-		errMessage := types.SerializeError(&types.CommonError{
-			Errors: []types.Error{
-				{Code: "SERVER_ERROR", HTTPCode: http.StatusInternalServerError, Message: "Failed to build token"},
-			},
-		})
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write(errMessage)
-		return
-	}
-
-	expiry := time.Now().Add(time.Duration(60*9) * time.Minute) // long-lived token
-	newToken, errUC := s.signing.Sign(r.Context(), newPayload, expiry)
-	if errUC != nil {
-		if r.Context().Err() != nil {
-			return
-		}
-		errMessage := types.SerializeError(errUC)
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write(errMessage)
-		return
-	}
-
-	resp, err := json.Marshal(&types.CommonResponse{
-		Success: SignInResponse{
-			IDToken: &newToken,
-			LoginProfile: &Profile{
-				DisplayName:      claim.Name,
-				Email:            claim.Email,
-				ImageURL:         userData.Profile.ImageURL,
-				Avatar1x1URL:     userData.Profile.Avatar1x1URL,
-				Background3x1URL: userData.Profile.Background3x1URL,
-			},
-
-			Locale: lang,
-			// collection of grants NOT signed, for debugging.
-			// DO NOT USE THIS FOR BACK END VALIDATION
-			Grants: grants,
-			Expiry: expiry.Format(time.RFC3339),
-		},
-	})
-	if err != nil {
-		if r.Context().Err() != nil {
+			}
+			errMessage := types.SerializeError(errUC)
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write(errMessage)
 			return
 		}
 
-		log.Err(err).Msgf("Failed to parse payload")
-		errMessage := types.SerializeError(&types.CommonError{
-			Errors: []types.Error{
-				{Message: "Failed to parse response", Code: "SERVER_ERROR"},
+		// 2. Build proto token
+		signedData, apiData, expiry, errUC := tokenBuilder(r, auth)
+		if errUC != nil {
+			errMessage := types.SerializeError(&types.CommonError{
+				Errors: []types.Error{
+					{Message: "Failed to get user auth: " + errUC.Err().Error(), Code: "SERVER_ERROR"},
+				}})
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write(errMessage)
+			return
+		}
+
+		// 3. Serialize proto token to bytes
+		payload, err := proto.Marshal(signedData)
+		if err != nil {
+			errMessage := types.SerializeError(&types.CommonError{
+				Errors: []types.Error{
+					{Code: "SERVER_ERROR", HTTPCode: http.StatusInternalServerError, Message: "Failed to build token"},
+				},
+			})
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write(errMessage)
+			return
+		}
+
+		// 4. Sign the proto token
+		newToken, errUC := s.signing.Sign(r.Context(), payload, expiry)
+		if errUC != nil {
+			if r.Context().Err() != nil {
+				return
+			}
+			errMessage := types.SerializeError(errUC)
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write(errMessage)
+			return
+		}
+
+		// 5. Publish in our API
+		resp, err := json.Marshal(&types.CommonResponse{
+			Success: SignInResponse{
+				IDToken: &newToken,
+				Data:    apiData, // DO NOT USE THIS FOR BACK END VALIDATION
 			},
 		})
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write(errMessage)
-		return
+		if err != nil {
+			if r.Context().Err() != nil {
+				return
+			}
+
+			log.Err(err).Msgf("Failed to parse payload")
+			errMessage := types.SerializeError(&types.CommonError{
+				Errors: []types.Error{
+					{Message: "Failed to parse response", Code: "SERVER_ERROR"},
+				},
+			})
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write(errMessage)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		w.Write(resp)
 	}
-	w.WriteHeader(http.StatusOK)
-	w.Write(resp)
 }
 
-func (s *googleSignInService) verifyAuthorizationHeader(ctx context.Context, value string) (payload *idtoken.Payload, errUC *types.CommonError) {
-	token := strings.Split(value, " ")
-	if len(token) < 2 || (len(token) >= 2 && token[1] == "") {
-		return nil, &types.CommonError{
-			Errors: []types.Error{
-				{Code: "BAD_REQUEST", HTTPCode: http.StatusBadRequest, Message: "Invalid authentication token"},
-			},
-		}
-	}
-
-	data, errUC := s.googleAuth.VerifyAs(ctx, token[1])
-	if errUC != nil {
-		return nil, errUC
-	}
-
-	return data, nil
-}
-
-func getClaim(claims map[string]interface{}) *session.OIDCClaim {
+func GetGoogleClaim(claims map[string]interface{}) *session.OIDCClaim {
 	var claim session.OIDCClaim
 	if v, ok := claims["iss"]; ok {
 		claim.Iss, _ = v.(string)
@@ -431,113 +304,6 @@ func (s *googleSignInService) MultiKeys(w http.ResponseWriter, r *http.Request, 
 	}
 
 	s.Keys(w, r, p)
-}
-
-// SuperAdminSignIn validate whether the current user is an admin or not
-// The validation happen inside
-func (s *googleSignInService) SuperAdminSignIn(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	payload, errUC := s.verifyAuthorizationHeader(r.Context(), r.Header.Get("Authorization"))
-	if errUC != nil {
-		errMessage := types.SerializeError(errUC)
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write(errMessage)
-		return
-	}
-
-	claim := getClaim(payload.Claims)
-
-	_, ok := s.adminEmails[claim.Email]
-	if !ok {
-		errUC := &types.CommonError{
-			Errors: []types.Error{
-				{
-					HTTPCode: http.StatusUnauthorized,
-					Code:     "UNAUTHORIZED",
-					Message:  "You're not authorized to obtain super-admin token as '" + claim.Email + "'.",
-				},
-			},
-		}
-		errMessage := types.SerializeError(errUC)
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write(errMessage)
-		return
-	}
-
-	newPayload, err := proto.Marshal(&session.SessionData{
-		NonRegisteredId: &session.OIDCClaim{
-			Iss:      claim.Iss,
-			Sub:      claim.Sub,
-			Name:     claim.Name,
-			Nickname: claim.Nickname,
-			Email:    claim.Email,
-		},
-		SignInMethod: "GSI",
-		SignInEmail:  claim.Email,
-		IsSuperAdmin: true, // TRUE!
-	})
-	if err != nil {
-		errMessage := types.SerializeError(&types.CommonError{
-			Errors: []types.Error{
-				{Code: "SERVER_ERROR", HTTPCode: http.StatusInternalServerError, Message: "Failed to build token"},
-			},
-		})
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write(errMessage)
-		return
-	}
-
-	// Sign back
-	// (many duplication with non super admin SignIn)
-	if s.signing == nil {
-		log.Error().Msg("SIGNING NIL LOH")
-		if r.Context().Err() != nil {
-			return
-		}
-		errMessage := types.SerializeError(&types.CommonError{
-			Errors: []types.Error{
-				{Code: "SERVER_ERROR", HTTPCode: http.StatusInternalServerError, Message: "Failed to build token"},
-			},
-		})
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write(errMessage)
-		return
-	}
-
-	expiry := time.Now().Add(time.Duration(180) * time.Minute) // shorter-lived token
-	newToken, errUC := s.signing.Sign(r.Context(), newPayload, expiry)
-	if errUC != nil {
-		if r.Context().Err() != nil {
-			return
-		}
-		errMessage := types.SerializeError(errUC)
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write(errMessage)
-		return
-	}
-
-	resp, err := json.Marshal(&types.CommonResponse{
-		Success: SignInResponse{
-			IDToken: &newToken,
-			Expiry:  expiry.Format(time.RFC3339),
-		},
-	})
-	if err != nil {
-		if r.Context().Err() != nil {
-			return
-		}
-
-		log.Err(err).Msgf("Failed to parse payload")
-		errMessage := types.SerializeError(&types.CommonError{
-			Errors: []types.Error{
-				{Message: "Failed to parse response", Code: "SERVER_ERROR"},
-			},
-		})
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write(errMessage)
-		return
-	}
-	w.WriteHeader(http.StatusOK)
-	w.Write(resp)
 }
 
 // ParseTokenAsOpenID is a utility function to parse the token published by GoogleSignInService

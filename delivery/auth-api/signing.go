@@ -28,7 +28,9 @@ type signingService struct {
 //
 // To obtain the actual token, use "NewGoogleSignIn", "NewPassword", and "NewPin"
 // TODO: refactor this to leverage multi usecase
-func New(signing signing.Usecase) *signingService {
+func New(
+	signing signing.Usecase,
+) *signingService {
 	return &signingService{
 		signing: signing,
 	}
