@@ -23,8 +23,13 @@ type authProvider struct {
 	signer   signing.Signer
 }
 
+// Verify application token according to application auth logic,
+// and inject auth data to httprouter.Handler
 func AuthProvider(verifier signing.Verifier, signer signing.Signer) *authProvider {
-	return &authProvider{verifier, signer}
+	return &authProvider{
+		verifier,
+		signer,
+	}
 }
 
 func (v *authProvider) User(handle httprouter.Handle) httprouter.Handle {

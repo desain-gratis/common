@@ -16,13 +16,13 @@ var CONFIG Config = make(map[string]any)
 func (c Config) GetString(key string) string {
 	value, ok := c[key]
 	if !ok {
-		log.Error().Msgf("Key not found: '%v'", key)
+		log.Fatal().Msgf("Key not found: '%v'", key)
 		return ""
 	}
 
 	strvalue, ok := value.(string)
 	if !ok {
-		log.Error().Msgf("Failed to assert config with key '%v' as string", key)
+		log.Fatal().Msgf("Failed to assert config with key '%v' as string", key)
 		return ""
 	}
 
@@ -34,19 +34,19 @@ func (c Config) GetInt(key string) int {
 
 	value, ok := c[key]
 	if !ok {
-		log.Error().Msgf("Key not found: '%v'", key)
+		log.Fatal().Msgf("Key not found: '%v'", key)
 		return 0
 	}
 
 	strvalue, ok := value.(string)
 	if !ok {
-		log.Error().Msgf("Failed to assert config with key '%v' as string", key)
+		log.Fatal().Msgf("Failed to assert config with key '%v' as string", key)
 		return 0
 	}
 
 	result, err := strconv.Atoi(strvalue)
 	if err != nil {
-		log.Error().Msgf("Failed to parse value '%v' as int for config key '%v'", strvalue, key)
+		log.Fatal().Msgf("Failed to parse value '%v' as int for config key '%v'", strvalue, key)
 		return 0
 	}
 
@@ -58,19 +58,19 @@ func (c Config) GetFloat64(key string) float64 {
 
 	value, ok := c[key]
 	if !ok {
-		log.Error().Msgf("Key not found: '%v'", key)
+		log.Fatal().Msgf("Key not found: '%v'", key)
 		return 0
 	}
 
 	strvalue, ok := value.(string)
 	if !ok {
-		log.Error().Msgf("Failed to assert config with key '%v' as string", key)
+		log.Fatal().Msgf("Failed to assert config with key '%v' as string", key)
 		return 0
 	}
 
 	result, err := strconv.ParseFloat(strvalue, 64)
 	if err != nil {
-		log.Error().Msgf("Failed to parse value '%v' as float64 for config key '%v'", strvalue, key)
+		log.Fatal().Msgf("Failed to parse value '%v' as float64 for config key '%v'", strvalue, key)
 		return 0
 	}
 

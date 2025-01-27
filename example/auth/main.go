@@ -30,10 +30,9 @@ func init() {
 }
 
 var (
-	googleProjectID            = 1015170299395
-	googleOAuth2SecretJSONPath = "google-sign-in"   // GSM key to the Google Sign In JSON secret
-	signingKey                 = "auth-signing-key" // GSM key to the private key used for JWT token Sign In
-	tokenIssuer                = "desain.gratis"
+	googleProjectID = 1015170299395
+	signingKey      = "auth-signing-key" // GSM key to the private key used for JWT token Sign In
+	tokenIssuer     = "desain.gratis"
 )
 
 func main() {
@@ -153,14 +152,7 @@ func enableApplicationAPI(
 	)
 
 	// Google ID token verifier
-	googleVerifier := signing_handler.NewGoogleAuth(
-		signing_handler.GoogleSignInConfig{
-			GoogleOAuth2SecretJSONPath: googleOAuth2SecretJSONPath,
-			PollTime:                   180 * time.Second,
-		},
-		jwtrsa.DefaultHandler,
-		secretkv.Default,
-	)
+	googleVerifier := signing_handler.NewGoogleAuth(CONFIG.GetString("gsi.client_id"))
 
 	// Our own ID token signer and also verifier
 	tokenSignerAndVerifier := signing_handler.New(
@@ -181,8 +173,8 @@ func enableApplicationAPI(
 	var appTokenSigner signing.Signer = tokenSignerAndVerifier
 	var appTokenVerifier signing.Verifier = tokenSignerAndVerifier
 
-	// Validate google token, exchange with out app token
-	googleauth := authapi.TokenExchanger(googleVerifier, appTokenSigner)
+	// Exchange valid Google ID token with Application token
+	googleauth := authapi.NewTokenExchanger(googleVerifier, appTokenSigner)
 
 	// Token usage
 	appauth := plugin.AuthProvider(appTokenVerifier, appTokenSigner)

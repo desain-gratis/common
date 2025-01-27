@@ -75,8 +75,6 @@ type Auth string
 const (
 	AUTH_GSI Auth = "gsi"
 
-	maximumRequestLength = 1 << 20
-
 	keyGoogleAuth key = "google-auth"
 
 	AuthParserGoogle AuthParser = "gsi"
@@ -86,58 +84,20 @@ type key string
 type AuthParser string
 type TokenBuilder func(req *http.Request, payload *idtoken.Payload) (tokenData proto.Message, apiData any, expiry time.Time, err *types.CommonError)
 
-func getToken(authorizationToken string) (string, *types.CommonError) {
-	token := strings.Split(authorizationToken, " ")
-	if len(token) < 2 {
-		return "", &types.CommonError{
-			Errors: []types.Error{
-				{
-					HTTPCode: http.StatusBadRequest,
-					Code:     "INVALID_OR_EMPTY_AUTHORIZATION",
-					Message:  "Authorization header is not valid",
-				},
-			},
-		}
-	}
-	return token[1], nil
-}
-
-type tokenExchanger struct {
-	verifier signing.VerifierOf[idtoken.Payload]
+type TokenExchanger struct {
+	verifier signing.VerifierOf[*idtoken.Payload]
 	signer   signing.Signer
 }
 
-func TokenExchanger(
-	verifier signing.VerifierOf[idtoken.Payload],
+func NewTokenExchanger(
+	verifier signing.VerifierOf[*idtoken.Payload],
 	signer signing.Signer,
-) *tokenExchanger {
-	return &tokenExchanger{verifier, signer}
+) *TokenExchanger {
+	return &TokenExchanger{verifier, signer}
 }
 
-func (g *tokenExchanger) WithAuthorization(handler httprouter.Handle) httprouter.Handle {
-	return func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-		token, err := getToken(r.Header.Get("Authorization"))
-		if err != nil {
-			errMessage := types.SerializeError(err)
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write(errMessage)
-			return
-		}
-
-		payload, err := g.verifier.VerifyAs(r.Context(), token)
-		if err != nil {
-			errMessage := types.SerializeError(err)
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write(errMessage)
-			return
-		}
-
-		handler(w, r.WithContext(context.WithValue(r.Context(), keyGoogleAuth, payload)), p)
-	}
-}
-
-// Exchange google auth (open ID) token with our own token
-func (g *tokenExchanger) ExchangeToken(
+// Convenient handler for exchanging token
+func (g *TokenExchanger) ExchangeToken(
 	tokenBuilder TokenBuilder,
 ) httprouter.Handle {
 	return func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
@@ -174,7 +134,7 @@ func (g *tokenExchanger) ExchangeToken(
 		}
 
 		// 2. Build proto token
-		signedData, apiData, expiry, errUC := tokenBuilder(r, auth)
+		data, apiData, expiry, errUC := tokenBuilder(r, auth)
 		if errUC != nil {
 			errMessage := types.SerializeError(&types.CommonError{
 				Errors: []types.Error{
@@ -186,7 +146,7 @@ func (g *tokenExchanger) ExchangeToken(
 		}
 
 		// 3. Serialize proto token to bytes
-		payload, errProto := proto.Marshal(signedData)
+		payload, errProto := proto.Marshal(data)
 		if errProto != nil {
 			log.Err(errProto).Msgf("Proto token build error")
 			errMessage := types.SerializeError(&types.CommonError{
@@ -238,7 +198,30 @@ func (g *tokenExchanger) ExchangeToken(
 	}
 }
 
-func GetGoogleClaim(claims map[string]interface{}) *session.OIDCClaim {
+// WithAuthorization is for more generic authorization
+func (g *TokenExchanger) WithAuthorization(handler httprouter.Handle) httprouter.Handle {
+	return func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+		token, err := getToken(r.Header.Get("Authorization"))
+		if err != nil {
+			errMessage := types.SerializeError(err)
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write(errMessage)
+			return
+		}
+
+		payload, err := g.verifier.VerifyAs(r.Context(), token)
+		if err != nil {
+			errMessage := types.SerializeError(err)
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write(errMessage)
+			return
+		}
+
+		handler(w, r.WithContext(context.WithValue(r.Context(), keyGoogleAuth, payload)), p)
+	}
+}
+
+func GetOIDCClaims(claims map[string]interface{}) *session.OIDCClaim {
 	var claim session.OIDCClaim
 	if v, ok := claims["iss"]; ok {
 		claim.Iss, _ = v.(string)
@@ -292,17 +275,18 @@ func (s *signingService) MultiKeys(w http.ResponseWriter, r *http.Request, p htt
 	s.Keys(w, r, p)
 }
 
-// ParseTokenAsOpenID is a utility function to parse the token published by GoogleSignInService
-func ParseTokenAsOpenID(payload []byte) (result *session.SessionData, errUC *types.CommonError) {
-	var session session.SessionData
-	err := proto.Unmarshal(payload, &session)
-	if err != nil {
-		return nil, &types.CommonError{
+func getToken(authorizationToken string) (string, *types.CommonError) {
+	token := strings.Split(authorizationToken, " ")
+	if len(token) < 2 {
+		return "", &types.CommonError{
 			Errors: []types.Error{
-				{Code: "INVALID_TOKEN", HTTPCode: http.StatusBadRequest, Message: "Token schema changed. Please log in again."},
+				{
+					HTTPCode: http.StatusBadRequest,
+					Code:     "INVALID_OR_EMPTY_AUTHORIZATION",
+					Message:  "Authorization header is not valid",
+				},
 			},
 		}
 	}
-
-	return &session, nil
+	return token[1], nil
 }

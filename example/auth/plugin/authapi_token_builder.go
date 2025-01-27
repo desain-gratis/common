@@ -24,6 +24,8 @@ type auth struct {
 	adminEmail map[string]struct{}
 }
 
+// TokenPublisher publish token based on validated identity token.
+// Identity provider validation provided by authapi.
 func TokenPublisher(authUser mycontent.Usecase[*entity.Payload], adminEmail map[string]struct{}) *auth {
 	return &auth{
 		authUser:   authUser,
@@ -32,7 +34,7 @@ func TokenPublisher(authUser mycontent.Usecase[*entity.Payload], adminEmail map[
 }
 
 func (a *auth) AdminToken(r *http.Request, auth *idtoken.Payload) (tokenData proto.Message, apiData any, expiry time.Time, err *types.CommonError) {
-	claim := authapi.GetGoogleClaim(auth.Claims)
+	claim := authapi.GetOIDCClaims(auth.Claims)
 
 	if _, ok := a.adminEmail[claim.Email]; !ok {
 		errUC := &types.CommonError{
@@ -66,7 +68,7 @@ func (a *auth) AdminToken(r *http.Request, auth *idtoken.Payload) (tokenData pro
 }
 
 func (a *auth) UserToken(r *http.Request, auth *idtoken.Payload) (tokenData proto.Message, apiData any, expiry time.Time, err *types.CommonError) {
-	claim := authapi.GetGoogleClaim(auth.Claims)
+	claim := authapi.GetOIDCClaims(auth.Claims)
 
 	// Locale
 	// TODO parse to clean string

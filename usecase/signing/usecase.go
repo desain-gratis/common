@@ -33,31 +33,11 @@ type Verifier interface {
 // Specific case of Verifier
 type VerifierOf[T any] interface {
 	// Verify token
-	VerifyAs(ctx context.Context, token string) (claim *T, errUC *types.CommonError)
-}
-
-// TODO: Stateful Session authorization with credential / active user stored somewhere in DB
-// TODO: Useful for elevated permission such as password / doing important things
-type StatefulAuthorization interface {
-	StoreSession(ctx context.Context, key []byte, payload []byte) (errUC *types.CommonError)
-	GetSession(ctx context.Context, key []byte) (payload []byte, errUC *types.CommonError)
+	VerifyAs(ctx context.Context, token string) (claim T, errUC *types.CommonError)
 }
 
 type Keys struct {
 	CreatedAt string `json:"created_at"`
 	KeyID     string `json:"key_id"`
 	Key       string `json:"key"`
-}
-
-type Response struct {
-	IDToken string  `json:"id_token"`
-	Profile Profile `json:"profile"`
-}
-
-type Profile struct {
-	DisplayName    string `json:"display_name"`
-	ImageDataUrl   string `json:"image_data_url"`
-	ImageURLSmall  string `json:"image_url_small"`
-	ImageURLMedium string `json:"image_url_medium"`
-	ImageURLLarge  string `json:"image_url_large"`
 }
