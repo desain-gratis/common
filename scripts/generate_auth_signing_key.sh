@@ -26,7 +26,11 @@ openssl ecparam -name prime256v1 -genkey -noout -out private-key.pem
 
 
 # then save it to keyctl 
-cat private-key.pem | keyctl padd user account-api-dev @u
+# cat private-key.pem | keyctl padd user account-api-dev @u
 # keyctl pipe %user:account-api-dev
 # later when we generate / run program in local
 # cat secret | ./app -c config.hcl 
+
+# debug to get public key
+# https://stackoverflow.com/questions/15686821/generate-ec-keypair-from-openssl-command-line
+openssl ec -in private-key.pem -pubout -out public.pem

@@ -8,7 +8,6 @@ import (
 var Default Provider
 
 type Provider interface {
-	GetF(key string, version int) func() (Payload, error)
 	Get(ctx context.Context, key string, version int) (Payload, error)
 	List(ctx context.Context, key string) ([]Payload, error)
 }

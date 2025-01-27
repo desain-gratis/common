@@ -74,7 +74,7 @@ type keys struct {
 	createdAt       time.Time
 }
 
-// New create new OIDC Login usecase
+// New manage secrets for signer, including caching, polling, etc..
 func New(
 	config Config,
 	rsaStore jwtrsa.Provider,
@@ -98,7 +98,7 @@ func New(
 		secretkvStore: secretkvStore,
 	}
 
-	go s.updateSigningKeys(context.Background(), s.config.SigningConfig.Secret)
+	go s.updateSigningKeys(context.Background())
 
 	return s
 }
@@ -117,7 +117,6 @@ func (s *oidcLogin) Sign(ctx context.Context, claim []byte, expire time.Time) (t
 		}
 	}
 
-	// tokenExpiry := time.Now().Add(time.Duration(s.config.TokenExpiryMinutes) * time.Minute)
 	token, err := s.rsaStore.BuildRSAJWTToken(claim, expire, keys[0].KeyID)
 	if err != nil {
 		return "", &types.CommonError{
@@ -140,18 +139,18 @@ func (s *oidcLogin) Keys(ctx context.Context) ([]signing.Keys, *types.CommonErro
 
 func (s *oidcLogin) getKeys(ctx context.Context) ([]keys, *types.CommonError) {
 	if len(s.keys) > 0 {
-		if time.Now().Sub(s.keys[0].cacheUpdateTime) < s.config.SigningConfig.PollTime {
+		if time.Since(s.keys[0].cacheUpdateTime) < s.config.SigningConfig.PollTime {
 			return s.keys, nil
 		}
 	}
-	return s.updateSigningKeys(ctx, s.config.SigningConfig.Secret)
+	return s.updateSigningKeys(ctx)
 }
 
-func (s *oidcLogin) updateSigningKeys(ctx context.Context, key string) ([]keys, *types.CommonError) {
+func (s *oidcLogin) updateSigningKeys(ctx context.Context) ([]keys, *types.CommonError) {
 	res := s.group.DoChan(s.config.SigningConfig.Secret, func() (interface{}, error) {
 		payloads, err := s.secretkvStore.List(context.Background(), s.config.SigningConfig.Secret)
 		if err != nil {
-			log.Err(err).Msgf("Failed to get sigining secret")
+			log.Err(err).Msgf("Failed to get signing secret")
 			return nil, err
 		}
 		var result []keys
@@ -215,7 +214,7 @@ func (s *oidcLogin) updateSigningKeys(ctx context.Context, key string) ([]keys, 
 			}
 		}
 		return keys, err
-	case _ = <-ctx.Done():
+	case <-ctx.Done():
 		return nil, &types.CommonError{
 			Errors: []types.Error{
 				{

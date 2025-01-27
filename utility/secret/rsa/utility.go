@@ -20,26 +20,26 @@ type Provider interface {
 	GetPublicKey(keyID string) (key []byte, found bool, err error)
 }
 
-var DefaultHandler Provider = hardcode.New("hello")
+var Default Provider = hardcode.New("https://desain.gratis")
 
 // usualy payload is the serialized protobuf message
 func BuildRSAJWTToken(payload []byte, expireAt time.Time, keyID string) (token string, err error) {
-	return DefaultHandler.BuildRSAJWTToken(payload, expireAt, keyID)
+	return Default.BuildRSAJWTToken(payload, expireAt, keyID)
 }
 
 // https://pkg.go.dev/github.com/golang-jwt/jwt
 func ParseRSAJWTToken(token string, keyID string) (payload []byte, err error) {
-	return DefaultHandler.ParseRSAJWTToken(token, keyID)
+	return Default.ParseRSAJWTToken(token, keyID)
 }
 
 func StorePrivateKey(keyID string, privateKeyPEM string) (err error) {
-	return DefaultHandler.StorePrivateKey(keyID, privateKeyPEM)
+	return Default.StorePrivateKey(keyID, privateKeyPEM)
 }
 
 func StorePublicKey(keyID string, publicKeyPEM string) (err error) {
-	return DefaultHandler.StorePublicKey(keyID, publicKeyPEM)
+	return Default.StorePublicKey(keyID, publicKeyPEM)
 }
 
 func GetPublicKey(keyID string) ([]byte, bool, error) {
-	return DefaultHandler.GetPublicKey(keyID)
+	return Default.GetPublicKey(keyID)
 }

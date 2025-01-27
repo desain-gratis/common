@@ -32,7 +32,7 @@ func init() {
 var (
 	googleProjectID = 1015170299395
 	signingKey      = "auth-signing-key" // GSM key to the private key used for JWT token Sign In
-	tokenIssuer     = "desain.gratis"
+	tokenIssuer     = "https://desain.gratis"
 )
 
 func main() {
@@ -148,6 +148,7 @@ func enableApplicationAPI(
 		authorizedUserUsecase,
 		map[string]struct{}{
 			"keenan.gebze@gmail.com": {},
+			"desain-gratis-developer@langsunglelang.iam.gserviceaccount.com": {},
 		},
 	)
 
@@ -160,12 +161,12 @@ func enableApplicationAPI(
 			Issuer: tokenIssuer,
 			SigningConfig: signing_handler.SigningConfig{
 				Secret:   signingKey,
-				ID:       "suite",
+				ID:       "desain-gratis",
 				PollTime: 1 * time.Hour,
 			},
 			TokenExpiryMinutes: 8 * 60,
 		},
-		jwtrsa.DefaultHandler,
+		jwtrsa.Default,
 		secretkv.Default,
 	)
 
@@ -212,11 +213,11 @@ func enableApplicationAPI(
 
 	// Sign-in as admin, sign-in as user
 	router.GET("/auth/admin", googleauth.ExchangeToken(tokenBuilder.AdminToken))
-	router.GET("/auth/signin/google", googleauth.ExchangeToken(tokenBuilder.UserToken))
+	router.GET("/auth/signin", googleauth.ExchangeToken(tokenBuilder.UserToken))
 
 	// Debug app token and verify using public key
-	router.GET("/auth/signin/debug", appauth.Debug)
-	router.GET("/auth/signin/keys", appauth.Keys)
+	router.GET("/auth/debug", appauth.Debug)
+	router.GET("/auth/keys", appauth.Keys)
 
 	// Mycontent authorized user (admin only) endpoint
 	router.OPTIONS("/auth/user", Empty)
