@@ -32,8 +32,9 @@ func New[T mycontent.Data](
 	}
 }
 
-func (c *client[T]) WithToken(token string) {
+func (c *client[T]) WithToken(token string) *client[T] {
 	c.token = token
+	return c
 }
 
 func (c *client[T]) Delete(ctx context.Context, namespace string, refIDs map[string]string, ID string) (result T, errUC *types.CommonError) {

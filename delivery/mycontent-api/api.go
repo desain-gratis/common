@@ -49,10 +49,6 @@ func New[T mycontent.Data](
 	}
 }
 
-func (i *service[T]) GetUsecase() mycontent.Usecase[T] {
-	return i.uc
-}
-
 func (i *service[T]) Post(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	// Read body parse entity and extract metadata
 
@@ -175,14 +171,11 @@ func (i *service[T]) Get(w http.ResponseWriter, r *http.Request, p httprouter.Pa
 		return
 	}
 
-	// Check authorization for entity level authorization
-	var count int
-	for i := 0; i < len(result); i++ {
-		datum := result[i]
-		result[count] = datum
-		count++
+	for _, pp := range i.postProcess {
+		for idx := range result {
+			pp(result[idx])
+		}
 	}
-	result = result[:count]
 
 	payload, err := json.Marshal(&types.CommonResponse{
 		Success: result,

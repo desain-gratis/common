@@ -2,9 +2,12 @@ package main
 
 import (
 	"context"
+	"net/http"
 	"os"
 
 	authclient "github.com/desain-gratis/common/delivery/auth-api-client"
+	mycontentapiclient "github.com/desain-gratis/common/delivery/mycontent-api-client"
+	"github.com/desain-gratis/common/example/auth/entity"
 	signing_handler "github.com/desain-gratis/common/usecase/signing/handler"
 	jwtrsa "github.com/desain-gratis/common/utility/secret/rsa"
 	"github.com/rs/zerolog"
@@ -60,12 +63,51 @@ MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEZDXtDjpdz/oSbMh6rvspRNeu+WvI
 	}
 
 	// store valid key
-	_ = signing_handler.NewRemoteLoginVerifier(jwtrsa.Default, "http://localhost:9090/auth/keys")
+	verifier := signing_handler.NewRemoteLoginVerifier(jwtrsa.Default, "http://localhost:9090/auth/keys")
 
+	// direct from jwt library "non-proper" validation
 	a, err := jwtrsa.Default.ParseRSAJWTToken(*ar.IDToken, kei)
 	if err != nil {
 		log.Err(err).Msgf("THIS ERROR IS ---NOT--- EXPECTED: %+v", err)
 	}
 
 	log.Info().Msgf("RESULT %+v", string(a))
+
+	// "Proper" validation
+	_, errUC = verifier.Verify(context.Background(), *ar.IDToken)
+	if errUC != nil {
+		log.Err(errUC.Err()).Msgf("THIS ERROR IS ---NOT--- EXPECTED: %+v", errUC)
+	}
+
+	// Use to sync entity
+	orgClient := mycontentapiclient.New[*entity.Project](
+		http.DefaultClient,
+		"http://localhost:9090/project",
+		nil,
+	).WithToken(*ar.IDToken)
+
+	projectSync := mycontentapiclient.Sync(orgClient, "*", sampleOrg)
+
+	projectSync.Execute(context.Background())
+}
+
+var sampleOrg = []*entity.Project{
+	{
+		Ns:          "auth-sample",
+		Id:          "project-1",
+		Name:        "Project ggwp",
+		Description: "This is an auth project",
+	},
+	{
+		Ns:          "auth-sample",
+		Id:          "project-2",
+		Name:        "Project numba two",
+		Description: "This is an auth project again",
+	},
+	{
+		Ns:          "auth-sample",
+		Id:          "project-3",
+		Name:        "Alaamantap",
+		Description: "Testing",
+	},
 }
