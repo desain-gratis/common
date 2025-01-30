@@ -3,101 +3,85 @@ package entity
 import (
 	"time"
 
+	"github.com/desain-gratis/common/types/entity"
 	types "github.com/desain-gratis/common/types/http"
 	"github.com/desain-gratis/common/usecase/mycontent"
 )
 
 type (
-	Details struct {
-		ID              string                   `json:"id"` // email
-		Profile         UserProfile              `json:"profile"`
-		GSI             GSIConfig                `json:"gsi"`
-		MIP             MIPConfig                `json:"mip"`
-		DefaultHomepage string                   `json:"default_homepage"`
-		Authorization   map[string]Authorization `json:"authorization"` // organization/tenant id as key
+
+	// UserAuthorization
+	// Defines which "namespace" (or "project", or "tenant", etc.) the application user can access
+	UserAuthorization struct {
+		Ns             string                   `json:"namespace"` // for admin, internal
+		Url            string                   `json:"url"`
+		Id             string                   `json:"id"` // email
+		DefaultProfile UserProfile              `json:"profile"`
+		DefaultProject string                   `json:"default_project"`
+		Authorization  map[string]Authorization `json:"authorization"` // for application user "namespace" authorization
+		CreatedAt      string                   `json:"created_at"`
 	}
 
+	// Authorization
+	// Which & what operation is authorized for application user?
 	Authorization struct {
-		UserID             string              `json:"user_id"` // organization/tenant id
-		Name               string              `json:"name"`    // organization/tenant name
-		UserGroupID        map[string]struct{} `json:"user_group_id"`
+		UserGroupID2       string              `json:"group_id_new",omitempty`
+		UserGroupID        map[string]struct{} `json:"group_id",omitempty`
 		UiAndApiPermission map[string]bool     `json:"api_and_ui_permission"`
 	}
 
-	Payload struct {
-		Ns              string                   `json:"namespace"`
-		Url             string                   `json:"url"`
-		Id              string                   `json:"id"` // email
-		Profile         UserProfile              `json:"profile"`
-		GSI             GSIConfig                `json:"gsi"`
-		MIP             MIPConfig                `json:"mip"`
-		DefaultHomepage string                   `json:"default_homepage"`
-		Authorization   map[string]Authorization `json:"authorization"` // organization/tenant id as key
-		CreatedAt       string                   `json:"created_at"`
-	}
-
+	// UserProfile
+	// Default profile
 	UserProfile struct {
-		ID               string `json:"id"`
-		ImageURL         string `json:"image_url"`
-		Name             string `json:"name"`
-		DisplayName      string `json:"display_name"`
-		Role             string `json:"role"`
-		Description      string `json:"description"`
-		Avatar1x1URL     string `json:"avatar_1x1_url"`
-		Background3x1URL string `json:"background_3x1_url"`
-		CreatedAt        string `json:"created_at"`
-	}
-
-	GSIConfig struct {
-		Email string `json:"email"`
-	}
-
-	MIPConfig struct {
-		Email string `json:"email"`
+		DisplayName   string        `json:"display_name"`
+		Description   string        `json:"description"`
+		Avatar1x1     *entity.Image `json:"avatar_1x1_url"`
+		Background3x1 *entity.Image `json:"background_3x1_url"`
+		CreatedAt     string        `json:"created_at"`
 	}
 )
 
-func (c *Payload) WithID(id string) mycontent.Data {
+func (c *UserAuthorization) WithID(id string) mycontent.Data {
 	c.Id = id
 	return c
 }
 
-func (c *Payload) ID() string {
+func (c *UserAuthorization) ID() string {
 	return c.Id
 }
 
-func (c *Payload) WithNamespace(id string) mycontent.Data {
+func (c *UserAuthorization) WithNamespace(id string) mycontent.Data {
 	c.Ns = id
 	return c
 }
 
-func (c *Payload) Namespace() string {
+func (c *UserAuthorization) Namespace() string {
 	return c.Ns
 }
 
-func (c *Payload) URL() string {
+func (c *UserAuthorization) URL() string {
 	return c.Url
 }
 
-func (c *Payload) WithURL(url string) mycontent.Data {
+func (c *UserAuthorization) WithURL(url string) mycontent.Data {
 	c.Url = url
 	return c
 }
 
-func (c *Payload) WithCreatedTime(t time.Time) mycontent.Data {
+func (c *UserAuthorization) WithCreatedTime(t time.Time) mycontent.Data {
 	c.CreatedAt = t.Format(time.RFC3339)
 	return c
 }
 
-func (c *Payload) CreatedTime() time.Time {
+func (c *UserAuthorization) CreatedTime() time.Time {
 	t, _ := time.Parse(time.RFC3339, c.CreatedAt)
 	return t
 }
 
-func (c *Payload) RefIDs() []string {
+func (c *UserAuthorization) RefIDs() []string {
 	return nil
 }
 
-func (c *Payload) Validate() *types.CommonError {
+func (c *UserAuthorization) Validate() *types.CommonError {
 	return nil
 }

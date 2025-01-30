@@ -2,12 +2,9 @@ package main
 
 import (
 	"context"
-	"net/http"
 	"os"
 
 	authclient "github.com/desain-gratis/common/delivery/auth-api-client"
-	mycontentapiclient "github.com/desain-gratis/common/delivery/mycontent-api-client"
-	"github.com/desain-gratis/common/example/auth/entity"
 	signing_handler "github.com/desain-gratis/common/usecase/signing/handler"
 	jwtrsa "github.com/desain-gratis/common/utility/secret/rsa"
 	"github.com/rs/zerolog"
@@ -24,10 +21,13 @@ func main() {
 	// 1. Download service-credential first to KEY_FILE
 	//     gcloud auth activate-service-account [ACCOUNT] --key-file=KEY_FILE
 	// 2. delete KEY_FILE
-	// export TOKEN=$(gcloud auth print-identity-token --audiences='807095026235-ghkps0coeukr7ckr5398vcc66tpnqpuj.apps.googleusercontent.com')
-	idToken := os.Getenv("TOKEN")
+	// export GOOGLE_ID_TOKEN=$(gcloud auth print-identity-token \
+	// 		--audiences='807095026235-ghkps0coeukr7ckr5398vcc66tpnqpuj.apps.googleusercontent.com' \
+	// 		--account='desain-gratis-developer@langsunglelang.iam.gserviceaccount.com')
+	//
+	idToken := os.Getenv("GOOGLE_ID_TOKEN")
 	if idToken == "" {
-		log.Fatal().Msgf("Please specify TOKEN environment variables with google id token")
+		log.Fatal().Msgf("Please specify GOOGLE_ID_TOKEN environment variables with google id token")
 	}
 
 	// admin token
@@ -44,7 +44,7 @@ func main() {
 	// Expected failed because no key.
 	_, err := jwtrsa.Default.ParseRSAJWTToken(*ar.IDToken, kei)
 	if err != nil {
-		log.Error().Msgf("THIS ERROR IS EXPCETED: %+v", err)
+		log.Info().Msgf("THIS ERROR IS EXPCETED: %+v", err)
 	}
 
 	// store valid, but wrong key
@@ -53,13 +53,13 @@ MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEZDXtDjpdz/oSbMh6rvspRNeu+WvI
 8uoR41v79xmk6my0pgBsm06rm+u9uBdl2OlmNXoor+b6S7hDYbgtv55JYw==
 -----END PUBLIC KEY-----`)
 	if err != nil {
-		log.Error().Msgf("THIS ERROR IS EXPCETED: %+v", err)
+		log.Info().Msgf("THIS ERROR IS EXPCETED: %+v", err)
 	}
 
 	// Expected failed because of wrong key
 	_, err = jwtrsa.Default.ParseRSAJWTToken(*ar.IDToken, kei)
 	if err != nil {
-		log.Error().Msgf("THIS ERROR IS EXPECTED: %+v", err)
+		log.Info().Msgf("THIS ERROR IS EXPECTED: %+v", err)
 	}
 
 	// store valid key
@@ -78,36 +78,4 @@ MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEZDXtDjpdz/oSbMh6rvspRNeu+WvI
 	if errUC != nil {
 		log.Err(errUC.Err()).Msgf("THIS ERROR IS ---NOT--- EXPECTED: %+v", errUC)
 	}
-
-	// Use to sync entity
-	orgClient := mycontentapiclient.New[*entity.Project](
-		http.DefaultClient,
-		"http://localhost:9090/project",
-		nil,
-	).WithToken(*ar.IDToken)
-
-	projectSync := mycontentapiclient.Sync(orgClient, "*", sampleOrg)
-
-	projectSync.Execute(context.Background())
-}
-
-var sampleOrg = []*entity.Project{
-	{
-		Ns:          "auth-sample",
-		Id:          "project-1",
-		Name:        "Project ggwp",
-		Description: "This is an auth project",
-	},
-	{
-		Ns:          "auth-sample",
-		Id:          "project-2",
-		Name:        "Project numba two",
-		Description: "This is an auth project again",
-	},
-	{
-		Ns:          "auth-sample",
-		Id:          "project-3",
-		Name:        "Alaamantap",
-		Description: "Testing",
-	},
 }

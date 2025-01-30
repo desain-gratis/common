@@ -68,10 +68,11 @@ func (v *authProvider) AdminOnly(handle httprouter.Handle) httprouter.Handle {
 					{
 						HTTPCode: http.StatusUnauthorized,
 						Code:     "UNAUTHORIZED",
-						Message:  "Your role is unauthorized for this API.",
+						Message:  "Unauthorized.",
 					},
 				},
 			})
+			log.Warn().Msgf("Someone (%v) tried to sign in as admin but failed.", authData.SignInEmail)
 			w.WriteHeader(http.StatusUnauthorized)
 			w.Write(errMessage)
 			return

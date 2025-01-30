@@ -20,20 +20,20 @@ var (
 )
 
 type auth struct {
-	authUser   mycontent.Usecase[*entity.Payload]
+	authUser   mycontent.Usecase[*entity.UserAuthorization]
 	adminEmail map[string]struct{}
 }
 
 // TokenPublisher publish token based on validated identity token.
 // Identity provider validation provided by authapi.
-func TokenPublisher(authUser mycontent.Usecase[*entity.Payload], adminEmail map[string]struct{}) *auth {
+func TokenPublisher(authUser mycontent.Usecase[*entity.UserAuthorization], adminEmail map[string]struct{}) *auth {
 	return &auth{
 		authUser:   authUser,
 		adminEmail: adminEmail,
 	}
 }
 
-func (a *auth) AdminOnlyToken(r *http.Request, auth *idtoken.Payload) (tokenData proto.Message, apiData any, expiry time.Time, err *types.CommonError) {
+func (a *auth) AdminOnlyToken(r *http.Request, authMethod string, auth *idtoken.Payload) (tokenData proto.Message, apiData any, expiry time.Time, err *types.CommonError) {
 	claim := authapi.GetOIDCClaims(auth.Claims)
 
 	if _, ok := a.adminEmail[claim.Email]; !ok {
@@ -59,7 +59,7 @@ func (a *auth) AdminOnlyToken(r *http.Request, auth *idtoken.Payload) (tokenData
 			Nickname: claim.Nickname,
 			Email:    claim.Email,
 		},
-		SignInMethod: "GSI",
+		SignInMethod: authMethod,
 		SignInEmail:  claim.Email,
 		IsSuperAdmin: true, // ADMIN
 	}
@@ -67,7 +67,7 @@ func (a *auth) AdminOnlyToken(r *http.Request, auth *idtoken.Payload) (tokenData
 	return tokenData, tokenData, expiry, nil
 }
 
-func (a *auth) UserToken(r *http.Request, auth *idtoken.Payload) (tokenData proto.Message, apiData any, expiry time.Time, err *types.CommonError) {
+func (a *auth) UserToken(r *http.Request, authMethod string, auth *idtoken.Payload) (tokenData proto.Message, apiData any, expiry time.Time, err *types.CommonError) {
 	claim := authapi.GetOIDCClaims(auth.Claims)
 
 	// Locale
@@ -77,6 +77,8 @@ func (a *auth) UserToken(r *http.Request, auth *idtoken.Payload) (tokenData prot
 	// Enterprise capability (login based on organization)
 	grants := make(map[string]*session.Grant)
 
+	// notice that "root" is hardcoded
+	// also, we get the authentication based on claim.Email.
 	authData, errUserUC := a.authUser.Get(r.Context(), "root", []string{}, claim.Email)
 	if errUserUC != nil {
 		return nil, nil, expiry, errUserUC
@@ -93,40 +95,21 @@ func (a *auth) UserToken(r *http.Request, auth *idtoken.Payload) (tokenData prot
 
 	userData := authData[0]
 
-	for tenantID, auth := range userData.Authorization {
-		var arrUserGroup []string
-		for ug := range auth.UserGroupID {
-			arrUserGroup = append(arrUserGroup, ug)
-		}
-		userGroup := strings.Join(arrUserGroup, ",")
-		grant := &session.Grant{
-			UserId:             tenantID,
-			GroupId:            userGroup, // multiple group id separated by ','
-			Name:               auth.Name,
-			UiAndApiPermission: auth.UiAndApiPermission,
-		}
-		grants[tenantID] = grant
-	}
-
 	expiry = time.Now().Add(time.Duration(60*9) * time.Minute) // long-lived token
 
-	apiData = &authapi.SignInResponse{
-		LoginProfile: &authapi.Profile{
-			DisplayName:      claim.Name,
-			Email:            claim.Email,
-			ImageURL:         userData.Profile.ImageURL,
-			Avatar1x1URL:     userData.Profile.Avatar1x1URL,
-			Background3x1URL: userData.Profile.Background3x1URL,
-		},
-		Locale: lang,
-
-		// collection of grants NOT signed, for debugging.
-		// DO NOT USE THIS FOR BACK END VALIDATION
-		Grants: grants,
-		Expiry: expiry.Format(time.RFC3339),
+	var img string
+	if userData.DefaultProfile.Avatar1x1 != nil {
+		img = userData.DefaultProfile.Avatar1x1.ThumbnailUrl
 	}
 
-	return &session.SessionData{
+	for namespace, auth := range userData.Authorization {
+		grants[namespace] = &session.Grant{
+			UiAndApiPermission: auth.UiAndApiPermission,
+			GroupId:            auth.UserGroupID2, // todo:
+		}
+	}
+
+	tokenData = &session.SessionData{
 		NonRegisteredId: &session.OIDCClaim{
 			Iss:      claim.Iss,
 			Sub:      claim.Sub,
@@ -135,8 +118,23 @@ func (a *auth) UserToken(r *http.Request, auth *idtoken.Payload) (tokenData prot
 			Email:    claim.Email,
 		},
 		Grants:       grants,
-		SignInMethod: "GSI",
+		SignInMethod: authMethod,
 		SignInEmail:  claim.Email,
 		IsSuperAdmin: false,
-	}, apiData, expiry, nil
+	}
+
+	apiData = &authapi.SignInResponse{
+		LoginProfile: &authapi.Profile{
+			DisplayName: claim.Name,
+			Email:       claim.Email,
+			ImageURL:    img,
+		},
+		Locale: lang,
+		// collection of grants NOT signed, for debugging.
+		// DO NOT USE THIS FOR BACK END VALIDATION
+		Grants: grants,
+		Expiry: expiry.Format(time.RFC3339),
+	}
+
+	return tokenData, apiData, expiry, nil
 }

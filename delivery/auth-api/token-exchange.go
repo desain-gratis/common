@@ -82,22 +82,24 @@ const (
 
 type key string
 type AuthParser string
-type TokenBuilder func(req *http.Request, payload *idtoken.Payload) (tokenData proto.Message, apiData any, expiry time.Time, err *types.CommonError)
+type TokenBuilder func(req *http.Request, authMethod string, payload *idtoken.Payload) (tokenData proto.Message, apiData any, expiry time.Time, err *types.CommonError)
 
-type TokenExchanger struct {
-	verifier signing.VerifierOf[*idtoken.Payload]
-	signer   signing.Signer
+type IdTokenExchanger struct {
+	verifierName string
+	verifier     signing.VerifierOf[*idtoken.Payload]
+	signer       signing.Signer
 }
 
-func NewTokenExchanger(
+func NewIdTokenExchanger(
+	verifierName string,
 	verifier signing.VerifierOf[*idtoken.Payload],
 	signer signing.Signer,
-) *TokenExchanger {
-	return &TokenExchanger{verifier, signer}
+) *IdTokenExchanger {
+	return &IdTokenExchanger{verifierName, verifier, signer}
 }
 
 // Convenient handler for exchanging token
-func (g *TokenExchanger) ExchangeToken(
+func (g *IdTokenExchanger) ExchangeToken(
 	tokenBuilder TokenBuilder,
 ) httprouter.Handle {
 	return func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
@@ -134,7 +136,7 @@ func (g *TokenExchanger) ExchangeToken(
 		}
 
 		// 2. Build proto token
-		data, apiData, expiry, errUC := tokenBuilder(r, auth)
+		data, apiData, expiry, errUC := tokenBuilder(r, g.verifierName, auth)
 		if errUC != nil {
 			errMessage := types.SerializeError(&types.CommonError{
 				Errors: []types.Error{
@@ -199,7 +201,7 @@ func (g *TokenExchanger) ExchangeToken(
 }
 
 // WithAuthorization is for more generic authorization
-func (g *TokenExchanger) WithAuthorization(handler httprouter.Handle) httprouter.Handle {
+func (g *IdTokenExchanger) WithAuthorization(handler httprouter.Handle) httprouter.Handle {
 	return func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 		token, err := getToken(r.Header.Get("Authorization"))
 		if err != nil {

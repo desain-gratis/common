@@ -110,22 +110,19 @@ func enableApplicationAPI(
 	}
 
 	// Initialize datasources for mycontent
-	authorizedUserRepo := content_postgres.New(pg, "gsi_authorized_user", 0)
-	authorizedUserThumbnailRepo := content_postgres.New(pg, "gsi_authorized_user_thumbnail", 1)
-	projectRepo := content_postgres.New(pg, "project", 0)
+	authorizedUserRepo := content_postgres.New(pg, "authorized_user", 0)
+	authorizedUserThumbnailRepo := content_postgres.New(pg, "authorized_user_thumbnail", 1)
 	authorizedUserThumbnailBlobRepo := blob_gcs.New(
 		privateBucketName,
 		privateBucketBaseURL,
 	)
+	projectRepo := content_postgres.New(pg, "project", 0)
 
 	// Initialize usecase logic
-	authorizedUserUsecase := plugin.MyContentWithAuth(
-		mycontent_base.New[*entity.Payload](
-			authorizedUserRepo,
-			0,
-		),
+	userUsecase := mycontent_base.New[*entity.UserAuthorization](
+		authorizedUserRepo,
+		0,
 	)
-
 	authorizedUserThumbnailUsecase := plugin.MyContentAttachmentWithAuth(
 		mycontent_base.NewAttachment(
 			authorizedUserThumbnailRepo,
@@ -145,9 +142,8 @@ func enableApplicationAPI(
 
 	// Plugin to publish token
 	tokenBuilder := plugin.TokenPublisher(
-		authorizedUserUsecase,
+		userUsecase, // notice, no authorization here.
 		map[string]struct{}{
-			"keenan.gebze@gmail.com": {},
 			"desain-gratis-developer@langsunglelang.iam.gserviceaccount.com": {},
 		},
 	)
@@ -175,7 +171,7 @@ func enableApplicationAPI(
 	var appTokenVerifier signing.Verifier = tokenSignerAndVerifier
 
 	// Exchange valid Google ID token with Application token
-	googleauth := authapi.NewTokenExchanger(googleVerifier, appTokenSigner)
+	googleauth := authapi.NewIdTokenExchanger("GSI", googleVerifier, appTokenSigner)
 
 	// Token usage
 	appauth := plugin.AuthProvider(appTokenVerifier, appTokenSigner)
@@ -184,7 +180,7 @@ func enableApplicationAPI(
 
 	// Service for user authorization management
 	userAuthService := mycontentapi.New(
-		authorizedUserUsecase,
+		plugin.MyContentWithAuth(userUsecase), // notice, authorization here
 		baseURL+"/auth/user",
 		[]string{},
 	)
@@ -192,7 +188,7 @@ func enableApplicationAPI(
 	// Thumbnail for user authorization
 	userAuthThumbnailService := mycontentapi.NewAttachment(
 		authorizedUserThumbnailUsecase,
-		baseURL+"/auth/thumbnail",
+		baseURL+"/auth/user/thumbnail",
 		[]string{"org_id", "profile_id"},
 		"",
 	)

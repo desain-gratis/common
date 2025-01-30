@@ -39,9 +39,9 @@ func parseAuthorizationToken(ctx context.Context, verifier signing.Verifier, aut
 		return &sessionData, &types.CommonError{
 			Errors: []types.Error{
 				{
-					HTTPCode: http.StatusUnauthorized,
-					Code:     "UNAUTHORIZED",
-					Message:  "Your role is unauthorized for this API.",
+					HTTPCode: http.StatusBadRequest,
+					Code:     "BAD_REQUEST",
+					Message:  "Failed to parse authorization token.",
 				},
 			},
 		}
@@ -64,8 +64,13 @@ func verifyNamespace(auth *session.SessionData, namespace string) *types.CommonE
 		}
 	}
 
+	// if super admin, then bypass namespace authorization
+	if auth.IsSuperAdmin {
+		return nil
+	}
+
 	// is this user authorized to post on behalf of data's namespace ..?
-	if _, ok := auth.Grants[namespace]; !ok && !auth.IsSuperAdmin {
+	if _, ok := auth.Grants[namespace]; !ok {
 		return &types.CommonError{
 			Errors: []types.Error{
 				{
@@ -76,5 +81,6 @@ func verifyNamespace(auth *session.SessionData, namespace string) *types.CommonE
 			},
 		}
 	}
+
 	return nil
 }
