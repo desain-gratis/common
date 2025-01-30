@@ -21,6 +21,7 @@ type ExtractFiles[T mycontent.Data] func(t []T) []**entity.File
 type ExtractOtherEntities[T any] func(t []T) []mycontent.Data
 
 type fileDep[T mycontent.Data] struct {
+	sync            *sync[T]
 	client          *client[*entity.Attachment]
 	extract         ExtractFiles[T]
 	uploadDirectory string
@@ -31,11 +32,17 @@ type sync[T mycontent.Data] struct {
 	namespace string // filter namespace
 	data      []T
 
+	OptConfig OptionalConfig
+
 	imageDeps []imageDep[T]
 	fileDeps  []fileDep[T]
 }
 
-func Sync[T mycontent.Data](client *client[T], namespace string, data []T) *sync[T] {
+type OptionalConfig struct {
+	AuthorizationToken string
+}
+
+func Sync[T mycontent.Data](client *client[T], namespace string, data []T, optConfig OptionalConfig) *sync[T] {
 	if namespace == "" {
 		log.Fatal().Msgf("Please provide namespace explicitly. Put '*' to sync all")
 	}
@@ -44,15 +51,16 @@ func Sync[T mycontent.Data](client *client[T], namespace string, data []T) *sync
 		client:    client,
 		namespace: namespace,
 		data:      data,
+		OptConfig: optConfig,
 	}
 }
 
 func (s *sync[T]) WithImages(client *attachmentClient, extract ExtractImages[T], uploadDirectory string) *sync[T] {
 	s.imageDeps = append(s.imageDeps, imageDep[T]{
+		sync:            s,
 		client:          client,
 		extract:         extract,
 		uploadDirectory: uploadDirectory,
-		namespace:       s.namespace,
 	})
 
 	return s
@@ -60,6 +68,7 @@ func (s *sync[T]) WithImages(client *attachmentClient, extract ExtractImages[T],
 
 func (s *sync[T]) WithFiles(client *client[*entity.Attachment], extract ExtractFiles[T], uploadDirectory string) *sync[T] {
 	s.fileDeps = append(s.fileDeps, fileDep[T]{
+		sync:            s,
 		client:          client,
 		extract:         extract,
 		uploadDirectory: uploadDirectory,
@@ -70,7 +79,7 @@ func (s *sync[T]) WithFiles(client *client[*entity.Attachment], extract ExtractF
 func (s *sync[T]) Execute(ctx context.Context) *types.CommonError {
 
 	// 1. get all main entity from remote, for all namespace
-	remoteEntities, errUC := s.client.Get(ctx, s.namespace, nil, "") // "*" special namespace to get all namespace
+	remoteEntities, errUC := s.client.Get(ctx, s.OptConfig.AuthorizationToken, s.namespace, nil, "") // "*" special namespace to get all namespace
 	remoteEntitiesMap := make(map[string]T)
 	if errUC != nil {
 		log.Error().Msgf("%+v", errUC)
@@ -111,7 +120,7 @@ func (s *sync[T]) Execute(ctx context.Context) *types.CommonError {
 	for _, localEntity := range localEntities {
 		key := getKey2(localEntity)
 		if _, ok := localEntitiesMap[key]; !ok {
-			_, errUC := s.client.Post(ctx, localEntity)
+			_, errUC := s.client.Post(ctx, s.OptConfig.AuthorizationToken, localEntity)
 			if errUC != nil {
 				log.Error().Msgf("Failed to create entity of type %T with key %v", localEntity, key)
 			}
@@ -122,7 +131,7 @@ func (s *sync[T]) Execute(ctx context.Context) *types.CommonError {
 	for _, remoteEntity := range remoteEntities {
 		remoteID := getKey2(remoteEntity)
 		if _, ok := localEntitiesMap[remoteID]; !ok {
-			_, errUC := s.client.Delete(ctx, remoteEntity.Namespace(), toRefsParam(s.client.refsParam, remoteEntity.RefIDs()), remoteEntity.ID())
+			_, errUC := s.client.Delete(ctx, s.OptConfig.AuthorizationToken, remoteEntity.Namespace(), toRefsParam(s.client.refsParam, remoteEntity.RefIDs()), remoteEntity.ID())
 			if errUC != nil {
 				log.Error().Msgf("Failed to delete project Id %v", remoteID)
 			}
@@ -153,7 +162,7 @@ func (s *sync[T]) Execute(ctx context.Context) *types.CommonError {
 	for _, localEntity := range localEntities {
 		// TODO: calculate hash or compare directly to optimize upload
 
-		_, errUC = s.client.Post(ctx, localEntity)
+		_, errUC = s.client.Post(ctx, s.OptConfig.AuthorizationToken, localEntity)
 		if errUC != nil {
 			log.Error().Msgf("Failed to update project definition %+v", errUC)
 		}

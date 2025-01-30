@@ -20,9 +20,9 @@ func main() {
 	userClient := mycontentapiclient.New[*entity.UserProfile](http.DefaultClient, "http://localhost:9090/org/user", []string{"org_id"})
 	userThumbnailClient := mycontentapiclient.NewAttachment(http.DefaultClient, "http://localhost:9090/org/user/thumbnail", []string{"org_id", "profile_id"})
 
-	orgSync := mycontentapiclient.Sync(orgClient, "*", sampleOrg)
+	orgSync := mycontentapiclient.Sync(orgClient, "*", sampleOrg, mycontentapiclient.OptionalConfig{})
 
-	userSync := mycontentapiclient.Sync(userClient, "*", sampleUser).
+	userSync := mycontentapiclient.Sync(userClient, "*", sampleUser, mycontentapiclient.OptionalConfig{}).
 		WithImages(userThumbnailClient, getUserProfileImage, ".") // upload from local URL, with . root directory
 
 	ctx := context.Background()

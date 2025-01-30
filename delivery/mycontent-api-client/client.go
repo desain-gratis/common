@@ -14,7 +14,6 @@ import (
 
 type client[T mycontent.Data] struct {
 	endpoint  string
-	token     string
 	refsParam []string
 
 	httpc *http.Client
@@ -32,12 +31,7 @@ func New[T mycontent.Data](
 	}
 }
 
-func (c *client[T]) WithToken(token string) *client[T] {
-	c.token = token
-	return c
-}
-
-func (c *client[T]) Delete(ctx context.Context, namespace string, refIDs map[string]string, ID string) (result T, errUC *types.CommonError) {
+func (c *client[T]) Delete(ctx context.Context, authToken string, namespace string, refIDs map[string]string, ID string) (result T, errUC *types.CommonError) {
 	wer, err := url.Parse(c.endpoint)
 	if err != nil {
 		return result, &types.CommonError{
@@ -66,7 +60,7 @@ func (c *client[T]) Delete(ctx context.Context, namespace string, refIDs map[str
 	}
 
 	req = req.WithContext(ctx)
-	req.Header.Add("Authorization", "Bearer "+c.token)
+	req.Header.Add("Authorization", "Bearer "+authToken)
 	req.Header.Add("X-Namespace", namespace)
 
 	resp, err := c.httpc.Do(req)
@@ -105,7 +99,7 @@ func (c *client[T]) Delete(ctx context.Context, namespace string, refIDs map[str
 	return cr.Success, nil
 }
 
-func (c *client[T]) Get(ctx context.Context, namespace string, refIDs map[string]string, ID string) (result []T, errUC *types.CommonError) {
+func (c *client[T]) Get(ctx context.Context, authToken string, namespace string, refIDs map[string]string, ID string) (result []T, errUC *types.CommonError) {
 	wer, err := url.Parse(c.endpoint)
 	if err != nil {
 		return result, &types.CommonError{
@@ -137,7 +131,7 @@ func (c *client[T]) Get(ctx context.Context, namespace string, refIDs map[string
 
 	req = req.WithContext(ctx)
 
-	req.Header.Add("Authorization", "Bearer "+c.token)
+	req.Header.Add("Authorization", "Bearer "+authToken)
 	req.Header.Add("X-Namespace", namespace)
 
 	// sff udrt sorg
@@ -184,7 +178,7 @@ func (c *client[T]) Get(ctx context.Context, namespace string, refIDs map[string
 
 }
 
-func (c *client[T]) Post(ctx context.Context, data T) (result T, errUC *types.CommonError) {
+func (c *client[T]) Post(ctx context.Context, authToken string, data T) (result T, errUC *types.CommonError) {
 	var t T
 	payload, err := json.Marshal(data)
 	if err != nil {
@@ -206,7 +200,7 @@ func (c *client[T]) Post(ctx context.Context, data T) (result T, errUC *types.Co
 
 	req = req.WithContext(ctx)
 
-	req.Header.Add("Authorization", "Bearer "+c.token)
+	req.Header.Add("Authorization", "Bearer "+authToken)
 	req.Header.Add("X-Namespace", data.Namespace())
 
 	resp, err := c.httpc.Do(req)

@@ -36,10 +36,10 @@ type SyncStat struct {
 }
 
 type imageDep[T mycontent.Data] struct {
+	sync            *sync[T]
 	client          *attachmentClient
 	extract         ExtractImages[T]
 	uploadDirectory string
-	namespace       string // filter namespace
 }
 
 func (i *imageDep[T]) syncImages(dataArr []ImageContext[T]) (stat SyncStat, errUC *types.CommonError) {
@@ -47,12 +47,12 @@ func (i *imageDep[T]) syncImages(dataArr []ImageContext[T]) (stat SyncStat, errU
 
 	// 0. filter local entities inplace based on namespace
 	// double guard... (usually in the i.Base already done its enough..)
-	if i.namespace != "*" {
+	if i.sync.namespace != "*" {
 		var countValid int
 		for idx := 0; idx < len(dataArr); idx++ {
 			localEntity := dataArr[idx]
 
-			if localEntity.Base.Namespace() != i.namespace {
+			if localEntity.Base.Namespace() != i.sync.namespace {
 				continue
 			}
 
@@ -82,7 +82,7 @@ func (i *imageDep[T]) syncImages(dataArr []ImageContext[T]) (stat SyncStat, errU
 
 	stat.LocalCountError = len(localData) - len(localHash)
 
-	_remoteAttachments, errUC := i.client.Get(context.Background(), i.namespace, nil, "") // "*" for all namespace
+	_remoteAttachments, errUC := i.client.Get(context.Background(), i.sync.OptConfig.AuthorizationToken, i.sync.namespace, nil, "") // "*" for all namespace
 	if errUC != nil {
 		log.Error().Msgf("%+v", errUC)
 		return stat, errUC
@@ -148,7 +148,7 @@ func (i *imageDep[T]) syncImages(dataArr []ImageContext[T]) (stat SyncStat, errU
 
 	// Delete unused remote data
 	for _, data := range toDelete {
-		_, errUC := i.client.Delete(ctx, data.Namespace(), toRefsParam(i.client.refsParam, data.RefIds), data.Id)
+		_, errUC := i.client.Delete(ctx, i.sync.OptConfig.AuthorizationToken, data.Namespace(), toRefsParam(i.client.refsParam, data.RefIds), data.Id)
 		if errUC != nil {
 			log.Error().Msgf("Failed to delete %v %v %v %v %v", i.client.endpoint, data.Namespace(), data.RefIDs(), data.ID(), errUC.Err())
 			continue
@@ -177,7 +177,7 @@ func (i *imageDep[T]) syncImages(dataArr []ImageContext[T]) (stat SyncStat, errU
 			CreatedAt:    time.Now().Format(time.RFC3339),
 		}
 		// log.Info().Msgf("PAYLOD: %+v", payload)
-		ra, errUC := i.client.Upload(ctx, payload.Namespace(), payload, "", imageData)
+		ra, errUC := i.client.Upload(ctx, i.sync.OptConfig.AuthorizationToken, payload.Namespace(), payload, "", imageData)
 		if errUC != nil {
 			log.Error().Msgf("  failed to sync an attachment in remote '%+v', msg: %+v", key, errUC)
 			continue

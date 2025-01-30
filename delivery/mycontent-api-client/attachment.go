@@ -35,7 +35,7 @@ func NewAttachment(
 }
 
 // Upload attachment
-func (a *attachmentClient) Upload(ctx context.Context, namespace string, metadata *entity.Attachment, fromPath string, fromMemory []byte) (authResp *entity.Attachment, errUC *types.CommonError) {
+func (a *attachmentClient) Upload(ctx context.Context, authToken string, namespace string, metadata *entity.Attachment, fromPath string, fromMemory []byte) (authResp *entity.Attachment, errUC *types.CommonError) {
 	reqbody, writer := io.Pipe()
 	mwriter := multipart.NewWriter(writer)
 	defer reqbody.Close()
@@ -51,7 +51,7 @@ func (a *attachmentClient) Upload(ctx context.Context, namespace string, metadat
 	req = req.WithContext(ctx)
 
 	req.Header.Add("Content-Type", mwriter.FormDataContentType())
-	req.Header.Add("Authorization", "Bearer "+a.token)
+	req.Header.Add("Authorization", "Bearer "+authToken)
 	req.Header.Add("X-Namespace", namespace)
 
 	errChan := make(chan types.CommonError)
