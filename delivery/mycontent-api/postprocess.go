@@ -13,6 +13,10 @@ type URLFormat func(baseURL string, userID string, refIDs []string, ID string) s
 func FormatURL[T mycontent.Data](baseURL string, params []string) func(t T) {
 	return func(t T) {
 		refIDs := t.RefIDs()
+		if refIDs == nil || len(refIDs) != len(params) {
+			return
+		}
+
 		u, _ := url.Parse(baseURL)
 		q := make(url.Values)
 		for idx, param := range params {
