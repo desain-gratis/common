@@ -15,7 +15,7 @@ import (
 )
 
 var (
-	_ authapi.TokenBuilder = (&auth{}).AdminToken
+	_ authapi.TokenBuilder = (&auth{}).AdminOnlyToken
 	_ authapi.TokenBuilder = (&auth{}).UserToken
 )
 
@@ -33,7 +33,7 @@ func TokenPublisher(authUser mycontent.Usecase[*entity.Payload], adminEmail map[
 	}
 }
 
-func (a *auth) AdminToken(r *http.Request, auth *idtoken.Payload) (tokenData proto.Message, apiData any, expiry time.Time, err *types.CommonError) {
+func (a *auth) AdminOnlyToken(r *http.Request, auth *idtoken.Payload) (tokenData proto.Message, apiData any, expiry time.Time, err *types.CommonError) {
 	claim := authapi.GetOIDCClaims(auth.Claims)
 
 	if _, ok := a.adminEmail[claim.Email]; !ok {

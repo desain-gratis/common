@@ -207,12 +207,12 @@ func enableApplicationAPI(
 	// Http router
 
 	router.OPTIONS("/auth/admin", Empty)
-	router.OPTIONS("/auth/idtoken/google", Empty)
-	router.OPTIONS("/auth/idtoken", Empty)
+	router.OPTIONS("/auth/signin", Empty)
+	router.OPTIONS("/auth/debug", Empty)
 	router.OPTIONS("/auth/keys", Empty)
 
 	// Sign-in as admin, sign-in as user
-	router.GET("/auth/admin", googleauth.ExchangeToken(tokenBuilder.AdminToken))
+	router.GET("/auth/admin", googleauth.ExchangeToken(tokenBuilder.AdminOnlyToken))
 	router.GET("/auth/signin", googleauth.ExchangeToken(tokenBuilder.UserToken))
 
 	// Debug app token and verify using public key
