@@ -109,22 +109,23 @@ func (s *sync[T]) Execute(ctx context.Context) *types.CommonError {
 		localEntities = localEntities[:countValid]
 	}
 
-	localEntitiesMap := make(map[string]T)
-	for _, localEntity := range localEntities {
-		key := getKey2(localEntity)
-		localEntitiesMap[key] = localEntity
-	}
-
 	// 3. check if local project exist in server, if not create one
 	// TODO: using goroutine pool
 	for _, localEntity := range localEntities {
 		key := getKey2(localEntity)
-		if _, ok := localEntitiesMap[key]; !ok {
-			_, errUC := s.client.Post(ctx, s.OptConfig.AuthorizationToken, localEntity)
+		if _, ok := remoteEntitiesMap[key]; !ok {
+			synced, errUC := s.client.Post(ctx, s.OptConfig.AuthorizationToken, localEntity)
 			if errUC != nil {
 				log.Error().Msgf("Failed to create entity of type %T with key %v", localEntity, key)
 			}
+			localEntity.WithID(synced.ID())
 		}
+	}
+
+	localEntitiesMap := make(map[string]T)
+	for _, localEntity := range localEntities {
+		key := getKey2(localEntity)
+		localEntitiesMap[key] = localEntity
 	}
 
 	// 4. inversely, for all remote project that is not in local, delete them
