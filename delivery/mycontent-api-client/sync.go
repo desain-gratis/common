@@ -55,12 +55,18 @@ func Sync[T mycontent.Data](client *client[T], namespace string, data []T, optCo
 	}
 }
 
-func (s *sync[T]) WithImages(client *attachmentClient, extract ExtractImages[T], uploadDirectory string) *sync[T] {
+func (s *sync[T]) WithImages(
+	client *attachmentClient,
+	extract ExtractImages[T],
+	uploadDir string,
+	customPath func(t T) string,
+) *sync[T] {
 	s.imageDeps = append(s.imageDeps, imageDep[T]{
-		sync:            s,
-		client:          client,
-		extract:         extract,
-		uploadDirectory: uploadDirectory,
+		sync:       s,
+		client:     client,
+		extract:    extract,
+		uploadDir:  uploadDir,
+		customPath: customPath,
 	})
 
 	return s

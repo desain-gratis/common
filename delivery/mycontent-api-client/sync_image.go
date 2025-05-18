@@ -36,10 +36,11 @@ type SyncStat struct {
 }
 
 type imageDep[T mycontent.Data] struct {
-	sync            *sync[T]
-	client          *attachmentClient
-	extract         ExtractImages[T]
-	uploadDirectory string
+	sync       *sync[T]
+	client     *attachmentClient
+	extract    ExtractImages[T]
+	uploadDir  string
+	customPath func(T) string
 }
 
 func (i *imageDep[T]) syncImages(dataArr []ImageContext[T]) (stat SyncStat, errUC *types.CommonError) {
@@ -72,7 +73,9 @@ func (i *imageDep[T]) syncImages(dataArr []ImageContext[T]) (stat SyncStat, errU
 
 	stat.LocalCount = len(localData)
 
-	localHash, errUCs1 := i.computeImageConfigHashMulti(i.uploadDirectory, localData)
+	uploadDir := i.uploadDir
+
+	localHash, errUCs1 := i.computeImageConfigHashMulti(uploadDir, localData)
 	if len(errUCs1) > 0 {
 		for _, errUC := range errUCs1 {
 			log.Warn().Msgf("\n%v %+v", errUC.Code, errUC.Message)
@@ -118,13 +121,12 @@ func (i *imageDep[T]) syncImages(dataArr []ImageContext[T]) (stat SyncStat, errU
 		stat.ToDelete++
 	}
 
-	uploadDir := i.uploadDirectory
-
 	for key := range intersect {
 		localData := localData[key]
 		remoteAttachment := remoteAttachments[key]
 
-		localHash, ok := localHash[completeImageUploadPath(uploadDir, localData.Image)]
+		newdir := i.customDir(uploadDir, localData.Base)
+		localHash, ok := localHash[completeImageUploadPath(newdir, localData.Image)]
 		if !ok {
 			// likely not valid
 			log.Debug().Msgf("May be a not valid data. Please check for WARNING/WRN messages in the log.")
@@ -159,7 +161,8 @@ func (i *imageDep[T]) syncImages(dataArr []ImageContext[T]) (stat SyncStat, errU
 	for _, localData := range toOverwrite {
 		completeRefs := append(localData.Base.RefIDs(), localData.Base.ID())
 		key := getKey(completeRefs, (*localData.Image).Id)
-		imageData, placeholder, errUC := processImage(uploadDir, localData.Image)
+		locUploadDir := i.customDir(uploadDir, localData.Base)
+		imageData, placeholder, errUC := processImage(locUploadDir, localData.Image)
 		if errUC != nil {
 			log.Error().Msgf("  failed to process image '%+v', msg: %+v", key, errUC)
 			continue
@@ -170,7 +173,7 @@ func (i *imageDep[T]) syncImages(dataArr []ImageContext[T]) (stat SyncStat, errU
 			RefIds:       completeRefs,
 			OwnerId:      localData.Base.Namespace(), // always the namespace of the base
 			Name:         (*localData.Image).Url,
-			Hash:         localHash[completeImageUploadPath(uploadDir, localData.Image)],
+			Hash:         localHash[completeImageUploadPath(locUploadDir, localData.Image)],
 			Description:  (*localData.Image).Description,
 			Tags:         (*localData.Image).Tags,
 			ImageDataUrl: placeholder,
@@ -196,14 +199,15 @@ func (i *imageDep[T]) computeImageConfigHashMulti(dir string, images map[string]
 	errUC := make([]*types.Error, 0)
 	log.Info().Msgf("Read image path: %v", dir)
 	for _, image := range images {
-		imgHash, err := computeImageConfigHash(dir, *image.Image)
+		newdir := i.customDir(dir, image.Base)
+		imgHash, err := computeImageConfigHash(newdir, *image.Image)
 		if err != nil {
 			errUC = append(errUC, &types.Error{
 				HTTPCode: http.StatusBadRequest, Code: "CLIENT_ERROR", Message: "Cannot open image '" + (*image.Image).Url + "' or compute its hash.\n Make sure you entered a valid image at that path.\n error: " + err.Error(),
 			})
 			continue
 		}
-		id2hash[completeImageUploadPath(dir, image.Image)] = imgHash
+		id2hash[completeImageUploadPath(newdir, image.Image)] = imgHash
 	}
 
 	return id2hash, errUC
@@ -367,4 +371,12 @@ func attachmentToMap(attachments []*entity.Attachment) map[string]*entity.Attach
 
 func completeImageUploadPath(dir string, image **entity.Image) string {
 	return dir + "|" + (**image).Url
+}
+
+func (i *imageDep[T]) customDir(dir string, base T) string {
+	newdir := dir
+	if i.customPath != nil {
+		newdir = path.Join(dir, i.customPath(base))
+	}
+	return newdir
 }
