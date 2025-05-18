@@ -83,7 +83,7 @@ func (i *imageDep[T]) syncImages(dataArr []ImageContext[T]) (stat SyncStat, errU
 		log.Warn().Msgf(" images with error will be ignored. Please fix the error")
 	}
 
-	stat.LocalCountError = len(localData) - len(localHash)
+	stat.LocalCountError = len(errUCs1)
 
 	_remoteAttachments, errUC := i.client.Get(context.Background(), i.sync.OptConfig.AuthorizationToken, i.sync.namespace, nil, "") // "*" for all namespace
 	if errUC != nil {
@@ -117,7 +117,7 @@ func (i *imageDep[T]) syncImages(dataArr []ImageContext[T]) (stat SyncStat, errU
 		if _, ok := localData[remoteID]; ok {
 			continue
 		}
-		toDelete[remoteAttachment.Id] = remoteAttachment
+		toDelete[remoteID] = remoteAttachment
 		stat.ToDelete++
 	}
 
