@@ -23,7 +23,7 @@ func main() {
 	orgSync := mycontentapiclient.Sync(orgClient, "*", sampleOrg, mycontentapiclient.OptionalConfig{})
 
 	userSync := mycontentapiclient.Sync(userClient, "*", sampleUser, mycontentapiclient.OptionalConfig{}).
-		WithImages(userThumbnailClient, getUserProfileImage, ".") // upload from local URL, with . root directory
+		WithImages(userThumbnailClient, getUserProfileImage, ".", nil) // upload from local URL, with . root directory
 
 	ctx := context.Background()
 	orgSync.Execute(ctx)
