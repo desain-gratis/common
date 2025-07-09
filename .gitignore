@@ -6,3 +6,5 @@ mochawesome-report/
 go.work
 go.work.sum
 *.pem
+.rjs
+
