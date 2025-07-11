@@ -15,8 +15,8 @@ import (
 
 	raftenabledapi "github.com/desain-gratis/common/delivery/raft-enabled-api"
 	"github.com/julienschmidt/httprouter"
-	"github.com/lni/dragonboat/v4"
-	"github.com/lni/dragonboat/v4/config"
+	"github.com/lni/dragonboat/v3"
+	"github.com/lni/dragonboat/v3/config"
 )
 
 const (
@@ -83,8 +83,8 @@ func main() {
 	}
 
 	repc := config.Config{
-		ReplicaID:          replicaID,
-		ShardID:            defaultShardID,
+		NodeID:             replicaID,
+		ClusterID:          defaultShardID,
 		ElectionRTT:        10,
 		HeartbeatRTT:       1,
 		CheckQuorum:        true,
@@ -101,7 +101,7 @@ func main() {
 		"raft-addr":      raftAddr,
 	}
 
-	if err := nh.StartOnDiskReplica(
+	if err := nh.StartOnDiskCluster(
 		bootstrapServerByReplicaID,
 		join,
 		raftenabledapi.NewDiskKV,

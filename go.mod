@@ -17,7 +17,7 @@ require (
 	github.com/kolesa-team/go-webp v1.0.4
 	github.com/lestrrat-go/jwx v1.2.31
 	github.com/lib/pq v1.10.9
-	github.com/lni/dragonboat/v4 v4.0.0-20240618143154-6a1623140f27
+	github.com/lni/dragonboat/v3 v3.3.8
 	github.com/rs/zerolog v1.33.0
 	go.etcd.io/bbolt v1.4.2
 	golang.org/x/crypto v0.38.0
@@ -72,6 +72,7 @@ require (
 	github.com/hashicorp/go-sockaddr v1.0.0 // indirect
 	github.com/hashicorp/golang-lru v0.5.1 // indirect
 	github.com/hashicorp/memberlist v0.3.1 // indirect
+	github.com/juju/ratelimit v1.0.2-0.20191002062651-f60b32039441 // indirect
 	github.com/klauspost/compress v1.16.0 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/kr/text v0.2.0 // indirect
@@ -80,15 +81,13 @@ require (
 	github.com/lestrrat-go/httpcc v1.0.1 // indirect
 	github.com/lestrrat-go/iter v1.0.2 // indirect
 	github.com/lestrrat-go/option v1.0.1 // indirect
-	github.com/lni/goutils v1.4.0 // indirect
-	github.com/lni/vfs v0.2.1-0.20231221160030-d43d3c60804c // indirect
+	github.com/lni/goutils v1.3.0 // indirect
 	github.com/maraino/go-mock v0.0.0-20180321183845-4c74c434cd3a // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.19 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.4 // indirect
 	github.com/miekg/dns v1.1.26 // indirect
 	github.com/mitchellh/go-wordwrap v0.0.0-20150314170334-ad45545899c7 // indirect
-	github.com/pierrec/lz4/v4 v4.1.14 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/prometheus/client_golang v1.15.0 // indirect
 	github.com/prometheus/client_model v0.3.0 // indirect

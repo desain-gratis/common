@@ -6,8 +6,8 @@ import (
 	"net/http"
 
 	"github.com/julienschmidt/httprouter"
-	"github.com/lni/dragonboat/v4"
-	"github.com/lni/dragonboat/v4/config"
+	"github.com/lni/dragonboat/v3"
+	"github.com/lni/dragonboat/v3/config"
 )
 
 type dragonboatImpl struct {

@@ -6,7 +6,7 @@ import (
 	"io"
 	"io/ioutil"
 
-	sm "github.com/lni/dragonboat/v4/statemachine"
+	sm "github.com/lni/dragonboat/v3/statemachine"
 )
 
 // ExampleStateMachine is the IStateMachine implementation used in the
