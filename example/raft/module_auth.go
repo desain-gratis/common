@@ -4,15 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
 	"github.com/julienschmidt/httprouter"
 	"github.com/lni/dragonboat/v4"
-	"github.com/lni/dragonboat/v4/client"
+	"github.com/lni/dragonboat/v4/statemachine"
+	"github.com/rs/zerolog/log"
 )
 
-func enableAuthAPI(router *httprouter.Router, nh *dragonboat.NodeHost, ses *client.Session, info map[string]any) {
+func enableAuthAPI(router *httprouter.Router, nh *dragonboat.NodeHost, info map[string]any, haveLeader *bool) {
+	sess := nh.GetNoOPSession(defaultShardID)
 	router.POST("/auth/gsi", func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 		defer cancel()
@@ -40,7 +43,15 @@ func enableAuthAPI(router *httprouter.Router, nh *dragonboat.NodeHost, ses *clie
 			}
 		}
 
-		res, err := nh.SyncPropose(ctx, ses, []byte(`{"type":"echo", "payload": "assalamualaikum"}`))
+		payload, err := io.ReadAll(r.Body)
+		if err != nil {
+			payload = []byte(`hehe`)
+			log.Error().Msgf("failed to read body")
+		}
+
+		ses := nh.GetNoOPSession(defaultShardID)
+
+		res, err := nh.SyncPropose(ctx, ses, payload)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			info["message"] = "err: " + err.Error()
@@ -97,4 +108,61 @@ func enableAuthAPI(router *httprouter.Router, nh *dragonboat.NodeHost, ses *clie
 		w.Write(result)
 	})
 
+	router.GET("/member", func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+		// this will block until we have leader
+		if !*haveLeader {
+			w.WriteHeader(404)
+			w.Write([]byte("no leader goodbye!"))
+			return
+		}
+
+		retry := 0
+
+		var result statemachine.Result
+		var err error
+		for {
+			ctx, c := context.WithTimeout(r.Context(), 1*time.Second)
+			result, err = nh.SyncPropose(ctx, sess, []byte("hello world!"))
+			c()
+			if err == nil {
+				break
+			}
+
+			if err != dragonboat.ErrTimeout && err != dragonboat.ErrShardNotReady {
+				break
+			}
+
+			retry++
+			if retry > 3 {
+				break
+			}
+			time.Sleep(time.Duration(retry) * 10 * time.Millisecond)
+		}
+		if err != nil {
+			w.WriteHeader(404)
+			w.Write([]byte(fmt.Sprintf("nooo~! la politzia ... %v", err)))
+			return
+		}
+		w.Write([]byte(result.Data))
+	})
+
+	router.GET("/gossip", func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+		cfg := nh.NodeHostConfig()
+		payload, _ := json.Marshal(cfg.Gossip)
+		w.Write([]byte(string(payload)))
+	})
+
+}
+
+func printMembership(ctx context.Context, nh *dragonboat.NodeHost) (string, error) {
+
+	// ses := nh.GetNoOPSession(defaultShardID)
+	var m *dragonboat.Membership
+	var err error
+
+	ctx, c := context.WithTimeout(ctx, 2000*time.Millisecond)
+	defer c()
+	m, err = nh.SyncGetShardMembership(ctx, defaultShardID)
+
+	return fmt.Sprintf("MEMBERZIP %+v %+v", m, err), nil
 }

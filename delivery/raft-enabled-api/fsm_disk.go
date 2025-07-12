@@ -13,6 +13,8 @@ import (
 	sm "github.com/lni/dragonboat/v4/statemachine"
 )
 
+var Updatechan = make(chan string, 1048)
+
 const (
 	testDBDirName      string = "example-data"
 	currentDBFilename  string = "current"
@@ -60,12 +62,12 @@ func (d *DiskKV) Open(stopc <-chan struct{}) (uint64, error) {
 
 	var lastAppliedIdx uint64
 	err = db.Update(func(tx *bolt.Tx) error {
-		cb, err := tx.CreateBucketIfNotExists([]byte("state"))
+		cb, err := tx.CreateBucketIfNotExists(configBucket)
 		if err != nil {
 			return err
 		}
 
-		val := cb.Get([]byte("appliedIndex"))
+		val := cb.Get(appliedIndexKey)
 		if len(val) == 0 {
 			return nil
 		}
@@ -80,6 +82,8 @@ func (d *DiskKV) Open(stopc <-chan struct{}) (uint64, error) {
 
 	d.db = db
 	d.lastApplied = lastAppliedIdx
+
+	log.Println("LAST APLPIED NYA PRIO?", lastAppliedIdx)
 
 	return d.lastApplied, nil
 }
@@ -138,11 +142,17 @@ func (d *DiskKV) Update(ents []sm.Entry) ([]sm.Entry, error) {
 	if d.closed {
 		panic("update called after Close()")
 	}
+	defer func() {
+		go func() {
+			Updatechan <- "updated"
+		}()
+	}()
 
 	for idx, e := range ents {
 		var cmd Message
 
 		if err := json.Unmarshal(e.Cmd, &cmd); err != nil {
+			ents[idx].Result.Data = []byte("kamu kok gitu?")
 			continue
 		}
 
@@ -224,6 +234,7 @@ func (d *DiskKV) Update(ents []sm.Entry) ([]sm.Entry, error) {
 	if d.lastApplied >= ents[len(ents)-1].Index {
 		panic("lastApplied not moving forward")
 	}
+
 	d.lastApplied = ents[len(ents)-1].Index
 	return ents, nil
 }
@@ -249,6 +260,25 @@ func (d *DiskKV) PrepareSnapshot() (interface{}, error) {
 func (d *DiskKV) SaveSnapshot(ctx interface{},
 	w io.Writer, done <-chan struct{}) error {
 
+	// var lastAppliedIdx uint64
+	var x []byte
+	_ = d.db.Update(func(tx *bolt.Tx) error {
+		cb, err := tx.CreateBucketIfNotExists(configBucket)
+		if err != nil {
+			return err
+		}
+
+		val := cb.Get(appliedIndexKey)
+		if len(val) == 0 {
+			return nil
+		}
+
+		x = val
+
+		return nil
+	})
+
+	w.Write(x)
 	return nil
 }
 
@@ -257,6 +287,27 @@ func (d *DiskKV) SaveSnapshot(ctx interface{},
 // the existing DB to complete the recovery.
 func (d *DiskKV) RecoverFromSnapshot(r io.Reader,
 	done <-chan struct{}) error {
+
+	// save the applied index to the DB.
+	// appliedIndex := make([]byte, 8)
+	// binary.LittleEndian.PutUint64(appliedIndex, ents[len(ents)-1].Index)
+
+	payload, _ := io.ReadAll(r)
+
+	err := d.db.Update(func(tx *bolt.Tx) error {
+		bucket, err := tx.CreateBucketIfNotExists(configBucket)
+		if err != nil {
+			return err
+		}
+		err = bucket.Put(appliedIndexKey, payload)
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
