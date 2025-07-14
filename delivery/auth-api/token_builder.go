@@ -1,11 +1,8 @@
 package authapi
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/julienschmidt/httprouter"
@@ -15,7 +12,6 @@ import (
 
 	types "github.com/desain-gratis/common/types/http"
 	"github.com/desain-gratis/common/types/protobuf/session"
-	"github.com/desain-gratis/common/usecase/signing"
 )
 
 type SignInResponse struct {
@@ -75,51 +71,21 @@ type Auth string
 const (
 	AUTH_GSI Auth = "gsi"
 
-	keyGoogleAuth key = "google-auth"
-
 	AuthParserGoogle AuthParser = "gsi"
 )
 
-type key string
 type AuthParser string
-type TokenBuilder func(req *http.Request, authMethod string, payload *idtoken.Payload) (tokenData proto.Message, apiData any, expiry time.Time, err *types.CommonError)
+type AuthLogic func(req *http.Request, authMethod string, payload *idtoken.Payload) (tokenData proto.Message, apiData any, expiry time.Time, err *types.CommonError)
 
-type IdTokenExchanger struct {
-	verifierName string
-	verifier     signing.VerifierOf[*idtoken.Payload]
-	signer       signing.Signer
+type TokenBuilder interface {
+	BuildToken(req *http.Request, authMethod string, payload *idtoken.Payload) (tokenData proto.Message, apiData any, expiry time.Time, err *types.CommonError)
 }
 
-func NewIdTokenExchanger(
-	verifierName string,
-	verifier signing.VerifierOf[*idtoken.Payload],
-	signer signing.Signer,
-) *IdTokenExchanger {
-	return &IdTokenExchanger{verifierName, verifier, signer}
-}
-
-// Convenient handler for exchanging token
-func (g *IdTokenExchanger) ExchangeToken(
-	tokenBuilder TokenBuilder,
-) httprouter.Handle {
+func GetToken(tokenBuilder TokenBuilder, tokenSigner TokenSigner) httprouter.Handle {
 	return func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-		token, err := getToken(r.Header.Get("Authorization"))
-		if err != nil {
-			errMessage := types.SerializeError(err)
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write(errMessage)
-			return
-		}
-
-		auth, err := g.verifier.VerifyAs(r.Context(), token)
-		if err != nil {
-			errMessage := types.SerializeError(err)
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write(errMessage)
-			return
-		}
-
-		if auth == nil {
+		// 1. Obtain ID Token
+		auth, ok := r.Context().Value(IDTokenKey{}).(*idtoken.Payload)
+		if auth == nil || !ok {
 			errUC := &types.CommonError{
 				Errors: []types.Error{
 					{
@@ -135,8 +101,13 @@ func (g *IdTokenExchanger) ExchangeToken(
 			return
 		}
 
+		name := "UNKNOWN"
+		if metaName, ok := r.Context().Value(IDTokenNameKey{}).(string); name != "" && ok {
+			name = metaName
+		}
+
 		// 2. Build proto token
-		data, apiData, expiry, errUC := tokenBuilder(r, g.verifierName, auth)
+		data, apiData, expiry, errUC := tokenBuilder.BuildToken(r, name, auth)
 		if errUC != nil {
 			errMessage := types.SerializeError(&types.CommonError{
 				Errors: []types.Error{
@@ -162,7 +133,7 @@ func (g *IdTokenExchanger) ExchangeToken(
 		}
 
 		// 4. Sign the proto token
-		newToken, errUC := g.signer.Sign(r.Context(), payload, expiry)
+		newToken, errUC := tokenSigner.Sign(r.Context(), payload, expiry)
 		if errUC != nil {
 			if r.Context().Err() != nil {
 				return
@@ -198,97 +169,4 @@ func (g *IdTokenExchanger) ExchangeToken(
 		w.WriteHeader(http.StatusOK)
 		w.Write(resp)
 	}
-}
-
-// WithAuthorization is for more generic authorization
-func (g *IdTokenExchanger) WithAuthorization(handler httprouter.Handle) httprouter.Handle {
-	return func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-		token, err := getToken(r.Header.Get("Authorization"))
-		if err != nil {
-			errMessage := types.SerializeError(err)
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write(errMessage)
-			return
-		}
-
-		payload, err := g.verifier.VerifyAs(r.Context(), token)
-		if err != nil {
-			errMessage := types.SerializeError(err)
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write(errMessage)
-			return
-		}
-
-		handler(w, r.WithContext(context.WithValue(r.Context(), keyGoogleAuth, payload)), p)
-	}
-}
-
-func GetOIDCClaims(claims map[string]interface{}) *session.OIDCClaim {
-	var claim session.OIDCClaim
-	if v, ok := claims["iss"]; ok {
-		claim.Iss, _ = v.(string)
-	}
-	if v, ok := claims["sub"]; ok {
-		claim.Sub, _ = v.(string)
-	}
-	if v, ok := claims["email"]; ok {
-		claim.Email, _ = v.(string)
-	}
-	if v, ok := claims["email_verified"]; ok {
-		b, _ := v.(string)
-		claim.EmailVerified, _ = strconv.ParseBool(b)
-	}
-	if v, ok := claims["name"]; ok {
-		claim.Name, _ = v.(string)
-	}
-	if v, ok := claims["family_name"]; ok {
-		claim.FamilyName, _ = v.(string)
-	}
-	if v, ok := claims["given_name"]; ok {
-		claim.GivenName, _ = v.(string)
-	}
-	if v, ok := claims["nickname"]; ok {
-		claim.Nickname, _ = v.(string)
-	}
-	if v, ok := claims["given_name"]; ok {
-		claim.GivenName, _ = v.(string)
-	}
-	return &claim
-}
-
-func (s *signingService) MultiKeys(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	orgID := r.URL.Query().Get("org")
-	if orgID == "" {
-		cer := &types.CommonError{
-			Errors: []types.Error{
-				{
-					HTTPCode: http.StatusBadRequest,
-					Code:     "EMPTY_ORGANIZATION",
-					Message:  "Please spcecify `org` parameter",
-				},
-			},
-		}
-		errMessage := types.SerializeError(cer)
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write(errMessage)
-		return
-	}
-
-	s.Keys(w, r, p)
-}
-
-func getToken(authorizationToken string) (string, *types.CommonError) {
-	token := strings.Split(authorizationToken, " ")
-	if len(token) < 2 {
-		return "", &types.CommonError{
-			Errors: []types.Error{
-				{
-					HTTPCode: http.StatusBadRequest,
-					Code:     "INVALID_OR_EMPTY_AUTHORIZATION",
-					Message:  "Authorization header is not valid",
-				},
-			},
-		}
-	}
-	return token[1], nil
 }

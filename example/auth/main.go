@@ -8,13 +8,12 @@ import (
 	"time"
 
 	authapi "github.com/desain-gratis/common/delivery/auth-api"
+	idtokensigner "github.com/desain-gratis/common/delivery/auth-api/idtoken-signer"
+	idtokenverifier "github.com/desain-gratis/common/delivery/auth-api/idtoken-verifier"
 	mycontentapi "github.com/desain-gratis/common/delivery/mycontent-api"
 	blob_gcs "github.com/desain-gratis/common/repository/blob/gcs"
 	content_postgres "github.com/desain-gratis/common/repository/content/postgres"
 	mycontent_base "github.com/desain-gratis/common/usecase/mycontent/base"
-	"github.com/desain-gratis/common/usecase/signing"
-	signing_handler "github.com/desain-gratis/common/usecase/signing/handler"
-	jwtrsa "github.com/desain-gratis/common/utility/secret/rsa"
 	"github.com/desain-gratis/common/utility/secretkv"
 	"github.com/desain-gratis/common/utility/secretkv/gsm"
 	"github.com/julienschmidt/httprouter"
@@ -140,41 +139,20 @@ func enableApplicationAPI(
 		),
 	)
 
-	// Plugin to publish token
-	tokenBuilder := plugin.TokenPublisher(
-		userUsecase, // notice, no authorization here.
-		map[string]struct{}{
-			"desain-gratis-developer@langsunglelang.iam.gserviceaccount.com": {},
-		},
-	)
-
-	// Google ID token verifier
-	googleVerifier := signing_handler.NewGoogleAuth(CONFIG.GetString("gsi.client_id"))
-
 	// Our own ID token signer and also verifier
-	tokenSignerAndVerifier := signing_handler.New(
-		signing_handler.Config{
-			Issuer: tokenIssuer,
-			SigningConfig: signing_handler.SigningConfig{
-				Secret:   signingKey,
-				ID:       "desain-gratis",
-				PollTime: 1 * time.Hour,
-			},
-			TokenExpiryMinutes: 8 * 60,
+	tokenSignerAndVerifier := idtokensigner.NewSimple(
+		"auth-example",
+		map[string]string{
+			"key-v1": "th1s 1s 4 s3creet. shhhh!1!!",
 		},
-		jwtrsa.Default,
-		secretkv.Default,
+		"key-v1",
 	)
 
-	// Unecessary, but allow you to see polymorphism in action
-	var appTokenSigner signing.Signer = tokenSignerAndVerifier
-	var appTokenVerifier signing.Verifier = tokenSignerAndVerifier
+	gsiAuth := idtokenverifier.GSIAuth(CONFIG.GetString("gsi.client_id"))
+	appAuth := idtokenverifier.AppAuth(tokenSignerAndVerifier, plugin.AuthCtxKey, plugin.ParseToken)
 
-	// Exchange valid Google ID token with Application token
-	googleauth := authapi.NewIdTokenExchanger("GSI", googleVerifier, appTokenSigner)
-
-	// Token usage
-	appauth := plugin.AuthProvider(appTokenVerifier, appTokenSigner)
+	adminTokenBuilder := plugin.AdminAuthLogic(map[string]struct{}{"admin@gmail.com": struct{}{}}, 1*30)
+	userTokenBuilder := plugin.NewUserAuthLogic(nil, 8*60)
 
 	// --- Initialize HTTP services handler ---
 
@@ -208,30 +186,32 @@ func enableApplicationAPI(
 	router.OPTIONS("/auth/keys", Empty)
 
 	// Sign-in as admin, sign-in as user
-	router.GET("/auth/admin", googleauth.ExchangeToken(tokenBuilder.AdminOnlyToken))
-	router.GET("/auth/signin", googleauth.ExchangeToken(tokenBuilder.UserToken))
+	router.GET("/auth/admin", gsiAuth(authapi.GetToken(adminTokenBuilder, tokenSignerAndVerifier)))
+	router.GET("/auth/signin", gsiAuth(authapi.GetToken(userTokenBuilder, tokenSignerAndVerifier)))
 
 	// Debug app token and verify using public key
-	router.GET("/auth/debug", appauth.Debug)
-	router.GET("/auth/keys", appauth.Keys)
+	tokenAPI := authapi.NewTokenAPI(tokenSignerAndVerifier, plugin.ParseToken)
+
+	router.GET("/auth/debug", appAuth(tokenAPI.Debug))
+	router.GET("/auth/keys", appAuth(tokenAPI.Keys))
 
 	// Mycontent authorized user (admin only) endpoint
 	router.OPTIONS("/auth/user", Empty)
-	router.GET("/auth/user", appauth.AdminOnly(userAuthService.Get))
-	router.POST("/auth/user", appauth.AdminOnly(userAuthService.Post))
-	router.DELETE("/auth/user", appauth.AdminOnly(userAuthService.Delete))
+	router.GET("/auth/user", appAuth(plugin.AdminOnly(userAuthService.Get)))
+	router.POST("/auth/user", appAuth(userAuthService.Post))
+	router.DELETE("/auth/user", appAuth(userAuthService.Delete))
 
 	// Mycontent Authorized user thumbnail (admin only) endpoint
 	router.OPTIONS("/auth/user/thumbnail", Empty)
-	router.GET("/auth/user/thumbnail", appauth.AdminOnly(userAuthThumbnailService.Get))
-	router.POST("/auth/user/thumbnail", appauth.AdminOnly(userAuthThumbnailService.Upload))
-	router.DELETE("/auth/user/thumbnail", appauth.AdminOnly(userAuthThumbnailService.Delete))
+	router.GET("/auth/user/thumbnail", appAuth(userAuthThumbnailService.Get))
+	router.POST("/auth/user/thumbnail", appAuth(userAuthThumbnailService.Upload))
+	router.DELETE("/auth/user/thumbnail", appAuth(userAuthThumbnailService.Delete))
 
 	// Mycontent sample entity
 	router.OPTIONS("/project", Empty)
-	router.GET("/project", appauth.User(projectService.Get))
-	router.POST("/project", appauth.User(projectService.Post))
-	router.DELETE("/project", appauth.User(projectService.Delete))
+	router.GET("/project", appAuth(projectService.Get))
+	router.POST("/project", appAuth(projectService.Post))
+	router.DELETE("/project", appAuth(projectService.Delete))
 }
 
 func Empty(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
