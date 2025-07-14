@@ -19,6 +19,7 @@ require (
 	cloud.google.com/go/secretmanager v1.13.1 // indirect
 	cloud.google.com/go/storage v1.42.0 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0 // indirect
+	github.com/desain-gratis/common v0.0.0-20250522185906-27414d245d67 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/go-logr/logr v1.4.1 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
