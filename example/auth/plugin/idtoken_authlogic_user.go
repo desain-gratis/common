@@ -15,59 +15,27 @@ import (
 )
 
 var (
-	_ authapi.TokenBuilder = (&auth{}).AdminOnlyToken
-	_ authapi.TokenBuilder = (&auth{}).UserToken
+	_ authapi.TokenBuilder = &userAuth{}
 )
 
-type auth struct {
-	authUser   mycontent.Usecase[*entity.UserAuthorization]
-	adminEmail map[string]struct{}
+const (
+	authKey key = "auth"
+)
+
+type userAuth struct {
+	authUser      mycontent.Usecase[*entity.UserAuthorization]
+	expiryMinutes int
 }
 
-// TokenPublisher publish token based on validated identity token.
-// Identity provider validation provided by authapi.
-func TokenPublisher(authUser mycontent.Usecase[*entity.UserAuthorization], adminEmail map[string]struct{}) *auth {
-	return &auth{
-		authUser:   authUser,
-		adminEmail: adminEmail,
+// AdminAuthLogic from id token (google, microsoft, etc.) in to our own self signed token
+func NewUserAuthLogic(authUser mycontent.Usecase[*entity.UserAuthorization], expiryMinutes int) *userAuth {
+	return &userAuth{
+		authUser:      authUser,
+		expiryMinutes: expiryMinutes,
 	}
 }
 
-func (a *auth) AdminOnlyToken(r *http.Request, authMethod string, auth *idtoken.Payload) (tokenData proto.Message, apiData any, expiry time.Time, err *types.CommonError) {
-	claim := authapi.GetOIDCClaims(auth.Claims)
-
-	if _, ok := a.adminEmail[claim.Email]; !ok {
-		errUC := &types.CommonError{
-			Errors: []types.Error{
-				{
-					HTTPCode: http.StatusUnauthorized,
-					Code:     "UNAUTHORIZED",
-					Message:  "You do not have access to any organization! Please contact API owner team for getting one ☎️",
-				},
-			},
-		}
-		return nil, nil, expiry, errUC
-	}
-
-	expiry = time.Now().Add(time.Duration(5) * time.Minute) // long-lived token
-
-	tokenData = &session.SessionData{
-		NonRegisteredId: &session.OIDCClaim{
-			Iss:      claim.Iss,
-			Sub:      claim.Sub,
-			Name:     claim.Name,
-			Nickname: claim.Nickname,
-			Email:    claim.Email,
-		},
-		SignInMethod: authMethod,
-		SignInEmail:  claim.Email,
-		IsSuperAdmin: true, // ADMIN
-	}
-
-	return tokenData, tokenData, expiry, nil
-}
-
-func (a *auth) UserToken(r *http.Request, authMethod string, auth *idtoken.Payload) (tokenData proto.Message, apiData any, expiry time.Time, err *types.CommonError) {
+func (a *userAuth) BuildToken(r *http.Request, authMethod string, auth *idtoken.Payload) (tokenData proto.Message, apiData any, expiry time.Time, err *types.CommonError) {
 	claim := authapi.GetOIDCClaims(auth.Claims)
 
 	// Locale
@@ -95,7 +63,7 @@ func (a *auth) UserToken(r *http.Request, authMethod string, auth *idtoken.Paylo
 
 	userData := authData[0]
 
-	expiry = time.Now().Add(time.Duration(60*9) * time.Minute) // long-lived token
+	expiry = time.Now().Add(time.Duration(a.expiryMinutes) * time.Minute) // long-lived token
 
 	var img string
 	if userData.DefaultProfile.Avatar1x1 != nil {

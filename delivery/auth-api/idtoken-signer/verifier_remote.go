@@ -1,4 +1,4 @@
-package handler
+package idtokensigner
 
 import (
 	"context"
@@ -11,6 +11,7 @@ import (
 
 	authapi "github.com/desain-gratis/common/delivery/auth-api"
 	types "github.com/desain-gratis/common/types/http"
+	"github.com/desain-gratis/common/usecase/signing"
 	jwtrsa "github.com/desain-gratis/common/utility/secret/rsa"
 )
 
@@ -23,7 +24,7 @@ type remoteVerifier struct {
 	rsaStore jwtrsa.Provider
 }
 
-func NewRemoteLoginVerifier(rsaStore jwtrsa.Provider, keysURL string) *remoteVerifier {
+func NewRemoteAuthVerifier(rsaStore jwtrsa.Provider, keysURL string) *remoteVerifier {
 	s := &remoteVerifier{
 		keysURL: keysURL,
 		client: &http.Client{
@@ -62,7 +63,8 @@ func (s *remoteVerifier) Verify(ctx context.Context, token string) (claim []byte
 	return payload, nil
 }
 
-func (s *remoteVerifier) Parse(ctx context.Context, claim []byte) (result any, errUC *types.CommonError) {
+// Print claim in user readable format
+func (s *remoteVerifier) Parse(ctx context.Context, claim []byte) (data any, errUC *types.CommonError) {
 	return claim, nil
 }
 
@@ -75,6 +77,9 @@ func (s *remoteVerifier) updateKeys(ctx context.Context) (result []keys, errUC *
 			},
 		}
 	}
+
+	req = req.WithContext(ctx)
+
 	resp, err := s.client.Do(req)
 	if err != nil {
 		return nil, &types.CommonError{
@@ -93,7 +98,7 @@ func (s *remoteVerifier) updateKeys(ctx context.Context) (result []keys, errUC *
 		}
 	}
 
-	var commonResponse types.CommonResponseTyped[[]authapi.Keys]
+	var commonResponse types.CommonResponseTyped[[]signing.Keys]
 	err = json.Unmarshal(body, &commonResponse)
 	if err != nil {
 		return nil, &types.CommonError{
