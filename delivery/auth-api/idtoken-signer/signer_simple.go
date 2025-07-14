@@ -38,7 +38,7 @@ type simpleSigner struct {
 	keyID    string
 }
 
-func NewSimple(issuer string, hmacKeys map[string]string, keyID string) *simpleSigner {
+func New(issuer string, hmacKeys map[string]string, keyID string) *simpleSigner {
 	return &simpleSigner{
 		issuer:   issuer,
 		hmacKeys: hmacKeys,

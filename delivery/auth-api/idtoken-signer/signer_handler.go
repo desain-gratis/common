@@ -69,7 +69,7 @@ type keys struct {
 }
 
 // New manage secrets for signer, including caching, polling, etc..
-func New(
+func NewWithKeyManagement(
 	config Config,
 	rsaStore jwtrsa.Provider,
 	secretkvStore secretkv.Provider,
