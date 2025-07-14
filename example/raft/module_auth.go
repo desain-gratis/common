@@ -2,112 +2,40 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"time"
 
+	authapi "github.com/desain-gratis/common/delivery/auth-api"
+	idtokensigner "github.com/desain-gratis/common/delivery/auth-api/idtoken-signer"
+	idtokenverifier "github.com/desain-gratis/common/delivery/auth-api/idtoken-verifier"
+	plugin "github.com/desain-gratis/common/example/raft/app-auth"
 	"github.com/julienschmidt/httprouter"
 	"github.com/lni/dragonboat/v4"
 	"github.com/lni/dragonboat/v4/statemachine"
-	"github.com/rs/zerolog/log"
 )
 
 func enableAuthAPI(router *httprouter.Router, nh *dragonboat.NodeHost, info map[string]any, haveLeader *bool) {
+	signerVerifier := idtokensigner.NewSimple(
+		"raft-app",
+		map[string]string{
+			"key-v1": "85746{K=q's)",
+		},
+		"key-v1",
+	)
+
+	gsiAuth := idtokenverifier.GSIAuth("web client ID")
+	appAuth := idtokenverifier.AppAuth(signerVerifier, "app")
+
+	adminTokenBuilder := plugin.AdminAuthLogic(map[string]struct{}{"keenan.gebze@gmail.com": struct{}{}}, 1*30)
+	userTokenBuilder := plugin.NewUserAuthLogic(nil, 8*60)
+
+	router.GET("/auth/admin", gsiAuth(authapi.GetToken(adminTokenBuilder, signerVerifier)))
+	router.GET("/auth/user/gsi", gsiAuth(authapi.GetToken(userTokenBuilder, signerVerifier)))
+
+	router.GET("/member-only", appAuth(func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {}))
+
 	sess := nh.GetNoOPSession(defaultShardID)
-	router.POST("/auth/gsi", func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
-		defer cancel()
-
-		id, term, valid, err := nh.GetLeaderID(defaultShardID)
-
-		info["leader_id"] = id
-		info["leader_term"] = term
-		info["leader_valid"] = valid
-		info["leader_err"] = err
-
-		info["our_id"] = nh.ID()
-
-		if nhregis, ok := nh.GetNodeHostRegistry(); ok {
-			info["nhregis_nshards"] = nhregis.NumOfShards()
-			if meta, ok := nhregis.GetMeta("test"); ok {
-				info["meta"] = meta
-			}
-			if si, ok := nhregis.GetShardInfo(defaultShardID); ok {
-				info["si_config_change_index"] = si.ConfigChangeIndex
-				info["si_leader_id"] = si.LeaderID
-				info["si_replicas"] = si.Replicas
-				info["si_shard_id"] = si.ShardID
-				info["si_term"] = si.Term
-			}
-		}
-
-		payload, err := io.ReadAll(r.Body)
-		if err != nil {
-			payload = []byte(`hehe`)
-			log.Error().Msgf("failed to read body")
-		}
-
-		ses := nh.GetNoOPSession(defaultShardID)
-
-		res, err := nh.SyncPropose(ctx, ses, payload)
-		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			info["message"] = "err: " + err.Error()
-			result, _ := json.Marshal(info)
-			w.Write(result)
-			return
-		}
-
-		w.WriteHeader(http.StatusOK)
-		info["message"] = fmt.Sprintf("SUCCESS: %v (%v)", string(res.Data), res.Value)
-		result, _ := json.Marshal(info)
-		w.Write(result)
-	})
-
-	router.GET("/ingfo", func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
-		defer cancel()
-
-		id, term, valid, err := nh.GetLeaderID(defaultShardID)
-
-		info["leader_id"] = id
-		info["leader_term"] = term
-		info["leader_valid"] = valid
-		info["leader_err"] = err
-
-		info["our_id"] = nh.ID()
-
-		if nhregis, ok := nh.GetNodeHostRegistry(); ok {
-			info["nhregis_nshards"] = nhregis.NumOfShards()
-			if meta, ok := nhregis.GetMeta("test"); ok {
-				info["meta"] = meta
-			}
-			if si, ok := nhregis.GetShardInfo(defaultShardID); ok {
-				info["si_config_change_index"] = si.ConfigChangeIndex
-				info["si_leader_id"] = si.LeaderID
-				info["si_replicas"] = si.Replicas
-				info["si_shard_id"] = si.ShardID
-				info["si_term"] = si.Term
-			}
-		}
-
-		res, err := nh.SyncRead(ctx, defaultShardID, []byte("echo"))
-		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			info["message"] = "err: " + err.Error()
-			result, _ := json.Marshal(info)
-			w.Write(result)
-			return
-		}
-
-		w.WriteHeader(http.StatusOK)
-		info["message"] = res.(string)
-		result, _ := json.Marshal(info)
-		w.Write(result)
-	})
-
 	router.GET("/member", func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 		// this will block until we have leader
 		if !*haveLeader {
@@ -145,24 +73,4 @@ func enableAuthAPI(router *httprouter.Router, nh *dragonboat.NodeHost, info map[
 		}
 		w.Write([]byte(result.Data))
 	})
-
-	router.GET("/gossip", func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-		cfg := nh.NodeHostConfig()
-		payload, _ := json.Marshal(cfg.Gossip)
-		w.Write([]byte(string(payload)))
-	})
-
-}
-
-func printMembership(ctx context.Context, nh *dragonboat.NodeHost) (string, error) {
-
-	// ses := nh.GetNoOPSession(defaultShardID)
-	var m *dragonboat.Membership
-	var err error
-
-	ctx, c := context.WithTimeout(ctx, 2000*time.Millisecond)
-	defer c()
-	m, err = nh.SyncGetShardMembership(ctx, defaultShardID)
-
-	return fmt.Sprintf("MEMBERZIP %+v %+v", m, err), nil
 }
