@@ -51,7 +51,7 @@ func GetGoogleIDToken() (string, *types.CommonError) {
 				{
 					HTTPCode: http.StatusBadRequest,
 					Code:     "FAILED_GET_ID_TOKEN",
-					Message:  "Google token error. err: " + err.Error(),
+					Message:  "Google token error.",
 				},
 			},
 		}
