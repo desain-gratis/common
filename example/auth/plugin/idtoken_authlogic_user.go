@@ -91,8 +91,8 @@ func (a *userAuth) BuildToken(r *http.Request, authMethod string, auth *idtoken.
 		IsSuperAdmin: false,
 	}
 
-	apiData = &authapi.SignInResponse{
-		LoginProfile: &authapi.Profile{
+	apiData = &AuthData{
+		LoginProfile: &Profile{
 			DisplayName: claim.Name,
 			Email:       claim.Email,
 			ImageURL:    img,

@@ -11,60 +11,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	types "github.com/desain-gratis/common/types/http"
-	"github.com/desain-gratis/common/types/protobuf/session"
 )
-
-type SignInResponse struct {
-	// Profile from OIDC provider
-	LoginProfile *Profile `json:"login_profile,omitempty"`
-
-	Locale  []string `json:"locale,omitempty"`
-	IDToken *string  `json:"id_token,omitempty"`
-	// Collection of grants NOT signed, for debugging.
-	// DO NOT USE THIS FOR BACK END VALIDATION!!!
-	Grants map[string]*session.Grant `json:"grants"`
-	Expiry string                    `json:"expiry,omitempty"`
-	Data   any                       `json:"data,omitempty"`
-}
-
-type Profile struct {
-	URL              string `json:"url"`
-	DisplayName      string `json:"display_name"`
-	ImageDataURL     string `json:"image_data_url"`
-	ImageURL         string `json:"image_url"`
-	Avatar1x1URL     string `json:"avatar_1x1_url"`
-	Background3x1URL string `json:"background_3x1_url"`
-	Email            string `json:"email"`
-}
-
-// DO NOT USE THIS AS BACK-END VALIDATION!!!!!!!!!!!!!!!!!!!!!!!!!!!
-type Grant struct {
-	// DO NOT USE THIS AS BACK-END VALIDATION!!!!!!!!!!!!!!!!!!!!!!!!!!!
-	UserId string `json:"user_id,omitempty"`
-	// DO NOT USE THIS AS BACK-END VALIDATION!!!!!!!!!!!!!!!!!!!!!!!!!!!
-	GroupId string `json:"group_id,omitempty"`
-	// DO NOT USE THIS AS BACK-END VALIDATION!!!!!!!!!!!!!!!!!!!!!!!!!!!
-	Name string `json:"name,omitempty"`
-	// DO NOT USE THIS AS BACK-END VALIDATION!!!!!!!!!!!!!!!!!!!!!!!!!!!
-	UiAndApiPermission map[string]bool `json:"ui_and_api_permission,omitempty" protobuf_key:"bytes,1,opt,name=key,proto3" protobuf_val:"varint,2,opt,name=value,proto3"`
-}
-
-type Data struct {
-	URL    string   `json:"url"`
-	Email  string   `json:"email"`
-	Roles  []string `json:"roles"`
-	UserID string   `json:"user_id"`
-}
-
-type Organization struct {
-	URL    string `json:"url"`
-	ApiURL string `json:"api_url"`
-
-	// SignInPK should be the path to the actual key in GSM
-	SignInPK    string `json:"sign_in_pk"`
-	SignInKeyID string `json:"sign_in_key_id"`
-	Auth        Auth   `json:"auth"`
-}
 
 type Auth string
 
