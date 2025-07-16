@@ -13,6 +13,8 @@ import (
 	"github.com/desain-gratis/common/usecase/signing"
 )
 
+const maxHeaderSize = 1 << 20
+
 type TokenParser func(ctx context.Context, payload []byte) (any, *types.CommonError)
 
 type signingService struct {
@@ -134,6 +136,13 @@ func (s *signingService) MultiKeys(w http.ResponseWriter, r *http.Request, p htt
 }
 
 func verifyAuthorizationHeader(ctx context.Context, verifier signing.Verifier, value string) (payload []byte, errUC *types.CommonError) {
+	if len(payload) > maxHeaderSize {
+		return nil, &types.CommonError{
+			Errors: []types.Error{
+				{Code: "BAD_REQUEST", HTTPCode: http.StatusBadRequest, Message: "Invalid authorization header. Too long."},
+			},
+		}
+	}
 	token := strings.Split(value, " ")
 	if len(token) < 2 || token[1] == "" {
 		return nil, &types.CommonError{

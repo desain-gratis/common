@@ -19,7 +19,7 @@ require (
 	github.com/minio/minio-go/v7 v7.0.94
 	github.com/rs/zerolog v1.33.0
 	golang.org/x/crypto v0.38.0
-	golang.org/x/image v0.0.0-20210628002857-a66eb6448b8d
+	golang.org/x/image v0.18.0
 	golang.org/x/oauth2 v0.21.0
 	golang.org/x/sync v0.14.0
 	google.golang.org/api v0.185.0
