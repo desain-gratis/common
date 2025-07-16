@@ -2,7 +2,6 @@ package plugin
 
 import (
 	"net/http"
-	"strings"
 	"time"
 
 	authapi "github.com/desain-gratis/common/delivery/auth-api"
@@ -34,10 +33,6 @@ func NewUserAuthLogic(authUser mycontent.Usecase[*entity.UserAuthorization], exp
 func (a *userAuth) BuildToken(r *http.Request, authMethod string, auth *idtoken.Payload) (tokenData proto.Message, apiData any, expiry time.Time, err *types.CommonError) {
 	claim := authapi.GetOIDCClaims(auth.Claims)
 
-	// Locale
-	// TODO parse to clean string
-	lang := strings.Split(r.Header.Get("Accept-Language"), ";")
-
 	// Enterprise capability (login based on organization)
 	grants := make(map[string]*session.Grant)
 
@@ -61,11 +56,6 @@ func (a *userAuth) BuildToken(r *http.Request, authMethod string, auth *idtoken.
 
 	expiry = time.Now().Add(time.Duration(a.expiryMinutes) * time.Minute) // long-lived token
 
-	var img string
-	if userData.DefaultProfile.Avatar1x1 != nil {
-		img = userData.DefaultProfile.Avatar1x1.ThumbnailUrl
-	}
-
 	for namespace, auth := range userData.Authorization {
 		grants[namespace] = &session.Grant{
 			UiAndApiPermission: auth.UiAndApiPermission,
@@ -88,15 +78,6 @@ func (a *userAuth) BuildToken(r *http.Request, authMethod string, auth *idtoken.
 	}
 
 	apiData = &authapi.SignInResponse{
-		LoginProfile: &authapi.Profile{
-			DisplayName: claim.Name,
-			Email:       claim.Email,
-			ImageURL:    img,
-		},
-		Locale: lang,
-		// collection of grants NOT signed, for debugging.
-		// DO NOT USE THIS FOR BACK END VALIDATION
-		Grants: grants,
 		Expiry: expiry.Format(time.RFC3339),
 	}
 

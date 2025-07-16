@@ -16,7 +16,7 @@ import (
 )
 
 func enableAuthAPI(router *httprouter.Router, nh *dragonboat.NodeHost, info map[string]any, haveLeader *bool) {
-	signerVerifier := idtokensigner.NewSimple(
+	signerVerifier := idtokensigner.New(
 		"raft-app",
 		map[string]string{
 			"key-v1": "85746{K=q's)",
@@ -25,9 +25,9 @@ func enableAuthAPI(router *httprouter.Router, nh *dragonboat.NodeHost, info map[
 	)
 
 	gsiAuth := idtokenverifier.GSIAuth("web client ID")
-	appAuth := idtokenverifier.AppAuth(signerVerifier, "app")
+	appAuth := idtokenverifier.AppAuth(signerVerifier, plugin.AuthCtxKey, plugin.ParseToken)
 
-	adminTokenBuilder := plugin.AdminAuthLogic(map[string]struct{}{"keenan.gebze@gmail.com": struct{}{}}, 1*30)
+	adminTokenBuilder := plugin.AdminAuthLogic(map[string]struct{}{"keenan.gebze@gmail.com": {}}, 1*30)
 	userTokenBuilder := plugin.NewUserAuthLogic(nil, 8*60)
 
 	router.GET("/auth/admin", gsiAuth(authapi.GetToken(adminTokenBuilder, signerVerifier)))
