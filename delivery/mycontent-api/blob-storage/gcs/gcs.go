@@ -10,7 +10,7 @@ import (
 	"cloud.google.com/go/storage"
 	"github.com/rs/zerolog/log"
 
-	"github.com/desain-gratis/common/repository/blob"
+	"github.com/desain-gratis/common/delivery/mycontent-api/blob-storage"
 	types "github.com/desain-gratis/common/types/http"
 )
 
