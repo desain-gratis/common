@@ -9,8 +9,8 @@ import (
 
 	mycontentapi "github.com/desain-gratis/common/delivery/mycontent-api"
 	blob_gcs "github.com/desain-gratis/common/delivery/mycontent-api/blob-storage/gcs"
+	content_postgres "github.com/desain-gratis/common/delivery/mycontent-api/storage/postgres"
 	"github.com/desain-gratis/common/example/user-profile/entity"
-	content_postgres "github.com/desain-gratis/common/repository/content/postgres"
 	mycontent_base "github.com/desain-gratis/common/usecase/mycontent/base"
 	"github.com/julienschmidt/httprouter"
 	"github.com/rs/zerolog"

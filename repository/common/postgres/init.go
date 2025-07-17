@@ -1,9 +1,9 @@
 package postgres
 
 import (
+	content "github.com/desain-gratis/common/delivery/mycontent-api"
+	"github.com/desain-gratis/common/delivery/mycontent-api/storage/postgres"
 	i "github.com/desain-gratis/common/repository/common"
-	"github.com/desain-gratis/common/repository/content"
-	"github.com/desain-gratis/common/repository/content/postgres"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
 )
