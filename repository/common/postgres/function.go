@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	content "github.com/desain-gratis/common/delivery/mycontent-api"
+	"github.com/desain-gratis/common/delivery/mycontent-api/storage/content"
 )
 
 func (r repo[T]) Get(ctx context.Context, organizationID, id string, refID []string) (data []T, err error) {

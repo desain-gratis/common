@@ -14,11 +14,10 @@ import (
 	"github.com/desain-gratis/common/delivery/mycontent-api/storage/content"
 	"github.com/desain-gratis/common/types/entity"
 	types "github.com/desain-gratis/common/types/http"
-	"github.com/desain-gratis/common/usecase/mycontent"
 )
 
-var _ mycontent.Usecase[*entity.Attachment] = &HandlerWithAttachment{}
-var _ mycontent.Attachable[*entity.Attachment] = &HandlerWithAttachment{}
+var _ Usecase[*entity.Attachment] = &HandlerWithAttachment{}
+var _ Attachable[*entity.Attachment] = &HandlerWithAttachment{}
 
 type HandlerWithAttachment struct {
 	*Handler[*entity.Attachment]

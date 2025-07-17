@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	content "github.com/desain-gratis/common/delivery/mycontent-api"
+	"github.com/desain-gratis/common/delivery/mycontent-api/storage/content"
 )
 
 const (

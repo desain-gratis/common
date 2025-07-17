@@ -1,4 +1,4 @@
-package mycontentapi
+package content
 
 import (
 	"context"

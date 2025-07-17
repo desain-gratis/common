@@ -4,8 +4,8 @@ import (
 	"context"
 	"log"
 
-	"github.com/desain-gratis/common/repository/content"
-	"github.com/desain-gratis/common/repository/content/postgres"
+	"github.com/desain-gratis/common/delivery/mycontent-api/storage/content"
+	postgres_content "github.com/desain-gratis/common/delivery/mycontent-api/storage/content/postgres"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
 )
@@ -45,7 +45,7 @@ func main() {
 }
 
 func doSingleRefID(db *sqlx.DB) {
-	pgDriver := postgres.New(db, "test_table_1", 1)
+	pgDriver := postgres_content.New(db, "test_table_1", 1)
 
 	pgPostData := content.Data{
 		Data: []byte(`{"phones":[{"type":"mobile","phone":"001001"},{"type":"fix","phone":"002002"}]}`),
@@ -119,7 +119,7 @@ func doSingleRefID(db *sqlx.DB) {
 }
 
 func doMultipleRefID(db *sqlx.DB) {
-	pgDriver := postgres.New(db, "test_table_2", 2)
+	pgDriver := postgres_content.New(db, "test_table_2", 2)
 
 	pgPostData := content.Data{
 		Data: []byte(`{"phones":[{"type":"mobile","phone":"001001"},{"type":"fix","phone":"002002"}]}`),

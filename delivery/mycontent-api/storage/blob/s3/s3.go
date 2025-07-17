@@ -10,7 +10,7 @@ import (
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/rs/zerolog/log"
 
-	"github.com/desain-gratis/common/delivery/mycontent-api/blob-storage"
+	blob "github.com/desain-gratis/common/delivery/mycontent-api/storage/blob"
 	types "github.com/desain-gratis/common/types/http"
 )
 
