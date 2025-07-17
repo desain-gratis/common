@@ -4,8 +4,8 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/desain-gratis/common/delivery/mycontent-api/mycontent"
 	types "github.com/desain-gratis/common/types/http"
-	"github.com/desain-gratis/common/usecase/mycontent"
 )
 
 var _ mycontent.Usecase[mycontent.Data] = &mcAuth[mycontent.Data]{}

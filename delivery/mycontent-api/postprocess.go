@@ -3,7 +3,7 @@ package mycontentapi
 import (
 	"net/url"
 
-	"github.com/desain-gratis/common/usecase/mycontent"
+	"github.com/desain-gratis/common/delivery/mycontent-api/mycontent"
 )
 
 // URLFormat for custom URL (this should be the URL default)

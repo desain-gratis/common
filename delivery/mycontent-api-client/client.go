@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"net/url"
 
+	"github.com/desain-gratis/common/delivery/mycontent-api/mycontent"
 	types "github.com/desain-gratis/common/types/http"
-	"github.com/desain-gratis/common/usecase/mycontent"
 )
 
 type client[T mycontent.Data] struct {

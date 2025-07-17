@@ -3,9 +3,9 @@ package entity
 import (
 	"time"
 
+	"github.com/desain-gratis/common/delivery/mycontent-api/mycontent"
 	"github.com/desain-gratis/common/types/entity"
 	types "github.com/desain-gratis/common/types/http"
-	"github.com/desain-gratis/common/usecase/mycontent"
 )
 
 type (

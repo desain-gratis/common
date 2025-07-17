@@ -8,11 +8,11 @@ import (
 	idtokensigner "github.com/desain-gratis/common/delivery/auth-api/idtoken-signer"
 	idtokenverifier "github.com/desain-gratis/common/delivery/auth-api/idtoken-verifier"
 	mycontentapi "github.com/desain-gratis/common/delivery/mycontent-api"
+	mycontent_base "github.com/desain-gratis/common/delivery/mycontent-api/mycontent/base"
 	blob_gcs "github.com/desain-gratis/common/delivery/mycontent-api/storage/blob/gcs"
 	content_postgres "github.com/desain-gratis/common/delivery/mycontent-api/storage/content/postgres"
 	"github.com/desain-gratis/common/example/auth/entity"
 	"github.com/desain-gratis/common/example/auth/plugin"
-	mycontent_base "github.com/desain-gratis/common/usecase/mycontent/base"
 	"github.com/julienschmidt/httprouter"
 	"github.com/rs/zerolog/log"
 )

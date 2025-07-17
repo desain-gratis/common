@@ -12,9 +12,9 @@ import (
 	"github.com/julienschmidt/httprouter"
 	"github.com/rs/zerolog/log"
 
+	"github.com/desain-gratis/common/delivery/mycontent-api/mycontent"
 	entity "github.com/desain-gratis/common/types/entity"
 	types "github.com/desain-gratis/common/types/http"
-	"github.com/desain-gratis/common/usecase/mycontent"
 )
 
 // maybe later change it to mycontentapi

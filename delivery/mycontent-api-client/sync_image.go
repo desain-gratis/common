@@ -14,10 +14,10 @@ import (
 	"time"
 
 	"github.com/desain-gratis/common/delivery/mycontent-api-client/imageproc"
+	"github.com/desain-gratis/common/delivery/mycontent-api/mycontent"
 	"github.com/desain-gratis/common/types/entity"
 	content "github.com/desain-gratis/common/types/entity"
 	types "github.com/desain-gratis/common/types/http"
-	"github.com/desain-gratis/common/usecase/mycontent"
 	"github.com/disintegration/imaging"
 	"github.com/kolesa-team/go-webp/webp"
 	"github.com/rs/zerolog/log"

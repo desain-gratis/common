@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/desain-gratis/common/delivery/mycontent-api/mycontent"
 	"github.com/desain-gratis/common/delivery/mycontent-api/storage/content"
 	types "github.com/desain-gratis/common/types/http"
-	"github.com/desain-gratis/common/usecase/mycontent"
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 )

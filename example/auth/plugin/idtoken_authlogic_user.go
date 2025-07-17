@@ -6,10 +6,10 @@ import (
 	"time"
 
 	authapi "github.com/desain-gratis/common/delivery/auth-api"
+	"github.com/desain-gratis/common/delivery/mycontent-api/mycontent"
 	"github.com/desain-gratis/common/example/auth/entity"
 	types "github.com/desain-gratis/common/types/http"
 	"github.com/desain-gratis/common/types/protobuf/session"
-	"github.com/desain-gratis/common/usecase/mycontent"
 	"google.golang.org/api/idtoken"
 	"google.golang.org/protobuf/proto"
 )
