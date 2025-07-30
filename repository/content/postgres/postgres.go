@@ -34,7 +34,7 @@ func (h *handler) Get(ctx context.Context, namespace string, refIDs []string, ID
 		ID:        ID,
 	}
 
-	q := generateQuery(h.tableName, "SELECT", pKey, UpsertData{})
+	q, _ := generateQuery(h.tableName, "SELECT", pKey, UpsertData{})
 	rows, errQuery := h.db.QueryContext(ctx, q)
 	if errQuery != nil {
 		err = &types.CommonError{
@@ -112,8 +112,8 @@ func (h *handler) Post(ctx context.Context, namespace string, refIDs []string, I
 		input.Meta = []byte(`{}`)
 	}
 
-	q := generateQuery(h.tableName, "INSERT", pKey, UpsertData{Data: input.Data, Meta: input.Meta})
-	rows, errExec := h.db.QueryContext(ctx, q)
+	q, args := generateQuery(h.tableName, "INSERT", pKey, UpsertData{Data: input.Data, Meta: input.Meta})
+	rows, errExec := h.db.QueryContext(ctx, q, args...)
 	if errExec != nil {
 		err = &types.CommonError{
 			Errors: []types.Error{
@@ -151,7 +151,7 @@ func (h *handler) Delete(ctx context.Context, namespace string, refIDs []string,
 		ID:        ID,
 	}
 
-	q := generateQuery(h.tableName, "DELETE", pKey, UpsertData{})
+	q, _ := generateQuery(h.tableName, "DELETE", pKey, UpsertData{})
 
 	rows, errExec := h.db.QueryContext(ctx, q)
 	if errExec != nil {

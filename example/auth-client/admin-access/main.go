@@ -75,7 +75,7 @@ func main() {
 
 	authorizedUserSync := mycontentapiclient.Sync(authorizedUserClient, "*", sampleUsers, mycontentapiclient.OptionalConfig{
 		AuthorizationToken: *ar.IDToken,
-	}).WithImages(authorizedUserImagesClient, extractAuthorizedUserImages, ".")
+	}).WithImages(authorizedUserImagesClient, extractAuthorizedUserImages, ".", nil)
 
 	errUC = authorizedUserSync.Execute(context.Background())
 	if errUC != nil {
