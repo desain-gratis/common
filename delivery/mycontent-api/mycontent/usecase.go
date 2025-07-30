@@ -12,6 +12,7 @@ type UsecaseAttachment[T any] interface {
 	Usecase[T]
 	Attachable[T]
 }
+
 type Usecase[T any] interface {
 	// Post (create new or overwrite) resource here
 	Post(ctx context.Context, data T, meta any) (T, *types.CommonError)

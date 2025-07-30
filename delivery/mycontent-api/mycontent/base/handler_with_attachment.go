@@ -10,11 +10,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 
-	"github.com/desain-gratis/common/repository/blob"
-	"github.com/desain-gratis/common/repository/content"
+	"github.com/desain-gratis/common/delivery/mycontent-api/mycontent"
+	"github.com/desain-gratis/common/delivery/mycontent-api/storage/blob"
+	"github.com/desain-gratis/common/delivery/mycontent-api/storage/content"
 	"github.com/desain-gratis/common/types/entity"
 	types "github.com/desain-gratis/common/types/http"
-	"github.com/desain-gratis/common/usecase/mycontent"
 )
 
 var _ mycontent.Usecase[*entity.Attachment] = &HandlerWithAttachment{}

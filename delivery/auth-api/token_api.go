@@ -8,32 +8,34 @@ import (
 
 	"github.com/julienschmidt/httprouter"
 	"github.com/rs/zerolog/log"
-	"google.golang.org/protobuf/proto"
 
 	types "github.com/desain-gratis/common/types/http"
-	"github.com/desain-gratis/common/types/protobuf/session"
 	"github.com/desain-gratis/common/usecase/signing"
 )
 
+const maxHeaderSize = 1 << 20
+
+type TokenParser func(ctx context.Context, payload []byte) (any, *types.CommonError)
+
 type signingService struct {
-	verifier signing.Verifier
-	signer   signing.Signer
+	signerVerifier SignerVerifier
+	tokenParser    TokenParser
 }
 
-// Base signing service
-func New(
-	signer signing.Signer,
-	verifier signing.Verifier,
+// NewTokenAPI
+func NewTokenAPI(
+	signerVerifier SignerVerifier,
+	tokenParser TokenParser,
 ) *signingService {
 	return &signingService{
-		signer:   signer,
-		verifier: verifier,
+		signerVerifier: signerVerifier,
+		tokenParser:    tokenParser,
 	}
 }
 
 // Keys allows other service to verify this published delivery Open ID credential
 func (s *signingService) Keys(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	keys, errUC := s.signer.Keys(r.Context())
+	keys, errUC := s.signerVerifier.Keys(r.Context())
 	if errUC != nil {
 		if r.Context().Err() != nil {
 			return
@@ -72,7 +74,7 @@ func (s *signingService) Keys(w http.ResponseWriter, r *http.Request, p httprout
 // Debug dumps valid token payload
 func (s *signingService) Debug(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	authHeader := r.Header.Get("Authorization")
-	data, errUC := verifyAuthorizationHeader(r.Context(), s.verifier, authHeader)
+	data, errUC := verifyAuthorizationHeader(r.Context(), s.signerVerifier, authHeader)
 	if errUC != nil {
 		errMessage := types.SerializeError(errUC)
 		w.WriteHeader(http.StatusBadRequest)
@@ -80,22 +82,17 @@ func (s *signingService) Debug(w http.ResponseWriter, r *http.Request, p httprou
 		return
 	}
 
-	var session session.SessionData
-	err := proto.Unmarshal(data, &session)
-	if err != nil {
+	result, errUC := s.tokenParser(r.Context(), data)
+	if errUC != nil {
 		log.Debug().Msg("Token schema changed. User need to update their token.")
-		errMessage := types.SerializeError(&types.CommonError{
-			Errors: []types.Error{
-				{Code: "INVALID_TOKEN", HTTPCode: http.StatusBadRequest, Message: "Token schema changed. Please log in again."},
-			},
-		})
+		errMessage := types.SerializeError(errUC)
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write(errMessage)
 		return
 	}
 
 	payload, _err := json.Marshal(&types.CommonResponse{
-		Success: &session,
+		Success: result,
 	})
 	if _err != nil {
 		if r.Context().Err() != nil {
@@ -117,7 +114,35 @@ func (s *signingService) Debug(w http.ResponseWriter, r *http.Request, p httprou
 	w.Write(payload)
 }
 
+func (s *signingService) MultiKeys(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+	orgID := r.URL.Query().Get("org")
+	if orgID == "" {
+		cer := &types.CommonError{
+			Errors: []types.Error{
+				{
+					HTTPCode: http.StatusBadRequest,
+					Code:     "EMPTY_ORGANIZATION",
+					Message:  "Please spcecify `org` parameter",
+				},
+			},
+		}
+		errMessage := types.SerializeError(cer)
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write(errMessage)
+		return
+	}
+
+	s.Keys(w, r, p)
+}
+
 func verifyAuthorizationHeader(ctx context.Context, verifier signing.Verifier, value string) (payload []byte, errUC *types.CommonError) {
+	if len(payload) > maxHeaderSize {
+		return nil, &types.CommonError{
+			Errors: []types.Error{
+				{Code: "BAD_REQUEST", HTTPCode: http.StatusBadRequest, Message: "Invalid authorization header. Too long."},
+			},
+		}
+	}
 	token := strings.Split(value, " ")
 	if len(token) < 2 || token[1] == "" {
 		return nil, &types.CommonError{

@@ -8,10 +8,10 @@ import (
 	"time"
 
 	mycontentapi "github.com/desain-gratis/common/delivery/mycontent-api"
+	mycontent_base "github.com/desain-gratis/common/delivery/mycontent-api/mycontent/base"
+	blob_gcs "github.com/desain-gratis/common/delivery/mycontent-api/storage/blob/gcs"
+	content_postgres "github.com/desain-gratis/common/delivery/mycontent-api/storage/content/postgres"
 	"github.com/desain-gratis/common/example/user-profile/entity"
-	blob_gcs "github.com/desain-gratis/common/repository/blob/gcs"
-	content_postgres "github.com/desain-gratis/common/repository/content/postgres"
-	mycontent_base "github.com/desain-gratis/common/usecase/mycontent/base"
 	"github.com/julienschmidt/httprouter"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"

@@ -1,4 +1,4 @@
-package handler
+package idtokensigner
 
 import (
 	"context"
@@ -18,6 +18,7 @@ import (
 	"github.com/desain-gratis/common/utility/secretkv"
 )
 
+// Every signer should be a verifier as well
 var _ authapi.Signer = &oidcLogin{}
 var _ authapi.Verifier = &oidcLogin{}
 
@@ -27,13 +28,6 @@ type Config struct {
 
 	// PublishSecret contains the location of Secret for signing and it's multiple version
 	SigningConfig SigningConfig
-
-	// ProfileService connect to user's for public profile
-	// instead of client hit the public profile API directly
-	// since it can use internal network, it should be faster compared to client hit directly
-	ProfileService string
-
-	TokenExpiryMinutes int
 }
 
 type SigningConfig struct {
@@ -75,7 +69,7 @@ type keys struct {
 }
 
 // New manage secrets for signer, including caching, polling, etc..
-func New(
+func NewWithKeyManagement(
 	config Config,
 	rsaStore jwtrsa.Provider,
 	secretkvStore secretkv.Provider,
@@ -132,8 +126,28 @@ func (s *oidcLogin) Sign(ctx context.Context, claim []byte, expire time.Time) (t
 	return token, nil
 }
 
-func (s *oidcLogin) Parse(ctx context.Context, claim []byte) (data any, errUC *types.CommonError) {
-	return claim, nil
+func (s *oidcLogin) Verify(ctx context.Context, token string) (claim []byte, errUC *types.CommonError) {
+	if len(s.keys) == 0 {
+		log.Err(errors.New("empty public key in verifier")).Msgf("Empty public keys: `%v`", s.config.SigningConfig.Secret)
+		errUC = &types.CommonError{
+			Errors: []types.Error{
+				{HTTPCode: http.StatusInternalServerError, Code: "FAILED_TO_PARSE_TOKEN", Message: "Failed to parse token"},
+			},
+		}
+		return nil, errUC
+	}
+
+	// TODO: handle keys versioning. currenly will only support the last version
+	payload, err := s.rsaStore.ParseRSAJWTToken(token, s.keys[0].KeyID)
+	if err != nil {
+		return claim, &types.CommonError{
+			Errors: []types.Error{
+				{Code: "INVALID_AUTHORIZATION_TOKEN", HTTPCode: http.StatusBadRequest, Message: "Invalid authorization token"},
+			},
+		}
+	}
+
+	return payload, nil
 }
 
 func (s *oidcLogin) Keys(ctx context.Context) ([]authapi.Keys, *types.CommonError) {
@@ -237,28 +251,4 @@ func convertToOIDCKeys(keys []keys) []authapi.Keys {
 		result = append(result, v.Keys)
 	}
 	return result
-}
-
-func (s *oidcLogin) Verify(ctx context.Context, token string) (claim []byte, errUC *types.CommonError) {
-	if len(s.keys) == 0 {
-		log.Err(errors.New("empty public key in verifier")).Msgf("Empty public keys: `%v`", s.config.SigningConfig.Secret)
-		errUC = &types.CommonError{
-			Errors: []types.Error{
-				{HTTPCode: http.StatusInternalServerError, Code: "FAILED_TO_PARSE_TOKEN", Message: "Failed to parse token"},
-			},
-		}
-		return nil, errUC
-	}
-
-	// TODO: handle keys versioning. currenly will only support the last version
-	payload, err := s.rsaStore.ParseRSAJWTToken(token, s.keys[0].KeyID)
-	if err != nil {
-		return claim, &types.CommonError{
-			Errors: []types.Error{
-				{Code: "INVALID_AUTHORIZATION_TOKEN", HTTPCode: http.StatusBadRequest, Message: "Invalid authorization token"},
-			},
-		}
-	}
-
-	return payload, nil
 }

@@ -5,10 +5,11 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/desain-gratis/common/delivery/mycontent-api/mycontent"
 	common_entity "github.com/desain-gratis/common/types/entity"
 	types "github.com/desain-gratis/common/types/http"
-	"github.com/desain-gratis/common/usecase/mycontent"
-	mycontent_base "github.com/desain-gratis/common/usecase/mycontent/base"
+
+	mycontent_base "github.com/desain-gratis/common/delivery/mycontent-api/mycontent/base"
 )
 
 var _ mycontent.Usecase[*common_entity.Attachment] = &mcAttachAuth{}

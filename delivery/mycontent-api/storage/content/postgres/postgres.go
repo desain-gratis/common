@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/desain-gratis/common/repository/content"
+	"github.com/desain-gratis/common/delivery/mycontent-api/storage/content"
 	types "github.com/desain-gratis/common/types/http"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
