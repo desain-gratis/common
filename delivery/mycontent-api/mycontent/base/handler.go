@@ -3,6 +3,7 @@ package base
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -120,7 +121,9 @@ func (c *Handler[T]) Get(ctx context.Context, namespace string, refIDs []string,
 					{
 						Code:     "NOT_FOUND",
 						HTTPCode: http.StatusNotFound,
-						Message:  "You specify item ID, but some refs are missing",
+						Message: fmt.Sprintf(
+							"You specify item ID, but some refs are missing: expected ref size %v got: %v id: %v",
+							c.expectedRefSize, refIDs, ID),
 					},
 				},
 			}
@@ -196,7 +199,7 @@ func (c *Handler[T]) Get(ctx context.Context, namespace string, refIDs []string,
 
 // Delete your resource here
 // the implementation can check whether there are linked resource or not
-func (c *Handler[T]) Delete(ctx context.Context, userID string, refIDs []string, ID string) (t T, err *types.CommonError) {
+func (c *Handler[T]) Delete(ctx context.Context, namespace string, refIDs []string, ID string) (t T, err *types.CommonError) {
 	if !isValid(refIDs) && len(filterEmpty(refIDs)) != c.expectedRefSize {
 		return t, &types.CommonError{
 			Errors: []types.Error{
@@ -210,7 +213,7 @@ func (c *Handler[T]) Delete(ctx context.Context, userID string, refIDs []string,
 	}
 
 	// TODO user ID validation
-	d, err := c.repo.Delete(ctx, userID, refIDs, ID)
+	d, err := c.repo.Delete(ctx, namespace, refIDs, ID)
 	if err != nil {
 		var t T
 		return t, err

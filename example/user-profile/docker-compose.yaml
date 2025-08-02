@@ -1,4 +1,9 @@
 version: "3"
+
+environment:
+  RACK_ENV: development
+  SHOW: "true"
+  
 services:
   postgres:
     image: postgres:latest
@@ -10,6 +15,42 @@ services:
     volumes:
       - database_data:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+
+  minio:
+    container_name: minio
+    image: quay.io/minio/minio:RELEASE.2025-03-12T18-04-18Z # Or a more recent stable release
+    ports:
+      - "9000:9000" # MinIO S3 API port
+      - "9001:9001" # MinIO Console port
+    environment:
+      MINIO_ROOT_USER: ROOTNAME # Replace with your desired root username
+      MINIO_ROOT_PASSWORD: CHANGEME123 # Replace with your desired root password
+    volumes:
+      - ~/minio/data:/data # Mount the local data directory to the container's /data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9001"]
+      interval: 40s
+      timeout: 30s
+      retries: 3
+      start_period: 60s
+  createbucket:
+    container_name: createbucket
+    image: quay.io/minio/minio:RELEASE.2025-03-12T18-04-18Z # Or a more recent stable release
+    depends_on:
+      minio:
+        condition: service_healthy
+
+    entrypoint: >
+      /bin/sh -c "
+      /usr/bin/mc config host add myminio http://minio:9000 ROOTNAME CHANGEME123;
+      /usr/bin/mc rm -r --force myminio/user-profile-bucket;
+      /usr/bin/mc mb myminio/user-profile-bucket;
+      /usr/bin/mc admin accesskey create --access-key this1s4ccessXey --secret-key S3cR3tthebestd0tcom myminio;
+      /usr/bin/mc anonymous set public myminio/user-profile-bucket;
+      exit 0;
+      "
+
 
 volumes:
   database_data:

@@ -47,6 +47,10 @@ type Error struct {
 	ImageURL string `json:"image_url,omitempty"`
 }
 
+func (e *Error) Error() string {
+	return e.Message
+}
+
 func SerializeError(err *CommonError) []byte {
 	d, errMarshal := json.Marshal(&CommonResponse{
 		Error: err,

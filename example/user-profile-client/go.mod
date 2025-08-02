@@ -2,6 +2,8 @@ module github.com/desain-gratis/common/example/user-profile-client
 
 go 1.23.4
 
+replace github.com/desain-gratis/common => ../..
+
 require (
 	github.com/desain-gratis/common v0.0.0-20250119203725-bfbfc9351728
 	github.com/rs/zerolog v1.33.0

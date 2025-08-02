@@ -44,7 +44,7 @@ type OptionalConfig struct {
 
 func Sync[T mycontent.Data](client *client[T], namespace string, data []T, optConfig OptionalConfig) *sync[T] {
 	if namespace == "" {
-		log.Fatal().Msgf("Please provide namespace explicitly. Put '*' to sync all")
+		log.Fatal().Msgf("please provide namespace explicitly. Put '*' to sync all")
 	}
 
 	return &sync[T]{

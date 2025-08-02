@@ -9,7 +9,7 @@ import (
 
 	mycontentapi "github.com/desain-gratis/common/delivery/mycontent-api"
 	mycontent_base "github.com/desain-gratis/common/delivery/mycontent-api/mycontent/base"
-	blob_gcs "github.com/desain-gratis/common/delivery/mycontent-api/storage/blob/gcs"
+	blob_s3 "github.com/desain-gratis/common/delivery/mycontent-api/storage/blob/s3"
 	content_postgres "github.com/desain-gratis/common/delivery/mycontent-api/storage/content/postgres"
 	"github.com/desain-gratis/common/example/user-profile/entity"
 	"github.com/julienschmidt/httprouter"
@@ -74,8 +74,6 @@ func enableApplicationAPI(
 ) {
 
 	baseURL := "http://localhost:9090"
-	privateBucketName := "data.demo.sewatenan.com"
-	privateBucketBaseURL := "https://data.demo.sewatenan.com"
 
 	pg, ok := GET_POSTGRES_SUITE_API()
 	if !ok {
@@ -85,11 +83,17 @@ func enableApplicationAPI(
 	organizationRepo := content_postgres.New(pg, "organization", 0) // ID overwrite-able / indemppotent (by github)
 	userProfileRepo := content_postgres.New(pg, "user_profile", 1)  // ID overwrite-able / indemppotent (by github)
 	userProfileThumbnailRepo := content_postgres.New(pg, "user_profile_thumbnail", 2)
-	userProfileBlobRepo := blob_gcs.New(
-		privateBucketName,
-		privateBucketBaseURL,
+	userProfileBlobRepo, err := blob_s3.New(
+		"localhost:9000",
+		"this1s4ccessXey",
+		"S3cR3tthebestd0tcom",
+		false,
+		"user-profile-bucket",
+		"http://localhost:9000/user-profile-bucket",
 	)
-
+	if err != nil {
+		log.Fatal().Msgf("failed to create s3 connection %v", err)
+	}
 	organizationHandler := mycontentapi.New(
 		mycontent_base.New[*entity.Organization](organizationRepo, 0),
 		baseURL+"/org",

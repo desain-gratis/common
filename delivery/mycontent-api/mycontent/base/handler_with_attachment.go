@@ -34,14 +34,14 @@ func NewAttachment(
 	refSize int,
 	blobRepo blob.Repository,
 	hideUrl bool,
-	namespace string,
+	blobNamespace string,
 ) *HandlerWithAttachment {
 
 	return &HandlerWithAttachment{
 		Handler:   New[*entity.Attachment](repo, refSize),
 		blobRepo:  blobRepo,
 		hideUrl:   hideUrl,
-		namespace: namespace,
+		namespace: blobNamespace,
 	}
 }
 
@@ -195,6 +195,7 @@ func (c *HandlerWithAttachment) Attach(ctx context.Context, meta *entity.Attachm
 	// TODO: create proper path / brainstorm better approach (but this works also)
 	repometa, err := c.blobRepo.Upload(ctx, result.Path, result.ContentType, payload)
 	if err != nil {
+		_, _ = c.Handler.Delete(ctx, meta.Namespace(), meta.RefIDs(), meta.ID())
 		return nil, err
 	}
 
@@ -212,8 +213,8 @@ func (c *HandlerWithAttachment) Attach(ctx context.Context, meta *entity.Attachm
 }
 
 // DeleteAttachment generic binary at path
-func (c *HandlerWithAttachment) Delete(ctx context.Context, userID string, refIDs []string, ID string) (*entity.Attachment, *types.CommonError) {
-	result, err := c.Handler.Get(ctx, userID, nil, ID)
+func (c *HandlerWithAttachment) Delete(ctx context.Context, namespace string, refIDs []string, ID string) (*entity.Attachment, *types.CommonError) {
+	result, err := c.Handler.Get(ctx, namespace, refIDs, ID)
 	if err != nil {
 		return nil, err
 	}
@@ -223,7 +224,7 @@ func (c *HandlerWithAttachment) Delete(ctx context.Context, userID string, refID
 		return nil, err
 	}
 
-	at, err := c.Handler.Delete(ctx, userID, refIDs, ID)
+	at, err := c.Handler.Delete(ctx, namespace, refIDs, ID)
 	if err != nil {
 		return nil, err
 	}

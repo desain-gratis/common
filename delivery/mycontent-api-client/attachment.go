@@ -50,7 +50,10 @@ func (a *attachmentClient) Upload(ctx context.Context, authToken string, namespa
 	}
 	req = req.WithContext(ctx)
 
-	req.Header.Add("Authorization", "Bearer "+authToken)
+	if authToken != "" {
+		req.Header.Add("Authorization", "Bearer "+authToken)
+	}
+
 	req.Header.Add("X-Namespace", namespace)
 	req.Header.Add("Content-Type", mwriter.FormDataContentType())
 
@@ -62,7 +65,7 @@ func (a *attachmentClient) Upload(ctx context.Context, authToken string, namespa
 		defer mwriter.Close()
 
 		// Write document metadata
-		log.Debug().Msgf("Created form `document`..")
+		log.Debug().Msgf("created form `document`..")
 		documentW, err := mwriter.CreateFormField("document")
 		if err != nil {
 			errChan <- &types.CommonError{
@@ -83,7 +86,7 @@ func (a *attachmentClient) Upload(ctx context.Context, authToken string, namespa
 			return
 		}
 
-		log.Debug().Msgf("Write payload to `document`..")
+		log.Debug().Msgf("write payload to `document`..")
 		_, err = documentW.Write(payload)
 		if err != nil {
 			errChan <- &types.CommonError{
@@ -96,7 +99,7 @@ func (a *attachmentClient) Upload(ctx context.Context, authToken string, namespa
 
 		// Using file
 		if fromPath != "" {
-			log.Debug().Msgf("Created form `attachment` using file")
+			log.Debug().Msgf("created form `attachment` using file")
 			attachW, err := mwriter.CreateFormFile("attachment", fromPath)
 			if err != nil {
 				errChan <- &types.CommonError{
@@ -107,7 +110,7 @@ func (a *attachmentClient) Upload(ctx context.Context, authToken string, namespa
 				return
 			}
 
-			log.Debug().Msgf("Opened file at `%v`..", fromPath)
+			log.Debug().Msgf("opened file at `%v`..", fromPath)
 			f, err := os.Open(fromPath)
 			if err != nil {
 				errChan <- &types.CommonError{
@@ -119,7 +122,7 @@ func (a *attachmentClient) Upload(ctx context.Context, authToken string, namespa
 			}
 			defer f.Close()
 
-			log.Debug().Msgf("Uploading... ")
+			log.Debug().Msgf("uploading... ")
 			_, err = io.Copy(attachW, f)
 			if err != nil {
 				errChan <- &types.CommonError{
@@ -136,7 +139,7 @@ func (a *attachmentClient) Upload(ctx context.Context, authToken string, namespa
 			h.Set("Content-Type", http.DetectContentType(fromMemory))
 			h.Set("Content-Disposition", `form-data; name="attachment"`)
 
-			log.Debug().Msgf("Created form `attachment` using in-memory buffer..")
+			log.Debug().Msgf("created form `attachment` using in-memory buffer..")
 			documentW, err := mwriter.CreatePart(*h)
 			if err != nil {
 				errChan <- &types.CommonError{
@@ -147,7 +150,7 @@ func (a *attachmentClient) Upload(ctx context.Context, authToken string, namespa
 				return
 			}
 
-			log.Debug().Msgf("Write payload to `attachment`..")
+			log.Debug().Msgf("write payload to `attachment`..")
 			n, err := documentW.Write(fromMemory)
 			if err != nil {
 				errChan <- &types.CommonError{
@@ -157,14 +160,14 @@ func (a *attachmentClient) Upload(ctx context.Context, authToken string, namespa
 				}
 				return
 			}
-			log.Debug().Msgf("Written %v bytes of data is OK: %v", n, n == len(fromMemory))
+			log.Debug().Msgf("written %v bytes of data is OK: %v", n, n == len(fromMemory))
 		}
-		log.Debug().Msgf("Finished writing data..") // why it's immediate ya? might be going to network buffer directly?
+		log.Debug().Msgf("finished writing data..") // why it's immediate ya? might be going to network buffer directly?
 	}()
 
-	log.Debug().Msgf("  Request initiated!")
+	log.Debug().Msgf("request initiated!")
 
-	log.Debug().Msgf("Doing....") // why it's immediate ya? might be going to network buffer directly?
+	log.Debug().Msgf("doing....") // why it's immediate ya? might be going to network buffer directly?
 	resp, err := a.httpc.Do(req)
 	if err != nil {
 		return nil, &types.CommonError{
@@ -174,14 +177,14 @@ func (a *attachmentClient) Upload(ctx context.Context, authToken string, namespa
 		}
 	}
 
-	log.Debug().Msgf("Waiting for response...")
+	log.Debug().Msgf("waiting for response")
 	_errUC, ok := <-errChan // ok is false if there are no more values to receive and the channel is closed. https://go.dev/tour/concurrency/4
 	if ok || _errUC != nil {
 		// if channel is not closed (ok = true), then it's an error
 		return nil, _errUC
 	}
 
-	log.Debug().Msgf("Reading back response..")
+	log.Debug().Msgf("reading back response")
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, &types.CommonError{
@@ -190,14 +193,14 @@ func (a *attachmentClient) Upload(ctx context.Context, authToken string, namespa
 			},
 		}
 	}
-	log.Debug().Msgf("Finished uploading!")
+	log.Debug().Msgf("finished uploading!")
 
 	var parsed types.CommonResponseTyped[entity.Attachment]
 	err = json.Unmarshal(body, &parsed)
 	if err != nil {
 		return nil, &types.CommonError{
 			Errors: []types.Error{
-				{Code: "CLIENT_ERROR", Message: "unmarshall " + err.Error() + " " + string(body)},
+				{Code: "CLIENT_ERROR", Message: "unmarshal " + err.Error() + " " + string(body)},
 			},
 		}
 	}

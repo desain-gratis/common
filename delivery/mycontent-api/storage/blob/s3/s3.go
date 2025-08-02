@@ -2,7 +2,6 @@ package s3
 
 import (
 	"context"
-	"errors"
 	"io"
 	"net/http"
 
@@ -48,7 +47,7 @@ func New(
 func (h *handler) Upload(ctx context.Context, objectPath string, contentType string, payload io.Reader) (*blob.Data, *types.CommonError) {
 	exists, err := h.client.BucketExists(ctx, h.bucketName)
 	if !exists || err != nil {
-		log.Err(errors.New("empty bucket")).Msgf("Cannot get s3 bucket %v", h.bucketName)
+		log.Err(err).Msgf("Cannot get s3 bucket %v", h.bucketName)
 		return nil, &types.CommonError{
 			Errors: []types.Error{
 				{
@@ -93,7 +92,7 @@ func (h *handler) Upload(ctx context.Context, objectPath string, contentType str
 func (h *handler) Delete(ctx context.Context, path string) (*blob.Data, *types.CommonError) {
 	exists, err := h.client.BucketExists(ctx, h.bucketName)
 	if !exists || err != nil {
-		log.Err(errors.New("empty bucket")).Msgf("Cannot get bucket %v", h.bucketName)
+		log.Err(err).Msgf("del: cannot get bucket %v", h.bucketName)
 		return nil, &types.CommonError{
 			Errors: []types.Error{
 				{
@@ -130,7 +129,7 @@ func (h *handler) Delete(ctx context.Context, path string) (*blob.Data, *types.C
 func (h *handler) Get(ctx context.Context, path string) (io.ReadCloser, *blob.Data, *types.CommonError) {
 	exists, err := h.client.BucketExists(ctx, h.bucketName)
 	if !exists || err != nil {
-		log.Err(errors.New("empty bucket")).Msgf("Cannot get bucket %v", h.bucketName)
+		log.Err(err).Msgf("get: cannot get bucket %v", h.bucketName)
 		return nil, nil, &types.CommonError{
 			Errors: []types.Error{
 				{

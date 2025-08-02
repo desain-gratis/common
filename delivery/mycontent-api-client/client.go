@@ -60,7 +60,9 @@ func (c *client[T]) Delete(ctx context.Context, authToken string, namespace stri
 	}
 
 	req = req.WithContext(ctx)
-	req.Header.Add("Authorization", "Bearer "+authToken)
+	if authToken != "" {
+		req.Header.Add("Authorization", "Bearer "+authToken)
+	}
 	req.Header.Add("X-Namespace", namespace)
 
 	resp, err := c.httpc.Do(req)
@@ -131,7 +133,9 @@ func (c *client[T]) Get(ctx context.Context, authToken string, namespace string,
 
 	req = req.WithContext(ctx)
 
-	req.Header.Add("Authorization", "Bearer "+authToken)
+	if authToken != "" {
+		req.Header.Add("Authorization", "Bearer "+authToken)
+	}
 	req.Header.Add("X-Namespace", namespace)
 
 	// sff udrt sorg
@@ -200,7 +204,10 @@ func (c *client[T]) Post(ctx context.Context, authToken string, data T) (result 
 
 	req = req.WithContext(ctx)
 
-	req.Header.Add("Authorization", "Bearer "+authToken)
+	if authToken != "" {
+		req.Header.Add("Authorization", "Bearer "+authToken)
+	}
+
 	req.Header.Add("X-Namespace", data.Namespace())
 
 	resp, err := c.httpc.Do(req)
