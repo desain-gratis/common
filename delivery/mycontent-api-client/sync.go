@@ -59,6 +59,7 @@ func (s *sync[T]) WithImages(
 	client *attachmentClient,
 	extract ExtractImages[T],
 	uploadDir string,
+	refsParam []string,
 	customPath func(t T) string,
 ) *sync[T] {
 	s.imageDeps = append(s.imageDeps, imageDep[T]{
@@ -66,6 +67,7 @@ func (s *sync[T]) WithImages(
 		client:     client,
 		extract:    extract,
 		uploadDir:  uploadDir,
+		refsParam:  refsParam,
 		customPath: customPath,
 	})
 

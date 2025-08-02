@@ -40,6 +40,7 @@ type imageDep[T mycontent.Data] struct {
 	client     *attachmentClient
 	extract    ExtractImages[T]
 	uploadDir  string
+	refsParam  []string
 	customPath func(T) string
 }
 
@@ -150,7 +151,7 @@ func (i *imageDep[T]) syncImages(dataArr []ImageContext[T]) (stat SyncStat, errU
 
 	// Delete unused remote data
 	for _, data := range toDelete {
-		_, errUC := i.client.Delete(ctx, i.sync.OptConfig.AuthorizationToken, data.Namespace(), toRefsParam(i.client.refsParam, data.RefIds), data.Id)
+		_, errUC := i.client.Delete(ctx, i.sync.OptConfig.AuthorizationToken, data.Namespace(), toRefsParam(i.refsParam, data.RefIds), data.Id)
 		if errUC != nil {
 			log.Error().Msgf("Failed to delete %v %v %v %v %v", i.client.endpoint, data.Namespace(), data.RefIDs(), data.ID(), errUC.Err())
 			continue
