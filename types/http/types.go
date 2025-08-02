@@ -30,6 +30,14 @@ func (c *CommonError) Err() error {
 	return errors.New(strings.Join(result, ","))
 }
 
+func (c *CommonError) Error() string {
+	var result []string
+	for _, err := range c.Errors {
+		result = append(result, "("+err.Code+") "+err.Message)
+	}
+	return strings.Join(result, ",")
+}
+
 type Error struct {
 	HTTPCode int    `json:"http_code,omitempty"`
 	Code     string `json:"code,omitempty"`
@@ -37,46 +45,6 @@ type Error struct {
 	URL      string `json:"url,omitempty"`
 	IconURL  string `json:"icon_url,omitempty"`
 	ImageURL string `json:"image_url,omitempty"`
-}
-
-// User Identity
-type ProfileAvatar struct {
-	ID          int64  `json:"id"`
-	URL         string `json:"url"`
-	DisplayName string `json:"display_name"`
-	ImageURL    string `json:"image_url_100"`
-	ClickURL    string `json:"click_url"`
-	IsVerified  bool   `json:"is_verified"`
-	LastOnline  string `json:"last_online"`
-	Location    string `json:"location"`
-}
-
-func (i *ProfileAvatar) GetID() int64 {
-	return i.ID
-}
-
-func (i *ProfileAvatar) GetOwnerID() int64 {
-	return i.ID
-}
-
-func (i *ProfileAvatar) SetID(id int64) {
-	i.ID = id
-}
-
-func (i *ProfileAvatar) SetOwnerID(id int64) {
-	i.ID = id
-}
-
-func (i *ProfileAvatar) MarshalTo() ([]byte, error) {
-	return json.Marshal(i)
-}
-
-func (i *ProfileAvatar) UnmarshalFrom(payload []byte) error {
-	return json.Unmarshal(payload, i)
-}
-
-func (i *ProfileAvatar) Validate() *CommonError {
-	return nil
 }
 
 func SerializeError(err *CommonError) []byte {
