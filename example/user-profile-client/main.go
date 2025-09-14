@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"net/http"
 	"os"
 
@@ -16,11 +17,21 @@ func init() {
 }
 
 func main() {
+
+	var reset bool
+	flag.BoolVar(&reset, "reset", false, "reset all data in the app")
+
+	flag.Parse()
+
 	orgClient := mycontentapiclient.New[*entity.Organization](http.DefaultClient, "http://localhost:9090/org", nil)
 	userClient := mycontentapiclient.New[*entity.UserProfile](http.DefaultClient, "http://localhost:9090/org/user", []string{"org_id"})
 	userThumbnailClient := mycontentapiclient.NewAttachment(http.DefaultClient, "http://localhost:9090/org/user/thumbnail", []string{"org_id", "profile_id"})
 
 	orgSync := mycontentapiclient.Sync(orgClient, "*", sampleOrg, mycontentapiclient.OptionalConfig{})
+
+	if reset {
+		sampleUser = nil
+	}
 
 	userSync := mycontentapiclient.Sync(userClient, "*", sampleUser, mycontentapiclient.OptionalConfig{}).
 		WithImages(userThumbnailClient, getUserProfileImage, ".", nil) // upload from local URL, with . root directory
