@@ -9,11 +9,11 @@ import (
 )
 
 type api struct {
-	n         Notifier
+	n         Broker
 	transform func(v any) any
 }
 
-func New(n Notifier) *api {
+func NewDebugAPI(n Broker) *api {
 	return &api{n: n}
 }
 
@@ -31,7 +31,9 @@ func (c *api) ListenHandler(w http.ResponseWriter, r *http.Request, p httprouter
 		return
 	}
 
-	for msg := range c.n.Listen(r.Context()) {
+	subs := c.n.Subscribe()
+
+	for msg := range subs.Listen(r.Context()) {
 		if c.transform != nil {
 			msg = c.transform(msg)
 		}
@@ -52,5 +54,5 @@ func (c *api) PublishHandler(w http.ResponseWriter, r *http.Request, p httproute
 		return
 	}
 
-	c.n.Publish(r.Context(), b)
+	c.n.Broadcast(r.Context(), b)
 }

@@ -13,7 +13,7 @@ var _ mycontent.Usecase[mycontent.Data] = &withNotifier[mycontent.Data]{}
 
 type withNotifier[T mycontent.Data] struct {
 	*mycontent_base.Handler[T]
-	notifier notifierapi.Notifier
+	notifier notifierapi.Broker
 }
 
 func (w *withNotifier[T]) Post(ctx context.Context, data T, meta any) (T, *types.CommonError) {
@@ -22,6 +22,6 @@ func (w *withNotifier[T]) Post(ctx context.Context, data T, meta any) (T, *types
 		return v, err
 	}
 
-	_ = w.notifier.Publish(ctx, v)
+	w.notifier.Broadcast(ctx, v)
 	return v, nil
 }

@@ -113,7 +113,7 @@ func enableApplicationAPI(
 	// extend user profile with notifier capability
 	exitMessage := "server said bye bye 👋🏼"
 	userProfileNotifier := notifierapi_impl.
-		NewSimpleNotifier(&exitMessage)
+		NewBroker(true, 0, &exitMessage)
 	userProfileExtended := &withNotifier[*entity.UserProfile]{
 		Handler:  mycontent_base.New[*entity.UserProfile](userProfileRepo, 1),
 		notifier: userProfileNotifier,
@@ -152,7 +152,7 @@ func enableApplicationAPI(
 
 	// TODO: since the usage is common, we can just ship it to default mycontentapi
 	router.GET("/org/user/tail", notifierapi.
-		New(userProfileNotifier).
+		NewDebugAPI(userProfileNotifier).
 		WithTransform(func(v any) any {
 			data, _ := json.Marshal(v)
 			return string(data)

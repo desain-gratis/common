@@ -6,48 +6,30 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math/rand/v2"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	notifierapi "github.com/desain-gratis/common/delivery/notifier-api"
-	"github.com/lni/dragonboat/v4/raftio"
 	"github.com/lni/dragonboat/v4/statemachine"
 	sm "github.com/lni/dragonboat/v4/statemachine"
-	"github.com/rs/zerolog/log"
 )
-
-type Command struct {
-	CmdName string          `json:"cmd_name"`
-	CmdVer  uint64          `json:"cmd_version"`
-	Data    json.RawMessage `json:"data"`
-}
-
-type Event struct {
-	EvtName string          `json:"evt_name"`
-	EvtVer  uint64          `json:"evt_version"`
-	EvtID   uint64          `json:"evt_id"` // offset
-	Data    json.RawMessage `json:"data"`
-}
 
 type messageBroker struct {
 	shardID   uint64
 	replicaID uint64
-	notifier  notifierapi.Notifier
 
 	leader     bool
 	eventIndex uint64
 	conn       driver.Conn
-
-	listener map[uint32]*subscriber
+	broker     notifierapi.Broker
 }
 
-func New(notifier notifierapi.Notifier) statemachine.CreateStateMachineFunc {
+// Specify message broker implementation
+func New(broker notifierapi.Broker) statemachine.CreateStateMachineFunc {
 	return func(shardID, replicaID uint64) sm.IStateMachine {
 		return &messageBroker{
 			shardID:   shardID,
 			replicaID: replicaID,
-			notifier:  notifier,
-			listener:  map[uint32]*subscriber{},
+			broker:    broker,
 		}
 	}
 }
@@ -60,86 +42,24 @@ func (s *messageBroker) Lookup(query interface{}) (interface{}, error) {
 		return nil, fmt.Errorf("empty query")
 	}
 
-	// get latest snapshot table name / location & their latest apply index
-	// for the consumer to query outside of FSM.
-
-	// also get the current message index; for the consumer to query the log [apply, current]
-	// outside the FSM.
-
-	// The implementation needs to "guarantee" message received after current is forwarded afterwards
-
-	// the subscriber can just add in the map WITHOUT LOCK, just use this FSM :"""
-	// Might need to assess how to cleanly close this listener if no longer used. (eg if context is finished, remove also the map)
-
-	id := rand.Uint32()
-	s.listener[id] = &subscriber{
-		lastApplyIdx:    0,
-		currentEventIdx: s.eventIndex,
-		exitMessage:     "byee hehe 👋🏼🥰",
+	q, ok := query.(Query)
+	if !ok {
+		return nil, fmt.Errorf("invalid query")
 	}
 
-	return s.listener[id], nil
-}
-
-type subscriber struct {
-	closed      bool
-	ch          chan any
-	exitMessage any
-
-	lastApplyIdx    uint64
-	currentEventIdx uint64
-}
-
-var _ notifierapi.Notifier = &subscriber{}
-
-// in case of error, need to delete the entry in the FSM listener map
-func (c *subscriber) Publish(_ context.Context, msg any) error {
-	if c.closed {
-		return fmt.Errorf("closed")
+	if q == Query_Subscribe {
+		subs := s.broker.Subscribe()
+		return subs, nil
 	}
 
-	if c.ch == nil {
-		return fmt.Errorf("no listener")
-	}
-
-	go func(msg any) {
-		c.ch <- msg
-	}(msg)
-
-	return nil
-}
-
-func (c *subscriber) Listen(ctx context.Context) <-chan any {
-	subscribeChan := make(chan any)
-	c.ch = subscribeChan
-
-	go func() {
-		defer close(subscribeChan)
-
-		<-ctx.Done()
-
-		log.Info().Msgf("LISTEN CONTEXT ARE DONEE %v", ctx.Err())
-
-		c.closed = true
-		if c.exitMessage != nil {
-			subscribeChan <- c.exitMessage
-		}
-	}()
-
-	return c.ch
+	return nil, fmt.Errorf("unsupported query")
 }
 
 // Update updates the object using the specified committed raft entry.
 func (s *messageBroker) Update(e sm.Entry) (sm.Result, error) {
-
-	// switch cmd:
-	// 1. Create snapshot (eg by cron or number of entry in leader node; or triggered by (admin) API call manually..)
-	// 2. Write app command (eg. upsert & delete)
-
 	var cmd Command
 	err := json.Unmarshal(e.Cmd, &cmd)
 	if err != nil {
-		log.Err(err).Msgf("FAILEDDD TO UNMARZHAL")
 		return sm.Result{Value: uint64(len(e.Cmd)), Data: []byte("Fail miserably!")}, nil
 	}
 
@@ -152,14 +72,7 @@ func (s *messageBroker) Update(e sm.Entry) (sm.Result, error) {
 		Data:    cmd.Data,
 	}
 
-	ctx := context.Background()
-
-	for key, listener := range s.listener {
-		err := listener.Publish(ctx, event)
-		if err != nil {
-			delete(s.listener, key)
-		}
-	}
+	s.broker.Broadcast(context.Background(), event)
 
 	// write write write write to di log command.
 
@@ -207,20 +120,3 @@ func (s *messageBroker) RecoverFromSnapshot(r io.Reader,
 // or release as this is a pure in memory data store. Note that the Close
 // method is not guaranteed to be called as node can crash at any time.
 func (s *messageBroker) Close() error { return nil }
-
-func (s *messageBroker) leadershipChange(_ uint64, msg json.RawMessage) (sm.Result, error) {
-	v, err := UnmarshalAs[raftio.LeaderInfo](msg)
-	if err != nil {
-		return sm.Result{}, err
-	}
-
-	s.leader = v.LeaderID == s.replicaID
-
-	return sm.Result{Value: 1}, nil
-}
-
-func UnmarshalAs[T any](msg json.RawMessage) (T, error) {
-	var t T
-	err := json.Unmarshal(msg, &t)
-	return t, err
-}

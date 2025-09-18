@@ -14,6 +14,7 @@ import (
 	"time"
 
 	notifierapi "github.com/desain-gratis/common/delivery/notifier-api"
+	"github.com/desain-gratis/common/delivery/notifier-api/impl/dragonboat"
 	"github.com/julienschmidt/httprouter"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -100,7 +101,7 @@ func main() {
 		defer cancel()
 
 		// todo: retry
-		v, err := dhost.SyncRead(ctx, mapping.shardID, "haii")
+		v, err := dhost.SyncRead(ctx, mapping.shardID, dragonboat.Query_Subscribe)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			fmt.Fprintf(w, "error cuk: %v", err)
@@ -114,7 +115,7 @@ func main() {
 			}()
 		}()
 
-		notifier, ok := v.(notifierapi.Notifier)
+		notifier, ok := v.(notifierapi.Listener)
 		if !ok {
 			http.Error(w, "notifier noT?", http.StatusInternalServerError)
 			return
@@ -128,11 +129,9 @@ func main() {
 
 		log.Info().Msgf("LISTENING...")
 
-		ctxx := context.WithValue(r.Context(), "mhm", "aha")
-
 		w.WriteHeader(http.StatusAccepted)
 
-		for msg := range notifier.Listen(ctxx) {
+		for msg := range notifier.Listen(r.Context()) {
 			data, err := json.Marshal(msg)
 			if err != nil {
 				log.Err(err).Msgf("marshal feel %v", msg)
@@ -158,7 +157,8 @@ func main() {
 		Addr:    address,
 		Handler: router,
 
-		// I think this caused context to be cancelled (triggered somehow after the message are sent)
+		// Important: do not set this if we enable long running connection like this example
+
 		// ReadTimeout:  15 * time.Second,
 		// WriteTimeout: 15 * time.Second,
 

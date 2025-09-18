@@ -80,10 +80,10 @@ func enableBroadcaster(cfg DragonboatConfig) (*dragonboat.NodeHost, map[string]t
 				// sync propose as well..
 			}
 		}
-		simpleNotifier := notifierapi_simpl.NewSimpleNotifier("byee 🫰🏽💕")
-		sm := notifierapi_dimpl.New(simpleNotifier)
+		broker := notifierapi_simpl.NewBroker(true, 0, "server is closed, bye byee 🫰🏽💕 see u 🥹")
+		smf := notifierapi_dimpl.New(broker)
 
-		err = host.StartReplica(target, join, sm, config.Config{
+		err = host.StartReplica(target, join, smf, config.Config{
 			ShardID:            shardID,
 			ReplicaID:          cfg.ReplicaID,
 			HeartbeatRTT:       1,
