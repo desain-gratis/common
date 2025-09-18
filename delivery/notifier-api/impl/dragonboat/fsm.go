@@ -13,6 +13,7 @@ import (
 	"github.com/lni/dragonboat/v4/raftio"
 	"github.com/lni/dragonboat/v4/statemachine"
 	sm "github.com/lni/dragonboat/v4/statemachine"
+	"github.com/rs/zerolog/log"
 )
 
 type Command struct {
@@ -46,6 +47,7 @@ func New(notifier notifierapi.Notifier) statemachine.CreateStateMachineFunc {
 			shardID:   shardID,
 			replicaID: replicaID,
 			notifier:  notifier,
+			listener:  map[uint32]*subscriber{},
 		}
 	}
 }
@@ -115,6 +117,9 @@ func (c *subscriber) Listen(ctx context.Context) <-chan any {
 		defer close(subscribeChan)
 
 		<-ctx.Done()
+
+		log.Info().Msgf("LISTEN CONTEXT ARE DONEE %v", ctx.Err())
+
 		c.closed = true
 		if c.exitMessage != nil {
 			subscribeChan <- c.exitMessage
@@ -134,15 +139,11 @@ func (s *messageBroker) Update(e sm.Entry) (sm.Result, error) {
 	var cmd Command
 	err := json.Unmarshal(e.Cmd, &cmd)
 	if err != nil {
-		return sm.Result{Value: uint64(len(e.Cmd))}, err
+		log.Err(err).Msgf("FAILEDDD TO UNMARZHAL")
+		return sm.Result{Value: uint64(len(e.Cmd)), Data: []byte("Fail miserably!")}, nil
 	}
 
 	s.eventIndex++
-
-	// err = s.conn.Exec(context.Background(), `insert into ... dt `, "delete", "upsert", "etc as needed..")
-	// if err != nil {
-	// 	return sm.Result{Value: uint64(len(e.Cmd))}, err
-	// }
 
 	event := Event{
 		EvtName: "ggwp",
@@ -152,8 +153,6 @@ func (s *messageBroker) Update(e sm.Entry) (sm.Result, error) {
 	}
 
 	ctx := context.Background()
-
-	// s.notifier.Publish(ctx, event)
 
 	for key, listener := range s.listener {
 		err := listener.Publish(ctx, event)

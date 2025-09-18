@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -26,7 +27,8 @@ func main() {
 	ctx := context.Background()
 
 	var c, dc string
-	flag.StringVar(&dc, "dc", "config.json", "config path")
+	flag.StringVar(&c, "c", "config.json", "config path")
+	flag.StringVar(&dc, "dc", "dragonboat-config.json", "config path")
 	flag.Parse()
 
 	initConfig(ctx, c)
@@ -40,13 +42,18 @@ func main() {
 
 	router := httprouter.New()
 
-	address := "localhost:9090"
+	address := "0.0.0.0:9090"
 
 	router.GET("/", func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 		// print list of topic
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintf(w, "success")
 	})
 
 	router.GET("/:topic", func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+		// print list of topic
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintf(w, "success %v", p.ByName("topic"))
 		// print topic metadta
 	})
 
@@ -108,6 +115,10 @@ func main() {
 		}()
 
 		notifier, ok := v.(notifierapi.Notifier)
+		if !ok {
+			http.Error(w, "notifier noT?", http.StatusInternalServerError)
+			return
+		}
 
 		flusher, ok := w.(http.Flusher)
 		if !ok {
@@ -115,26 +126,41 @@ func main() {
 			return
 		}
 
-		for msg := range notifier.Listen(r.Context()) {
-			data, _ := json.Marshal(msg)
+		log.Info().Msgf("LISTENING...")
 
-			_, err := fmt.Fprintf(w, "%v\n", data)
+		ctxx := context.WithValue(r.Context(), "mhm", "aha")
+
+		w.WriteHeader(http.StatusAccepted)
+
+		for msg := range notifier.Listen(ctxx) {
+			data, err := json.Marshal(msg)
 			if err != nil {
+				log.Err(err).Msgf("marshal feel %v", msg)
+				continue
+			}
+
+			_, err = fmt.Fprintf(w, "%v\n", string(data))
+			if err != nil {
+				log.Err(err).Msgf("cannot write uhuy")
 				return
 			}
 
 			flusher.Flush() // can use ticker to flush every x millis...
 		}
 
+		log.Info().Msgf("KELUARKAH? %v", r.Context().Err())
+		fmt.Fprintf(w, "Bye")
 	})
 
 	// provides a way for long running connnection to stop cleanly
-	ctx, stop := context.WithCancel(context.Background())
+	ctx, stop := context.WithCancelCause(context.Background())
 	server := http.Server{
-		Addr:         address,
-		Handler:      router,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
+		Addr:    address,
+		Handler: router,
+
+		// I think this caused context to be cancelled (triggered somehow after the message are sent)
+		// ReadTimeout:  15 * time.Second,
+		// WriteTimeout: 15 * time.Second,
 
 		BaseContext: func(l net.Listener) context.Context { return ctx },
 	}
@@ -144,8 +170,9 @@ func main() {
 		sigint := make(chan os.Signal, 1)
 		signal.Notify(sigint, os.Interrupt)
 		<-sigint
+		log.Info().Msgf("SIGINT RECEIVED")
 
-		stop()
+		stop(errors.New("karena server closed"))
 
 		// We received an interrupt signal, shut down.
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

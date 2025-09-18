@@ -1,0 +1,32 @@
+services:
+  broadcaster1:
+    image: broadcaster:latest
+    ports:
+      - "9001:9090"
+    command: ["./broadcaster", "-dc", "/etc/broadcaster/config-1.json"]
+    volumes:
+      - ./configs:/etc/broadcaster
+      - ./data:/tmp
+
+  broadcaster2:
+    image: broadcaster:latest
+    ports:
+      - "9002:9090"
+    command: ["./broadcaster", "-dc", "/etc/broadcaster/config-2.json"]
+    volumes:
+      - ./configs:/etc/broadcaster
+      - ./data:/tmp
+
+  broadcaster3:
+    image: broadcaster:latest
+    ports:
+      - "9003:9090"
+    command: ["./broadcaster", "-dc", "/etc/broadcaster/config-3.json"]
+    volumes:
+      - ./configs:/etc/broadcaster
+      - ./data:/tmp
+
+
+volumes:
+  configs:
+    driver: local
