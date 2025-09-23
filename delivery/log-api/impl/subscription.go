@@ -3,9 +3,9 @@ package impl
 import (
 	"context"
 	"errors"
+	"time"
 
 	notifierapi "github.com/desain-gratis/common/delivery/log-api"
-	"github.com/rs/zerolog/log"
 )
 
 var _ notifierapi.Subscription = &subscription{}
@@ -23,14 +23,23 @@ type subscription struct {
 	listen      bool
 }
 
-func NewSubscription(async bool, bufferSize uint32, exitMessage any) *subscription {
+func NewSubscription(async bool, bufferSize uint32, exitMessage any, listenTimeout time.Duration) *subscription {
 	// add go routine to Close this subscription
 	// if it's not listened up immediately after certain time (eg. 2 seconds)
-	return &subscription{
+	s := &subscription{
 		async:       async,
 		exitMessage: exitMessage,
 		ch:          make(chan any, bufferSize),
 	}
+
+	if listenTimeout > 0 {
+		go func() {
+			time.Sleep(listenTimeout)
+			s.Close()
+		}()
+	}
+
+	return s
 }
 
 func (c *subscription) Listen(ctx context.Context) <-chan any {
@@ -49,7 +58,8 @@ func (c *subscription) Listen(ctx context.Context) <-chan any {
 
 func (c *subscription) Close() {
 	if c.listen {
-		// need to close the listen context first.
+		// once listened, the subscription can only be closed by
+		// expiring/cancelling the context in Listen method
 		return
 	}
 
@@ -57,7 +67,6 @@ func (c *subscription) Close() {
 	if c.exitMessage != nil {
 		c.ch <- c.exitMessage
 	}
-	log.Info().Msgf(" listener closed.")
 }
 
 func (c *subscription) Publish(_ context.Context, msg any) error {

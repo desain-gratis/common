@@ -82,8 +82,10 @@ func enableBroadcaster(cfg DragonboatConfig) (*dragonboat.NodeHost, map[string]t
 				// sync propose as well..
 			}
 		}
-		broker := notifierapi_simpl.NewBroker(func() notifierapi.Subscription {
-			return notifierapi_simpl.NewSubscription(true, 0, "server is closed, bye byee 🫰🏽💕 see u 🥹")
+
+		exitMsg := "server is closed, bye byee 🫰🏽💕 see u 🥹"
+		broker := notifierapi_simpl.NewTopic(func() notifierapi.Subscription {
+			return notifierapi_simpl.NewSubscription(true, 0, &exitMsg, 2*time.Second)
 		})
 
 		smf := notifierapi_dimpl.New(broker)

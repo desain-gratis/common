@@ -113,9 +113,9 @@ func enableApplicationAPI(
 	// extend user profile with notifier capability
 	exitMessage := "server said bye bye 👋🏼"
 	f := func() notifierapi.Subscription {
-		return notifierapi_impl.NewSubscription(true, 0, &exitMessage)
+		return notifierapi_impl.NewSubscription(true, 0, &exitMessage, 2*time.Second)
 	}
-	broker := notifierapi_impl.NewBroker(f)
+	broker := notifierapi_impl.NewTopic(f)
 
 	userProfileExtended := &withNotifier[*entity.UserProfile]{
 		Handler:  mycontent_base.New[*entity.UserProfile](userProfileRepo, 1),

@@ -14,23 +14,23 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-type messageBroker struct {
+type messagetopic struct {
 	shardID   uint64
 	replicaID uint64
 
 	leader       bool
 	appliedIndex uint64
 	conn         driver.Conn
-	broker       notifierapi.Broker
+	topic        notifierapi.Topic
 }
 
-// Specify message broker implementation
-func New(broker notifierapi.Broker) statemachine.CreateStateMachineFunc {
+// Specify message topic implementation
+func New(topic notifierapi.Topic) statemachine.CreateStateMachineFunc {
 	return func(shardID, replicaID uint64) sm.IStateMachine {
-		return &messageBroker{
+		return &messagetopic{
 			shardID:   shardID,
 			replicaID: replicaID,
-			broker:    broker,
+			topic:     topic,
 		}
 	}
 }
@@ -38,7 +38,7 @@ func New(broker notifierapi.Broker) statemachine.CreateStateMachineFunc {
 // Lookup performs local lookup on the ExampleStateMachine instance. In this example,
 // we always return the Count value as a little endian binary encoded byte
 // slice.
-func (s *messageBroker) Lookup(query interface{}) (interface{}, error) {
+func (s *messagetopic) Lookup(query interface{}) (interface{}, error) {
 	if query == nil {
 		return nil, fmt.Errorf("empty query")
 	}
@@ -48,7 +48,7 @@ func (s *messageBroker) Lookup(query interface{}) (interface{}, error) {
 		return nil, fmt.Errorf("invalid query")
 	}
 
-	subs, err := s.broker.GetSubscription(string(q))
+	subs, err := s.topic.GetSubscription(string(q))
 	if err != nil {
 		return nil, err
 	}
@@ -57,7 +57,7 @@ func (s *messageBroker) Lookup(query interface{}) (interface{}, error) {
 }
 
 // Update updates the object using the specified committed raft entry.
-func (s *messageBroker) Update(e sm.Entry) (sm.Result, error) {
+func (s *messagetopic) Update(e sm.Entry) (sm.Result, error) {
 	var cmd Command
 	err := json.Unmarshal(e.Cmd, &cmd)
 	if err != nil {
@@ -84,7 +84,7 @@ func (s *messageBroker) Update(e sm.Entry) (sm.Result, error) {
 
 		log.Info().Msgf("Adding subcription for replica ID: %v", replicaID)
 
-		subsID, subs := s.broker.Subscribe()
+		subsID, subs := s.topic.Subscribe()
 		subs.Publish(context.Background(), fmt.Sprintf("Welcome!👋🏼 starting to listen at: %v", s.appliedIndex))
 
 		return sm.Result{Value: s.appliedIndex, Data: []byte(subsID)}, nil
@@ -102,7 +102,7 @@ func (s *messageBroker) Update(e sm.Entry) (sm.Result, error) {
 	// but user can extend the fsm later, we should provide hook to handle the message
 
 	// broadcast to listener upon success write log
-	s.broker.Broadcast(context.Background(), event)
+	s.topic.Broadcast(context.Background(), event)
 
 	// write write write write to di log command.
 
@@ -111,7 +111,7 @@ func (s *messageBroker) Update(e sm.Entry) (sm.Result, error) {
 
 // SaveSnapshot saves the current IStateMachine state into a snapshot using the
 // specified io.Writer object.
-func (s *messageBroker) SaveSnapshot(w io.Writer,
+func (s *messagetopic) SaveSnapshot(w io.Writer,
 	fc sm.ISnapshotFileCollection, done <-chan struct{}) error {
 	// should be not need to do anything since we store them all in clickhouse log
 	// instead, we can have administrative update command to configure log retention / data trimming
@@ -134,7 +134,7 @@ func (s *messageBroker) SaveSnapshot(w io.Writer,
 }
 
 // RecoverFromSnapshot recovers the state using the provided snapshot.
-func (s *messageBroker) RecoverFromSnapshot(r io.Reader,
+func (s *messagetopic) RecoverFromSnapshot(r io.Reader,
 	files []sm.SnapshotFile,
 	done <-chan struct{}) error {
 	// restore the Count variable, that is the only state we maintain in this
@@ -155,4 +155,4 @@ func (s *messageBroker) RecoverFromSnapshot(r io.Reader,
 // Close closes the IStateMachine instance. There is nothing for us to cleanup
 // or release as this is a pure in memory data store. Note that the Close
 // method is not guaranteed to be called as node can crash at any time.
-func (s *messageBroker) Close() error { return nil }
+func (s *messagetopic) Close() error { return nil }

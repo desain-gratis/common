@@ -4,8 +4,8 @@ import (
 	"context"
 )
 
-// Broker implementation
-type Broker interface {
+// Topic implementation
+type Topic interface {
 	Subscribe() (string, Subscription)
 	GetSubscription(id string) (Subscription, error)
 	Broadcast(ctx context.Context, message any)

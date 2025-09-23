@@ -28,9 +28,10 @@ func init() {
 func main() {
 	ctx := context.Background()
 
-	var c, dc string
+	var c, dc, address string
 	flag.StringVar(&c, "c", "config.json", "config path")
 	flag.StringVar(&dc, "dc", "dragonboat-config.json", "config path")
+	flag.StringVar(&address, "address", "0.0.0.0:9090", "api bind address")
 	flag.Parse()
 
 	initConfig(ctx, c)
@@ -43,8 +44,6 @@ func main() {
 	dhost, fsms := enableBroadcaster(dcc)
 
 	router := httprouter.New()
-
-	address := "0.0.0.0:9090"
 
 	router.GET("/", func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 		// print list of topic
@@ -125,13 +124,6 @@ func main() {
 			return
 		}
 
-		defer func() {
-			go func() {
-				sess := dhost.GetNoOPSession(mapping.shardID)
-				dhost.SyncPropose(context.Background(), sess, []byte("cleanup listener with this id"))
-			}()
-		}()
-
 		notifier, ok := v.(notifierapi.Listener)
 		if !ok {
 			http.Error(w, "notifier noT?", http.StatusInternalServerError)
@@ -147,7 +139,7 @@ func main() {
 		log.Info().Msgf("LISTENING...")
 
 		w.WriteHeader(http.StatusAccepted)
-		w.Header().Add("Content-Type", "text/plain")
+		w.Header().Add("Content-Type", "text/plain") // so that browser can render them properly
 
 		// can save state here (eg. store last received msg)
 		for msg := range notifier.Listen(r.Context()) {
@@ -173,10 +165,13 @@ func main() {
 
 			flusher.Flush() // can use ticker to flush every x millis...
 		}
-
-		log.Info().Msgf("KELUARKAH? %v", r.Context().Err())
-		fmt.Fprintf(w, "Bye")
 	})
+
+	router.HandleOPTIONS = true
+	router.PanicHandler = func(w http.ResponseWriter, r *http.Request, i interface{}) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("oh no"))
+	}
 
 	// provides a way for long running connnection to stop cleanly
 	ctx, stop := context.WithCancelCause(context.Background())
@@ -185,7 +180,6 @@ func main() {
 		Handler: router,
 
 		// Important: do not set this if we enable long running connection like this example
-
 		// ReadTimeout:  15 * time.Second,
 		// WriteTimeout: 15 * time.Second,
 

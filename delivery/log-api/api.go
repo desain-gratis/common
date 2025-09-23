@@ -9,11 +9,11 @@ import (
 )
 
 type api struct {
-	n         Broker
+	n         Topic
 	transform func(v any) any
 }
 
-func NewDebugAPI(n Broker) *api {
+func NewDebugAPI(n Topic) *api {
 	return &api{n: n}
 }
 
