@@ -147,6 +147,7 @@ func main() {
 		log.Info().Msgf("LISTENING...")
 
 		w.WriteHeader(http.StatusAccepted)
+		w.Header().Add("Content-Type", "text/plain")
 
 		// can save state here (eg. store last received msg)
 		for msg := range notifier.Listen(r.Context()) {
