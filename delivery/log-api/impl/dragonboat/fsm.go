@@ -8,19 +8,20 @@ import (
 	"io"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
-	notifierapi "github.com/desain-gratis/common/delivery/notifier-api"
+	notifierapi "github.com/desain-gratis/common/delivery/log-api"
 	"github.com/lni/dragonboat/v4/statemachine"
 	sm "github.com/lni/dragonboat/v4/statemachine"
+	"github.com/rs/zerolog/log"
 )
 
 type messageBroker struct {
 	shardID   uint64
 	replicaID uint64
 
-	leader     bool
-	eventIndex uint64
-	conn       driver.Conn
-	broker     notifierapi.Broker
+	leader       bool
+	appliedIndex uint64
+	conn         driver.Conn
+	broker       notifierapi.Broker
 }
 
 // Specify message broker implementation
@@ -42,17 +43,17 @@ func (s *messageBroker) Lookup(query interface{}) (interface{}, error) {
 		return nil, fmt.Errorf("empty query")
 	}
 
-	q, ok := query.(Query)
+	q, ok := query.(SubscribeRequest)
 	if !ok {
 		return nil, fmt.Errorf("invalid query")
 	}
 
-	if q == Query_Subscribe {
-		subs := s.broker.Subscribe()
-		return subs, nil
+	subs, err := s.broker.GetSubscription(string(q))
+	if err != nil {
+		return nil, err
 	}
 
-	return nil, fmt.Errorf("unsupported query")
+	return subs, nil
 }
 
 // Update updates the object using the specified committed raft entry.
@@ -63,31 +64,64 @@ func (s *messageBroker) Update(e sm.Entry) (sm.Result, error) {
 		return sm.Result{Value: uint64(len(e.Cmd)), Data: []byte("Fail miserably!")}, nil
 	}
 
-	s.eventIndex++
+	// todo: sync write log entry to clickhouse, this one is immutable;
+	// not a key value based.
+	// based on:
+	// e.Index
 
+	if cmd.CmdName == "add-subscription" {
+		var replicaID uint64
+		err = json.Unmarshal(cmd.Data, &replicaID)
+		if err != nil {
+			return sm.Result{Value: uint64(len(e.Cmd)), Data: []byte("Invalid replicaID data miserably!")}, nil
+		}
+
+		if replicaID != s.replicaID {
+			// listener only created on the requested replica.
+			return sm.Result{Value: uint64(len(e.Cmd)), Data: []byte(
+				fmt.Sprintf("not the expected replica. expected: %v, got: %v", s.replicaID, replicaID))}, nil
+		}
+
+		log.Info().Msgf("Adding subcription for replica ID: %v", replicaID)
+
+		subsID, subs := s.broker.Subscribe()
+		subs.Publish(context.Background(), fmt.Sprintf("Welcome!👋🏼 starting to listen at: %v", s.appliedIndex))
+
+		return sm.Result{Value: s.appliedIndex, Data: []byte(subsID)}, nil
+	}
+
+	s.appliedIndex = e.Index
 	event := Event{
-		EvtName: "ggwp",
+		EvtName: "tail",
 		EvtVer:  1,
-		EvtID:   s.eventIndex,
+		EvtID:   s.appliedIndex,
 		Data:    cmd.Data,
 	}
 
+	// strictly log processing (not key value)
+	// but user can extend the fsm later, we should provide hook to handle the message
+
+	// broadcast to listener upon success write log
 	s.broker.Broadcast(context.Background(), event)
 
 	// write write write write to di log command.
 
-	return sm.Result{Value: s.eventIndex}, nil
+	return sm.Result{Value: s.appliedIndex}, nil
 }
 
 // SaveSnapshot saves the current IStateMachine state into a snapshot using the
 // specified io.Writer object.
 func (s *messageBroker) SaveSnapshot(w io.Writer,
 	fc sm.ISnapshotFileCollection, done <-chan struct{}) error {
+	// should be not need to do anything since we store them all in clickhouse log
+	// instead, we can have administrative update command to configure log retention / data trimming
+	// so this basically making this a log server.
+
 	// as shown above, the only state that can be saved is the Count variable
 	// there is no external file in this IStateMachine example, we thus leave
 	// the fc untouched
 	data := make([]byte, 8)
-	binary.LittleEndian.PutUint64(data, s.eventIndex)
+	binary.LittleEndian.PutUint64(data, s.appliedIndex)
 	_, err := w.Write(data)
 
 	// create new table using (all time, already there) + (last apply ,all commmand until current apply index)
@@ -106,12 +140,14 @@ func (s *messageBroker) RecoverFromSnapshot(r io.Reader,
 	// restore the Count variable, that is the only state we maintain in this
 	// example, the input files is expected to be empty
 
+	// Just query the log clickhouse log, check the latest applied index
+
 	data, err := io.ReadAll(r)
 	if err != nil {
 		return err
 	}
 	v := binary.LittleEndian.Uint64(data)
-	s.eventIndex = v
+	s.appliedIndex = v
 
 	return nil
 }

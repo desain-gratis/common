@@ -11,10 +11,11 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"time"
 
-	notifierapi "github.com/desain-gratis/common/delivery/notifier-api"
-	"github.com/desain-gratis/common/delivery/notifier-api/impl/dragonboat"
+	notifierapi "github.com/desain-gratis/common/delivery/log-api"
+	"github.com/desain-gratis/common/delivery/log-api/impl/dragonboat"
 	"github.com/julienschmidt/httprouter"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -97,11 +98,27 @@ func main() {
 			return
 		}
 
+		sess := dhost.GetNoOPSession(mapping.shardID)
+
+		ctx, c := context.WithTimeout(context.Background(), 5*time.Second)
+		defer c()
+
+		payload, _ := json.Marshal(dragonboat.Command{
+			CmdName: "add-subscription",
+			Data:    json.RawMessage(strconv.FormatUint(mapping.replicaID, 10)),
+		})
+		listenResponse, err := dhost.SyncPropose(ctx, sess, payload)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprintf(w, "lapolizia: %v", err)
+			return
+		}
+
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
 		// todo: retry
-		v, err := dhost.SyncRead(ctx, mapping.shardID, dragonboat.Query_Subscribe)
+		v, err := dhost.SyncRead(ctx, mapping.shardID, dragonboat.SubscribeRequest(listenResponse.Data))
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			fmt.Fprintf(w, "error cuk: %v", err)
@@ -131,7 +148,16 @@ func main() {
 
 		w.WriteHeader(http.StatusAccepted)
 
+		// can save state here (eg. store last received msg)
 		for msg := range notifier.Listen(r.Context()) {
+			// client (FE) can do this:
+			// client can store G --> last applied
+			// if received tail, store the latest applied info as G
+			// if received hello, check if we already have G, if yes ignore.
+			// if no, we not yet receive tail.. we latest applied info as G.
+			// G is used to query logs before the tail;
+			// or if we were to use a Key-Value storage snapshot, G is used to
+			// query the message between latest applied snapshot to G inclusive.
 			data, err := json.Marshal(msg)
 			if err != nil {
 				log.Err(err).Msgf("marshal feel %v", msg)

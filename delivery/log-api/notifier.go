@@ -6,7 +6,8 @@ import (
 
 // Broker implementation
 type Broker interface {
-	Subscribe() Subscription
+	Subscribe() (string, Subscription)
+	GetSubscription(id string) (Subscription, error)
 	Broadcast(ctx context.Context, message any)
 }
 

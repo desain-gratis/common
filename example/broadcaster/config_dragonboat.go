@@ -25,7 +25,7 @@ type FSMConfig struct {
 	Bootstrap map[string]int `json:"bootstrap"`
 }
 
-func initDragonboatConfig(ctx context.Context, cfgFile string) (cfg DragonboatConfig, err error) {
+func initDragonboatConfig(_ context.Context, cfgFile string) (cfg DragonboatConfig, err error) {
 	f, err := os.Open(cfgFile)
 	if err != nil {
 		log.Panic().Msgf("failed to open file %v", cfgFile)

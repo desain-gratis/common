@@ -9,12 +9,12 @@ import (
 	"os/signal"
 	"time"
 
+	notifierapi "github.com/desain-gratis/common/delivery/log-api"
+	notifierapi_impl "github.com/desain-gratis/common/delivery/log-api/impl"
 	mycontentapi "github.com/desain-gratis/common/delivery/mycontent-api"
 	mycontent_base "github.com/desain-gratis/common/delivery/mycontent-api/mycontent/base"
 	blob_s3 "github.com/desain-gratis/common/delivery/mycontent-api/storage/blob/s3"
 	content_postgres "github.com/desain-gratis/common/delivery/mycontent-api/storage/content/postgres"
-	notifierapi "github.com/desain-gratis/common/delivery/notifier-api"
-	notifierapi_impl "github.com/desain-gratis/common/delivery/notifier-api/impl"
 	"github.com/desain-gratis/common/example/user-profile/entity"
 	"github.com/julienschmidt/httprouter"
 	"github.com/rs/zerolog"
@@ -112,11 +112,14 @@ func enableApplicationAPI(
 
 	// extend user profile with notifier capability
 	exitMessage := "server said bye bye 👋🏼"
-	userProfileNotifier := notifierapi_impl.
-		NewBroker(true, 0, &exitMessage)
+	f := func() notifierapi.Subscription {
+		return notifierapi_impl.NewSubscription(true, 0, &exitMessage)
+	}
+	broker := notifierapi_impl.NewBroker(f)
+
 	userProfileExtended := &withNotifier[*entity.UserProfile]{
 		Handler:  mycontent_base.New[*entity.UserProfile](userProfileRepo, 1),
-		notifier: userProfileNotifier,
+		notifier: broker,
 	}
 
 	userProfileHandler := mycontentapi.New(
@@ -152,7 +155,7 @@ func enableApplicationAPI(
 
 	// TODO: since the usage is common, we can just ship it to default mycontentapi
 	router.GET("/org/user/tail", notifierapi.
-		NewDebugAPI(userProfileNotifier).
+		NewDebugAPI(broker).
 		WithTransform(func(v any) any {
 			data, _ := json.Marshal(v)
 			return string(data)

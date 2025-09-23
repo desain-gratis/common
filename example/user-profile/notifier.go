@@ -3,9 +3,9 @@ package main
 import (
 	"context"
 
+	notifierapi "github.com/desain-gratis/common/delivery/log-api"
 	"github.com/desain-gratis/common/delivery/mycontent-api/mycontent"
 	mycontent_base "github.com/desain-gratis/common/delivery/mycontent-api/mycontent/base"
-	notifierapi "github.com/desain-gratis/common/delivery/notifier-api"
 	types "github.com/desain-gratis/common/types/http"
 )
 

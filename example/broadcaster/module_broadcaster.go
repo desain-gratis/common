@@ -6,8 +6,9 @@ import (
 	"strconv"
 	"time"
 
-	notifierapi_simpl "github.com/desain-gratis/common/delivery/notifier-api/impl"
-	notifierapi_dimpl "github.com/desain-gratis/common/delivery/notifier-api/impl/dragonboat"
+	notifierapi "github.com/desain-gratis/common/delivery/log-api"
+	notifierapi_simpl "github.com/desain-gratis/common/delivery/log-api/impl"
+	notifierapi_dimpl "github.com/desain-gratis/common/delivery/log-api/impl/dragonboat"
 	"github.com/lni/dragonboat/v4"
 	"github.com/lni/dragonboat/v4/config"
 	"github.com/lni/dragonboat/v4/raftio"
@@ -15,8 +16,9 @@ import (
 )
 
 type topicData struct {
-	name    string
-	shardID uint64
+	name      string
+	shardID   uint64
+	replicaID uint64
 }
 
 func enableBroadcaster(cfg DragonboatConfig) (*dragonboat.NodeHost, map[string]topicData) {
@@ -80,7 +82,10 @@ func enableBroadcaster(cfg DragonboatConfig) (*dragonboat.NodeHost, map[string]t
 				// sync propose as well..
 			}
 		}
-		broker := notifierapi_simpl.NewBroker(true, 0, "server is closed, bye byee 🫰🏽💕 see u 🥹")
+		broker := notifierapi_simpl.NewBroker(func() notifierapi.Subscription {
+			return notifierapi_simpl.NewSubscription(true, 0, "server is closed, bye byee 🫰🏽💕 see u 🥹")
+		})
+
 		smf := notifierapi_dimpl.New(broker)
 
 		err = host.StartReplica(target, join, smf, config.Config{
@@ -89,7 +94,7 @@ func enableBroadcaster(cfg DragonboatConfig) (*dragonboat.NodeHost, map[string]t
 			HeartbeatRTT:       1,
 			CheckQuorum:        true,
 			ElectionRTT:        10,
-			SnapshotEntries:    10,
+			SnapshotEntries:    10, // todo: set to 0. let manual snapshot by cron by calling request snapshot.
 			CompactionOverhead: 5,
 		})
 		if err != nil {
@@ -97,8 +102,9 @@ func enableBroadcaster(cfg DragonboatConfig) (*dragonboat.NodeHost, map[string]t
 		}
 
 		mapping[fsm.Name] = topicData{
-			name:    fsm.Name,
-			shardID: shardID,
+			name:      fsm.Name,
+			shardID:   shardID,
+			replicaID: cfg.ReplicaID,
 		}
 	}
 
