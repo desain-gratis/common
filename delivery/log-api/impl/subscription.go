@@ -13,33 +13,46 @@ var _ notifierapi.Subscription = &subscription{}
 var (
 	ErrListenerClosed = errors.New("closed")
 	ErrListenerEmpty  = errors.New("no listener")
+	ErrNotStarted     = errors.New("not started")
+	ErrListenTimedOut = errors.New("listen timed out")
 )
 
 type subscription struct {
+	id          string
+	started     bool
 	closed      bool
 	ch          chan any
 	exitMessage any
 	async       bool
 	listen      bool
+	timeout     bool
 }
 
-func NewSubscription(async bool, bufferSize uint32, exitMessage any, listenTimeout time.Duration) *subscription {
+func NewSubscription(id string, async bool, bufferSize uint32, exitMessage any, listenTimeout time.Duration) *subscription {
 	// add go routine to Close this subscription
 	// if it's not listened up immediately after certain time (eg. 2 seconds)
 	s := &subscription{
 		async:       async,
 		exitMessage: exitMessage,
 		ch:          make(chan any, bufferSize),
+		id:          id,
 	}
 
 	if listenTimeout > 0 {
 		go func() {
 			time.Sleep(listenTimeout)
-			s.Close()
+			s.timeout = true
 		}()
 	}
 
 	return s
+}
+func (c *subscription) ID() string {
+	return c.id
+}
+
+func (c *subscription) Start() {
+	c.started = true
 }
 
 func (c *subscription) Listen(ctx context.Context) <-chan any {
@@ -47,8 +60,10 @@ func (c *subscription) Listen(ctx context.Context) <-chan any {
 		defer close(c.ch)
 
 		<-ctx.Done()
-		c.listen = false
-		c.Close()
+		c.closed = true
+		if c.exitMessage != nil {
+			c.ch <- c.exitMessage
+		}
 	}()
 
 	c.listen = true
@@ -56,26 +71,17 @@ func (c *subscription) Listen(ctx context.Context) <-chan any {
 	return c.ch
 }
 
-func (c *subscription) Close() {
-	if c.listen {
-		// once listened, the subscription can only be closed by
-		// expiring/cancelling the context in Listen method
-		return
-	}
-
-	c.closed = true
-	if c.exitMessage != nil {
-		c.ch <- c.exitMessage
-	}
-}
-
 func (c *subscription) Publish(_ context.Context, msg any) error {
 	if c.closed {
 		return ErrListenerClosed
 	}
 
-	if c.ch == nil {
-		return ErrListenerEmpty
+	if !c.started {
+		return ErrNotStarted
+	}
+
+	if c.timeout && !c.listen {
+		return ErrListenTimedOut
 	}
 
 	if c.async {

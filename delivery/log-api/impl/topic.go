@@ -2,11 +2,13 @@ package impl
 
 import (
 	"context"
+	"errors"
 	"math/rand/v2"
 	"strconv"
 	"sync"
 
 	notifierapi "github.com/desain-gratis/common/delivery/log-api"
+	"github.com/rs/zerolog/log"
 )
 
 var _ notifierapi.Topic = &topic{}
@@ -18,7 +20,12 @@ type topic struct {
 	csf      CreateSubscription
 }
 
-type CreateSubscription func() notifierapi.Subscription
+var (
+	ErrNotFound   = errors.New("not found")
+	ErrInvalidKey = errors.New("invalid key")
+)
+
+type CreateSubscription func(id string) notifierapi.Subscription
 
 // NewTopic create a new topic with create subscription function
 func NewTopic(csf CreateSubscription) notifierapi.Topic {
@@ -29,30 +36,54 @@ func NewTopic(csf CreateSubscription) notifierapi.Topic {
 	}
 }
 
-func (s *topic) Subscribe() (string, notifierapi.Subscription) {
+func getKey(uid uint64) string {
+	idstr := strconv.FormatUint(uid, 10)
+	return idstr
+}
+
+func (s *topic) Subscribe() notifierapi.Subscription {
 	id := rand.Uint64() // change id impl to avoid conflict if needed
 
+	subs := s.csf(getKey(id))
+
 	s.lock.Lock()
-	s.listener[id] = s.csf()
+	s.listener[id] = subs
 	s.lock.Unlock()
 
 	// todo: add timeout if there is no active listener to close the listener.
 
-	return strconv.FormatUint(id, 10), s.listener[id]
+	return s.listener[id]
 }
 
 func (s *topic) GetSubscription(id string) (notifierapi.Subscription, error) {
 	iduint, err := strconv.ParseUint(id, 10, 64)
 	if err != nil {
-		return nil, err
+		return nil, ErrInvalidKey
 	}
 
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 
-	l := s.listener[iduint]
+	l, ok := s.listener[iduint]
+	if !ok {
+		return nil, ErrNotFound
+	}
 
 	return l, nil
+}
+
+func (s *topic) RemoveSubscription(id string) error {
+	iduint, err := strconv.ParseUint(id, 10, 64)
+	if err != nil {
+		return ErrInvalidKey
+	}
+
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	delete(s.listener, iduint)
+
+	return nil
 }
 
 func (s *topic) Broadcast(ctx context.Context, message any) {
@@ -74,6 +105,7 @@ func (s *topic) Broadcast(ctx context.Context, message any) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	for _, key := range delKey {
+		log.Info().Msgf("deletion: %v", key)
 		delete(s.listener, key)
 	}
 }

@@ -6,13 +6,14 @@ import (
 	"strconv"
 	"time"
 
-	notifierapi "github.com/desain-gratis/common/delivery/log-api"
-	notifierapi_simpl "github.com/desain-gratis/common/delivery/log-api/impl"
-	notifierapi_dimpl "github.com/desain-gratis/common/delivery/log-api/impl/dragonboat"
 	"github.com/lni/dragonboat/v4"
 	"github.com/lni/dragonboat/v4/config"
 	"github.com/lni/dragonboat/v4/raftio"
 	"github.com/rs/zerolog/log"
+
+	logapi "github.com/desain-gratis/common/delivery/log-api"
+	logapi_impl "github.com/desain-gratis/common/delivery/log-api/impl"
+	logapi_sm_topic_impl "github.com/desain-gratis/common/delivery/log-api/impl/state-machine/topic"
 )
 
 type topicData struct {
@@ -57,10 +58,11 @@ func enableBroadcaster(cfg DragonboatConfig) (*dragonboat.NodeHost, map[string]t
 				log.Info().Msgf("i'm the leader for shard: %v | %v %v %v %v", shardID, a, i, u, e)
 				log.Info().Msgf("proposing to the state machine...")
 
-				d, _ := json.Marshal(map[string]any{
-					"event_id":      "update-leader",
-					"event_version": 0,
-					"data":          info,
+				info, _ := json.Marshal(info)
+				d, _ := json.Marshal(logapi_sm_topic_impl.UpdateRequest{
+					CmdName: logapi_sm_topic_impl.Command_UpdateLeader,
+					CmdVer:  0,
+					Data:    info,
 				})
 
 				sess := host.GetNoOPSession(shardID)
@@ -84,11 +86,11 @@ func enableBroadcaster(cfg DragonboatConfig) (*dragonboat.NodeHost, map[string]t
 		}
 
 		exitMsg := "server is closed, bye byee 🫰🏽💕 see u 🥹"
-		broker := notifierapi_simpl.NewTopic(func() notifierapi.Subscription {
-			return notifierapi_simpl.NewSubscription(true, 0, &exitMsg, 2*time.Second)
+		broker := logapi_impl.NewTopic(func(key string) logapi.Subscription {
+			return logapi_impl.NewSubscription(key, true, 0, &exitMsg, 2*time.Second)
 		})
 
-		smf := notifierapi_dimpl.New(broker)
+		smf := logapi_sm_topic_impl.New(broker)
 
 		err = host.StartReplica(target, join, smf, config.Config{
 			ShardID:            shardID,

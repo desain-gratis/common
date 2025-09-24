@@ -11,11 +11,10 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
 	"time"
 
 	notifierapi "github.com/desain-gratis/common/delivery/log-api"
-	"github.com/desain-gratis/common/delivery/log-api/impl/dragonboat"
+	sm_topic "github.com/desain-gratis/common/delivery/log-api/impl/state-machine/topic"
 	"github.com/julienschmidt/httprouter"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -102,11 +101,37 @@ func main() {
 		ctx, c := context.WithTimeout(context.Background(), 5*time.Second)
 		defer c()
 
-		payload, _ := json.Marshal(dragonboat.Command{
-			CmdName: "add-subscription",
-			Data:    json.RawMessage(strconv.FormatUint(mapping.replicaID, 10)),
+		// 1. get & register local instance of the subscription
+		v, err := dhost.SyncRead(ctx, mapping.shardID, sm_topic.QuerySubscribe{})
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprintf(w, "sync read error: %v", err)
+			return
+		}
+
+		l, ok := v.(notifierapi.Listener)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprintf(w, "not a listener error: %v", err)
+			return
+		}
+
+		// 2. start consuming data from the subscription
+		data, err := json.Marshal(sm_topic.StartSubscriptionData{
+			SubscriptionID: l.ID(),
+			ReplicaID:      mapping.replicaID,
 		})
-		listenResponse, err := dhost.SyncPropose(ctx, sess, payload)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprintf(w, "error: %v", err)
+			return
+		}
+		payload, _ := json.Marshal(sm_topic.UpdateRequest{
+			CmdName: sm_topic.Command_StartSubscription,
+			Data:    data,
+		})
+
+		_, err = dhost.SyncPropose(ctx, sess, payload)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			fmt.Fprintf(w, "lapolizia: %v", err)
@@ -115,14 +140,6 @@ func main() {
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-
-		// todo: retry
-		v, err := dhost.SyncRead(ctx, mapping.shardID, dragonboat.SubscribeRequest(listenResponse.Data))
-		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			fmt.Fprintf(w, "error cuk: %v", err)
-			return
-		}
 
 		notifier, ok := v.(notifierapi.Listener)
 		if !ok {

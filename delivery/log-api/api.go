@@ -31,7 +31,7 @@ func (c *api) ListenHandler(w http.ResponseWriter, r *http.Request, p httprouter
 		return
 	}
 
-	_, subs := c.n.Subscribe()
+	subs := c.n.Subscribe()
 
 	for msg := range subs.Listen(r.Context()) {
 		if c.transform != nil {
