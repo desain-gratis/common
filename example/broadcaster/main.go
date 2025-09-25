@@ -10,13 +10,10 @@ import (
 	"os/signal"
 	"time"
 
-	logapi "github.com/desain-gratis/common/delivery/log-api"
-	logapi_impl "github.com/desain-gratis/common/delivery/log-api/impl"
 	logapi_impl_replicated "github.com/desain-gratis/common/delivery/log-api/impl/replicated"
 	"github.com/desain-gratis/common/utility/smregistry"
 	"github.com/julienschmidt/httprouter"
 	"github.com/lni/dragonboat/v4"
-	"github.com/lni/dragonboat/v4/statemachine"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
@@ -36,17 +33,16 @@ func main() {
 
 	initConfig(ctx, c)
 
-	dsmr, err := smregistry.NewDragonboat(ctx, dc)
+	dregistry, err := smregistry.NewDragonboat(ctx, dc)
 	if err != nil {
 		log.Panic().Msgf("UHUY CONFIG %v", err)
 	}
 
-	// dcc, err := initDragonboatConfig(ctx, dc)
-
 	router := httprouter.New()
 
 	// register state machine of type "log"
-	smregistry.Register(dsmr, "log", func(dhost *dragonboat.NodeHost, instance smregistry.SMConfig2, appConfig LogConfig) statemachine.CreateStateMachineFunc {
+	smregistry.Register(dregistry, "log", logapi_impl_replicated.CreateSM)
+	smregistry.RegisterEtc(dregistry, "log", func(dhost *dragonboat.NodeHost, instance smregistry.SMConfig2) {
 		// Create API handler for the state machine
 		brokerAPI := broker{
 			shardID:   instance.ShardID,
@@ -57,17 +53,9 @@ func main() {
 		router.GET("/"+instance.Name, brokerAPI.GetTopic)
 		router.POST("/"+instance.Name, brokerAPI.Publish)
 		router.GET("/"+instance.Name+"/tail", brokerAPI.Tail)
-
-		// Create the state machine
-		topic := logapi_impl.NewTopic(func(key string) logapi.Subscription {
-			return logapi_impl.NewSubscription(key, true, 0, appConfig.ExitMessage, time.Duration(appConfig.ListenTimeoutS)*time.Second)
-		})
-		smf := logapi_impl_replicated.NewSMF(topic)
-
-		return smf
 	})
 
-	dsmr.Start(context.Background())
+	dregistry.Start(context.Background())
 
 	router.HandleOPTIONS = true
 	router.PanicHandler = func(w http.ResponseWriter, r *http.Request, i interface{}) {
@@ -118,11 +106,4 @@ func main() {
 
 	<-idleConnsClosed
 	log.Info().Msgf("Bye bye")
-}
-
-type LogConfig struct {
-	ExitMessage    *string `json:"exit_message,omitempty"`
-	Async          bool    `json:"async"`
-	BufferSize     uint64  `json:"buffer_size"`
-	ListenTimeoutS uint32  `json:"listen_timeout_s"`
 }

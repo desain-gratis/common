@@ -9,7 +9,10 @@ import (
 
 	logapi "github.com/desain-gratis/common/delivery/log-api"
 	notifierapi "github.com/desain-gratis/common/delivery/log-api"
+	logapi_impl "github.com/desain-gratis/common/delivery/log-api/impl"
+	"github.com/desain-gratis/common/utility/smregistry"
 	"github.com/lni/dragonboat/v4"
+	"github.com/lni/dragonboat/v4/statemachine"
 )
 
 var _ notifierapi.Topic = &replicatedTopic{}
@@ -24,6 +27,25 @@ type replicatedTopic struct {
 type DragonboatShardConfig struct {
 	ShardID   uint64
 	ReplicaID uint64
+}
+
+type LogConfig struct {
+	ExitMessage    *string `json:"exit_message,omitempty"`
+	Async          bool    `json:"async"`
+	BufferSize     uint64  `json:"buffer_size"`
+	ListenTimeoutS uint32  `json:"listen_timeout_s"`
+}
+
+func CreateSM(dhost *dragonboat.NodeHost, instance smregistry.SMConfig2, appConfig LogConfig) statemachine.CreateStateMachineFunc {
+	subsGen := func(key string) logapi.Subscription {
+		return logapi_impl.NewSubscription(key, true, 0, appConfig.ExitMessage, time.Duration(appConfig.ListenTimeoutS)*time.Second)
+	}
+
+	topic := logapi_impl.NewTopic(subsGen)
+
+	stateMachineFn := NewSMF(topic)
+
+	return stateMachineFn
 }
 
 // New extends the default topic with replication ability using dragonboat raft library

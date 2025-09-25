@@ -15,6 +15,12 @@ type SMConfigTyped[T any] struct {
 	ReplicaID uint64
 }
 
+type ExtensionFunction func(dhost *dragonboat.NodeHost, smConfig SMConfig2)
+
+func RegisterEtc(r *dragonboatRegistry, fsmType string, fn ExtensionFunction) {
+	r.registryExt[fsmType] = fn
+}
+
 func Register[T any](r *dragonboatRegistry, fsmType string, fn StateMachineFunction[T]) {
 	r.registry[fsmType] = func(dhost *dragonboat.NodeHost, smConfig SMConfig2, appConfig any) statemachine.CreateStateMachineFunc {
 		cfg, ok := appConfig.(T)

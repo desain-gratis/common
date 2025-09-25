@@ -23,9 +23,10 @@ type StateMachineFunction[T any] func(dhost *dragonboat.NodeHost, smConfig SMCon
 type stateMachineFunction func(dhost *dragonboat.NodeHost, smConfig SMConfig2, appConfig any) statemachine.CreateStateMachineFunc
 
 type dragonboatRegistry struct {
-	cfg       DragonboatConfig
-	registry  map[string]stateMachineFunction
-	cfgParser map[string]func(json.RawMessage) (any, error)
+	cfg         DragonboatConfig
+	registry    map[string]stateMachineFunction
+	cfgParser   map[string]func(json.RawMessage) (any, error)
+	registryExt map[string]ExtensionFunction
 }
 
 func NewDragonboat(ctx context.Context, configPath string) (*dragonboatRegistry, error) {
@@ -35,9 +36,10 @@ func NewDragonboat(ctx context.Context, configPath string) (*dragonboatRegistry,
 	}
 
 	return &dragonboatRegistry{
-		cfg:       cfg,
-		registry:  make(map[string]stateMachineFunction),
-		cfgParser: make(map[string]func(json.RawMessage) (any, error)),
+		cfg:         cfg,
+		registry:    make(map[string]stateMachineFunction),
+		cfgParser:   make(map[string]func(json.RawMessage) (any, error)),
+		registryExt: make(map[string]ExtensionFunction),
 	}, nil
 }
 
@@ -94,11 +96,12 @@ func (r *dragonboatRegistry) Start(ctx context.Context) {
 
 		log.Info().Msgf("app config: %+v", appConfig)
 
-		dragonboatSM := smf(dhost, SMConfig2{
+		cfg2 := SMConfig2{
 			ReplicaID: r.cfg.ReplicaID,
 			ShardID:   shardID,
 			SMConfig:  sm,
-		}, appConfig)
+		}
+		dragonboatSM := smf(dhost, cfg2, appConfig)
 
 		err = dhost.StartReplica(target, join, dragonboatSM, config.Config{
 			ShardID:            shardID,
@@ -112,6 +115,14 @@ func (r *dragonboatRegistry) Start(ctx context.Context) {
 		if err != nil {
 			log.Panic().Msgf("start replica: %v", err)
 		}
+
+		// register others
+		ext, ok := r.registryExt[sm.Type]
+		if !ok {
+			log.Error().Msgf("type not found for ext: %v", sm.Type)
+			continue
+		}
+		ext(dhost, cfg2)
 	}
 }
 
