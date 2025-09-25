@@ -41,7 +41,7 @@ func getKey(uid uint64) string {
 	return idstr
 }
 
-func (s *topic) Subscribe() notifierapi.Subscription {
+func (s *topic) Subscribe() (notifierapi.Subscription, error) {
 	id := rand.Uint64() // change id impl to avoid conflict if needed
 
 	subs := s.csf(getKey(id))
@@ -52,7 +52,7 @@ func (s *topic) Subscribe() notifierapi.Subscription {
 
 	// todo: add timeout if there is no active listener to close the listener.
 
-	return s.listener[id]
+	return s.listener[id], nil
 }
 
 func (s *topic) GetSubscription(id string) (notifierapi.Subscription, error) {
@@ -86,7 +86,7 @@ func (s *topic) RemoveSubscription(id string) error {
 	return nil
 }
 
-func (s *topic) Broadcast(ctx context.Context, message any) {
+func (s *topic) Broadcast(ctx context.Context, message any) error {
 	delKey := make([]uint64, 0)
 
 	wg := new(sync.WaitGroup)
@@ -108,4 +108,6 @@ func (s *topic) Broadcast(ctx context.Context, message any) {
 		log.Info().Msgf("deletion: %v", key)
 		delete(s.listener, key)
 	}
+
+	return nil
 }

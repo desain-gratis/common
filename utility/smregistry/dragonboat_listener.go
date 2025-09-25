@@ -1,4 +1,4 @@
-package main
+package smregistry
 
 import (
 	"github.com/lni/dragonboat/v4/raftio"

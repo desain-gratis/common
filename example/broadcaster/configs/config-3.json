@@ -4,10 +4,13 @@
     "wal_dir": "/data/data-3",
     "nodehost_dir": "/data/data-3",
     "deployment_id": 0,
-    "fsm": {
+    "sm": {
         "1": {
             "name": "topic-a",
-            "fsm_id": "config"
+            "type": "log",
+            "config": {
+                "exit_message": "lov u ❤️ bye byee 🥹"
+            }
         }
     }
 }

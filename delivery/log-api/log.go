@@ -1,20 +1,15 @@
-package notifierapi
+package logapi
 
 import (
 	"context"
-	"errors"
-)
-
-var (
-	ErrNotStarted = errors.New("not started")
 )
 
 // Topic implementation
 type Topic interface {
-	Subscribe() Subscription
+	Subscribe() (Subscription, error)
 	GetSubscription(id string) (Subscription, error)
 	RemoveSubscription(id string) error
-	Broadcast(ctx context.Context, message any)
+	Broadcast(ctx context.Context, message any) error
 }
 
 // It can be a "FSM" that lives on each request

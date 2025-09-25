@@ -4,10 +4,10 @@
     "wal_dir": "/data/data-2",
     "nodehost_dir": "/data/data-2",
     "deployment_id": 0,
-    "fsm": {
+    "sm": {
         "1": {
             "name": "topic-a",
-            "fsm_id": "config"
+            "type": "log"
         }
     }
 }

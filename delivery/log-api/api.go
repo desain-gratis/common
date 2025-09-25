@@ -1,4 +1,4 @@
-package notifierapi
+package logapi
 
 import (
 	"fmt"
@@ -31,7 +31,11 @@ func (c *api) ListenHandler(w http.ResponseWriter, r *http.Request, p httprouter
 		return
 	}
 
-	subs := c.n.Subscribe()
+	subs, err := c.n.Subscribe()
+	if err != nil {
+		http.Error(w, "failed to subscribe to topic", http.StatusInternalServerError)
+		return
+	}
 
 	for msg := range subs.Listen(r.Context()) {
 		if c.transform != nil {

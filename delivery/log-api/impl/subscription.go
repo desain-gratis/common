@@ -3,6 +3,7 @@ package impl
 import (
 	"context"
 	"errors"
+	"reflect"
 	"time"
 
 	notifierapi "github.com/desain-gratis/common/delivery/log-api"
@@ -61,7 +62,7 @@ func (c *subscription) Listen(ctx context.Context) <-chan any {
 
 		<-ctx.Done()
 		c.closed = true
-		if c.exitMessage != nil {
+		if !checkNilInterface(c.exitMessage) {
 			c.ch <- c.exitMessage
 		}
 	}()
@@ -93,4 +94,18 @@ func (c *subscription) Publish(_ context.Context, msg any) error {
 	}
 
 	return nil
+}
+
+// https://vitaneri.com/posts/check-for-nil-interface-in-go
+func checkNilInterface(i interface{}) bool {
+	iv := reflect.ValueOf(i)
+	if !iv.IsValid() {
+		return true
+	}
+	switch iv.Kind() {
+	case reflect.Ptr, reflect.Slice, reflect.Map, reflect.Func, reflect.Interface:
+		return iv.IsNil()
+	default:
+		return false
+	}
 }

@@ -1,4 +1,4 @@
-package dragonboat
+package replicated
 
 import "encoding/json"
 

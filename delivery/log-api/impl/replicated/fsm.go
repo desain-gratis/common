@@ -1,4 +1,4 @@
-package dragonboat
+package replicated
 
 import (
 	"context"
@@ -28,8 +28,8 @@ type topicSM struct {
 	lock     *sync.RWMutex
 }
 
-// Specify message topic implementation
-func New(topic notifierapi.Topic) statemachine.CreateStateMachineFunc {
+// NewSM specify message topic implementation
+func NewSMF(topic notifierapi.Topic) statemachine.CreateStateMachineFunc {
 	return func(shardID, replicaID uint64) sm.IStateMachine {
 		return &topicSM{
 			shardID:   shardID,
@@ -54,7 +54,11 @@ func (s *topicSM) Lookup(query interface{}) (interface{}, error) {
 		return nil, fmt.Errorf("invalid query")
 	}
 
-	subs := s.topic.Subscribe()
+	subs, err := s.topic.Subscribe()
+	if err != nil {
+		return nil, err
+	}
+
 	log.Info().Msgf("created local subscriber: %v", subs.ID())
 
 	return subs, nil
@@ -65,7 +69,7 @@ func (s *topicSM) Update(e sm.Entry) (sm.Result, error) {
 	var cmd UpdateRequest
 	err := json.Unmarshal(e.Cmd, &cmd)
 	if err != nil {
-		return sm.Result{Value: uint64(len(e.Cmd)), Data: []byte("Fail miserably!")}, nil
+		return sm.Result{Value: uint64(len(e.Cmd)), Data: []byte("failed marshal")}, nil
 	}
 
 	log.Info().Msgf("applying update: %v", string(e.Cmd))
