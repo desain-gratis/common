@@ -1,0 +1,22 @@
+{
+    "replica_id": 1,
+    "raft_address": "broadcaster1:21511",
+    "wal_dir": "/data/data-1",
+    "nodehost_dir": "/data/data-1",
+    "deployment_id": 0,
+    "shard": {
+        "1": {
+            "bootstrap": {
+                "broadcaster1:21511": 1,
+                "broadcaster2:21512": 2,
+                "broadcaster3:21513": 3
+            },
+            "alias": "topic-a",
+            "name": "topic-a",
+            "type": "log",
+            "config": {
+                "exit_message": "server is closed, bye byee 🫰🏽💕 see u 🥹"
+            }
+        }
+    }
+}

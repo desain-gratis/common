@@ -28,8 +28,8 @@ var sampleOrg []*entity.Organization = []*entity.Organization{
 	},
 }
 
-// var sampleUser []*entity.UserProfile = []*entity.UserProfile{}
-var sampleUser []*entity.UserProfile = []*entity.UserProfile{
+var sampleUser []*entity.UserProfile = []*entity.UserProfile{}
+var _sampleUser []*entity.UserProfile = []*entity.UserProfile{
 	{
 		Ns:             "pt-angin-ribut",
 		Id:             "0",

@@ -2,11 +2,15 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"time"
 
+	notifierapi "github.com/desain-gratis/common/delivery/log-api"
+	notifierapi_impl "github.com/desain-gratis/common/delivery/log-api/impl"
 	mycontentapi "github.com/desain-gratis/common/delivery/mycontent-api"
 	mycontent_base "github.com/desain-gratis/common/delivery/mycontent-api/mycontent/base"
 	blob_s3 "github.com/desain-gratis/common/delivery/mycontent-api/storage/blob/s3"
@@ -32,11 +36,15 @@ func main() {
 
 	address := "localhost:9090"
 
+	// provides a way for long running connnection to stop cleanly
+	ctx, stop := context.WithCancel(context.Background())
 	server := http.Server{
 		Addr:         address,
 		Handler:      router,
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
+
+		BaseContext: func(l net.Listener) context.Context { return ctx },
 	}
 
 	idleConnsClosed := make(chan struct{})
@@ -44,6 +52,8 @@ func main() {
 		sigint := make(chan os.Signal, 1)
 		signal.Notify(sigint, os.Interrupt)
 		<-sigint
+
+		stop()
 
 		// We received an interrupt signal, shut down.
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -100,8 +110,20 @@ func enableApplicationAPI(
 		[]string{},
 	)
 
+	// extend user profile with notifier capability
+	exitMessage := "server said bye bye 👋🏼"
+	f := func(id string) notifierapi.Subscription {
+		return notifierapi_impl.NewSubscription(id, true, 0, &exitMessage, 2*time.Second)
+	}
+	broker := notifierapi_impl.NewTopic(f)
+
+	userProfileExtended := &withNotifier[*entity.UserProfile]{
+		Handler:  mycontent_base.New[*entity.UserProfile](userProfileRepo, 1),
+		notifier: broker,
+	}
+
 	userProfileHandler := mycontentapi.New(
-		mycontent_base.New[*entity.UserProfile](userProfileRepo, 1),
+		userProfileExtended,
 		baseURL+"/org/user",
 		[]string{"org_id"},
 	)
@@ -130,6 +152,14 @@ func enableApplicationAPI(
 	router.GET("/org/user", userProfileHandler.Get)
 	router.POST("/org/user", userProfileHandler.Post)
 	router.DELETE("/org/user", userProfileHandler.Delete)
+
+	// TODO: since the usage is common, we can just ship it to default mycontentapi
+	router.GET("/org/user/tail", notifierapi.
+		NewDebugAPI(broker).
+		WithTransform(func(v any) any {
+			data, _ := json.Marshal(v)
+			return string(data)
+		}).ListenHandler)
 
 	// User thumbnail
 	router.OPTIONS("/org/user/thumbnail", Empty)
