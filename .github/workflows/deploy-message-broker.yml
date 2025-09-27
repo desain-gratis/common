@@ -6,6 +6,7 @@ on:
       - 'example/message-broker/**'
     branches:
       - main
+  workflow_dispatch:
 
 jobs:
   deploy:
@@ -24,7 +25,7 @@ jobs:
         working-directory: ./example/message-broker
         run: |
           go mod tidy
-          go build -o message-broker-bin .
+          go build -o ./example/message-broker/message-broker-bin .
 
       - name: Deploy via restricted SSH
         run: |
