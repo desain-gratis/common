@@ -25,7 +25,6 @@ func (b *broker) GetTopic(w http.ResponseWriter, r *http.Request, p httprouter.P
 	// print list of topic
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprintf(w, "success %v", p.ByName("topic"))
-	// print topic metadta
 }
 
 func (b *broker) Publish(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
