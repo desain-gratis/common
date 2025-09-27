@@ -1,0 +1,19 @@
+[Unit]
+Description=Message Broker Service
+After=network.target
+
+[Service]
+ExecStart=/opt/message-broker/message-broker-bin -dc /opt/message-broker/dragonboat-config.json
+WorkingDirectory=/opt/message-broker
+Restart=always
+RestartSec=5
+User=deploy
+Group=deploy
+Environment=ENV=production PORT=9000
+
+# Log to files
+StandardOutput=append:/var/log/message-broker/output.log
+StandardError=append:/var/log/message-broker/error.log
+
+[Install]
+WantedBy=multi-user.target

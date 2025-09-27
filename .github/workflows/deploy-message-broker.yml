@@ -35,6 +35,9 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa message-broker-bin ${{ secrets.BROADCASTER_SERVER_USER }}@${{ secrets.BROADCASTER_SERVER_HOST }}:/opt/message-broker/message-broker-bin
           scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa configs/config-1.json ${{ secrets.BROADCASTER_SERVER_USER }}@${{ secrets.BROADCASTER_SERVER_HOST }}:/opt/message-broker/dragonboat-config.json
+          scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa deploy/message-broker.service ${{ secrets.BROADCASTER_SERVER_USER }}@${{ secrets.BROADCASTER_SERVER_HOST }}:/tmp/message-broker.service
       - name: Restart service
         run: |
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ${{ secrets.BROADCASTER_SERVER_USER }}@${{ secrets.BROADCASTER_SERVER_HOST }} "sudo systemctl daeomn-reload"
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ${{ secrets.BROADCASTER_SERVER_USER }}@${{ secrets.BROADCASTER_SERVER_HOST }} "sudo systemctl enable message-broker"
           ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ${{ secrets.BROADCASTER_SERVER_USER }}@${{ secrets.BROADCASTER_SERVER_HOST }} "sudo systemctl restart message-broker"
