@@ -31,4 +31,4 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.BROADCASTER_SERVER_SSH_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-          ssh -o StrictHostKeyChecking=no ${{ secrets.BROADCASTER_SERVER_USER }}@${{ secrets.BROADCASTER_SERVER_HOST }} < message-broker/message-broker-bin
+          ssh -o StrictHostKeyChecking=no ${{ secrets.BROADCASTER_SERVER_USER }}@${{ secrets.BROADCASTER_SERVER_HOST }} < ./example/message-broker/message-broker-bin
