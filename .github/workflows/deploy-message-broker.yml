@@ -34,6 +34,7 @@ jobs:
           echo "${{ secrets.BROADCASTER_SERVER_SSH_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa message-broker-bin ${{ secrets.BROADCASTER_SERVER_USER }}@${{ secrets.BROADCASTER_SERVER_HOST }}:/opt/message-broker/message-broker-bin
+          scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa configs/config-1.json ${{ secrets.BROADCASTER_SERVER_USER }}@${{ secrets.BROADCASTER_SERVER_HOST }}:/opt/message-broker/dragonboat-config.json
       - name: Restart service
         run: |
           ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ${{ secrets.BROADCASTER_SERVER_USER }}@${{ secrets.BROADCASTER_SERVER_HOST }} "sudo systemctl restart message-broker"
