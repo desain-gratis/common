@@ -112,8 +112,8 @@ func enableApplicationAPI(
 
 	// extend user profile with notifier capability
 	exitMessage := "server said bye bye 👋🏼"
-	f := func() notifierapi.Subscription {
-		return notifierapi_impl.NewSubscription(true, 0, &exitMessage, 2*time.Second)
+	f := func(id string) notifierapi.Subscription {
+		return notifierapi_impl.NewSubscription(id, true, 0, &exitMessage, 2*time.Second)
 	}
 	broker := notifierapi_impl.NewTopic(f)
 
