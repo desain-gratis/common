@@ -8,21 +8,14 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-type SMConfigTyped[T any] struct {
-	ID        uint64
-	Name      string
-	ShardID   uint64
-	ReplicaID uint64
-}
+type ExtensionFunction func(dhost *dragonboat.NodeHost, smConfig ShardConfig)
 
-type ExtensionFunction func(dhost *dragonboat.NodeHost, smConfig SMConfig2)
-
-func RegisterEtc(r *dragonboatRegistry, fsmType string, fn ExtensionFunction) {
+func RegisterFunc(r *dragonboatRegistry, fsmType string, fn ExtensionFunction) {
 	r.registryExt[fsmType] = fn
 }
 
-func Register[T any](r *dragonboatRegistry, fsmType string, fn StateMachineFunction[T]) {
-	r.registry[fsmType] = func(dhost *dragonboat.NodeHost, smConfig SMConfig2, appConfig any) statemachine.CreateStateMachineFunc {
+func RegisterStateMachine[T any](r *dragonboatRegistry, fsmType string, fn StateMachineFunction[T]) {
+	r.registry[fsmType] = func(dhost *dragonboat.NodeHost, smConfig ShardConfig, appConfig any) statemachine.CreateStateMachineFunc {
 		cfg, ok := appConfig.(T)
 		if !ok {
 			log.Panic().Msgf("panic")

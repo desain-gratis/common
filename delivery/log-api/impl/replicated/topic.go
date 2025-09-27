@@ -36,7 +36,7 @@ type LogConfig struct {
 	ListenTimeoutS uint32  `json:"listen_timeout_s"`
 }
 
-func CreateSM(dhost *dragonboat.NodeHost, instance smregistry.SMConfig2, appConfig LogConfig) statemachine.CreateStateMachineFunc {
+func CreateSM(dhost *dragonboat.NodeHost, instance smregistry.ShardConfig, appConfig LogConfig) statemachine.CreateStateMachineFunc {
 	subsGen := func(key string) logapi.Subscription {
 		return logapi_impl.NewSubscription(key, true, 0, appConfig.ExitMessage, time.Duration(appConfig.ListenTimeoutS)*time.Second)
 	}

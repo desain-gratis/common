@@ -10,15 +10,17 @@ import (
 )
 
 type DragonboatConfig struct {
-	ReplicaID    uint64              `json:"replica_id"`
-	RaftAddress  string              `json:"raft_address"`
-	WALDir       string              `json:"wal_dir"`
-	NodehostDir  string              `json:"nodehost_dir"`
-	DeploymentID uint64              `json:"deployment_id"`
-	SM           map[string]SMConfig `json:"sm"`
+	ReplicaID    uint64                 `json:"replica_id"`
+	RaftAddress  string                 `json:"raft_address"`
+	WALDir       string                 `json:"wal_dir"`
+	NodehostDir  string                 `json:"nodehost_dir"`
+	DeploymentID uint64                 `json:"deployment_id"`
+	Shard        map[string]ShardConfig `json:"shard"`
 }
 
-type SMConfig struct {
+type ShardConfig struct {
+	ShardID   uint64          `json:"shard_id"`
+	ReplicaID uint64          `json:"replica_id"`
 	Alias     string          `json:"alias"`
 	Name      string          `json:"name"`
 	Type      string          `json:"type"`

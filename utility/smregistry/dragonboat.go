@@ -13,14 +13,8 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-type SMConfig2 struct {
-	ReplicaID uint64
-	ShardID   uint64
-	SMConfig
-}
-
-type StateMachineFunction[T any] func(dhost *dragonboat.NodeHost, smConfig SMConfig2, appConfig T) statemachine.CreateStateMachineFunc
-type stateMachineFunction func(dhost *dragonboat.NodeHost, smConfig SMConfig2, appConfig any) statemachine.CreateStateMachineFunc
+type StateMachineFunction[T any] func(dhost *dragonboat.NodeHost, smConfig ShardConfig, appConfig T) statemachine.CreateStateMachineFunc
+type stateMachineFunction func(dhost *dragonboat.NodeHost, smConfig ShardConfig, appConfig any) statemachine.CreateStateMachineFunc
 
 type dragonboatRegistry struct {
 	cfg         DragonboatConfig
@@ -60,48 +54,46 @@ func (r *dragonboatRegistry) Start(ctx context.Context) {
 		log.Panic().Msgf("init nodehost %v", err)
 	}
 
-	for i, sm := range r.cfg.SM {
-		log.Info().Msgf("starting sm: %v", sm.Name)
+	for i, shardConfig := range r.cfg.Shard {
+		log.Info().Msgf("starting sm: %v", shardConfig.Name)
 		shardID, err := convertID(i)
 		if err != nil {
 			log.Error().Msgf("err id %v", i)
 			continue
 		}
 
-		target := convertRaftAddress(sm.Bootstrap, r.cfg) // todo: add our own address
+		shardConfig.ShardID = shardID
+		shardConfig.ReplicaID = r.cfg.ReplicaID
+
+		target := convertRaftAddress(shardConfig.Bootstrap, r.cfg) // todo: add our own address
 		join := len(target) == 0
 		log.Info().Msgf("target: %v join: %v", target, join)
 
 		listener.ShardListener[shardID] = notifyLeader(dhost, shardID, r.cfg.ReplicaID)
 
-		// let's use all in memory first
+		// let's use all in memory state machine first
 
-		smf, ok := r.registry[sm.Type]
+		smf, ok := r.registry[shardConfig.Type]
 		if !ok {
-			log.Error().Msgf("type not found for smf: %v", sm.Type)
+			log.Error().Msgf("type not found for smf: %v", shardConfig.Type)
 			continue
 		}
 
-		appConfigParser, ok := r.cfgParser[sm.Type]
+		appConfigParser, ok := r.cfgParser[shardConfig.Type]
 		if !ok {
-			log.Error().Msgf("type not found for parser: %v", sm.Type)
+			log.Error().Msgf("type not found for parser: %v", shardConfig.Type)
 			continue
 		}
 
-		appConfig, err := appConfigParser(sm.Config)
+		appConfig, err := appConfigParser(shardConfig.Config)
 		if err != nil {
-			log.Error().Msgf("failed to read config not found %v", sm.Type)
+			log.Error().Msgf("failed to read config not found %v", shardConfig.Type)
 			continue
 		}
 
 		log.Info().Msgf("app config: %+v", appConfig)
 
-		cfg2 := SMConfig2{
-			ReplicaID: r.cfg.ReplicaID,
-			ShardID:   shardID,
-			SMConfig:  sm,
-		}
-		dragonboatSM := smf(dhost, cfg2, appConfig)
+		dragonboatSM := smf(dhost, shardConfig, appConfig)
 
 		err = dhost.StartReplica(target, join, dragonboatSM, config.Config{
 			ShardID:            shardID,
@@ -117,12 +109,12 @@ func (r *dragonboatRegistry) Start(ctx context.Context) {
 		}
 
 		// register others
-		ext, ok := r.registryExt[sm.Type]
+		ext, ok := r.registryExt[shardConfig.Type]
 		if !ok {
-			log.Error().Msgf("type not found for ext: %v", sm.Type)
+			log.Error().Msgf("type not found for ext: %v", shardConfig.Type)
 			continue
 		}
-		ext(dhost, cfg2)
+		ext(dhost, shardConfig)
 	}
 }
 
