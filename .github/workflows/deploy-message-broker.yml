@@ -25,12 +25,12 @@ jobs:
         working-directory: ./example/message-broker
         run: |
           go mod tidy
-          cd example/message-broker
           go build -o message-broker-bin ./*.go
 
       - name: Deploy via restricted SSH
+        working-directory: ./example/message-broker
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.BROADCASTER_SERVER_SSH_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-          ssh -o StrictHostKeyChecking=no ${{ secrets.BROADCASTER_SERVER_USER }}@${{ secrets.BROADCASTER_SERVER_HOST }} < ./example/message-broker/message-broker-bin
+          ssh -o StrictHostKeyChecking=no ${{ secrets.BROADCASTER_SERVER_USER }}@${{ secrets.BROADCASTER_SERVER_HOST }} < message-broker-bin
