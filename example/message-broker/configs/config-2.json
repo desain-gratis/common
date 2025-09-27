@@ -1,0 +1,13 @@
+{
+    "replica_id": 2,
+    "raft_address": "broadcaster2:21512",
+    "wal_dir": "/data/data-2",
+    "nodehost_dir": "/data/data-2",
+    "deployment_id": 0,
+    "shard": {
+        "1": {
+            "name": "topic-a",
+            "type": "log"
+        }
+    }
+}
