@@ -1,32 +1,38 @@
 services:
   broadcaster1:
     image: broadcaster:latest
+    environment:
+      DC: "/etc/dragonboat.yaml"
     restart: on-failure
     ports:
       - "9001:9090"
-    command: ["./broadcaster", "-dc", "/etc/broadcaster/config-1.json"]
+    command: ["./broadcaster"]
     volumes:
-      - ./configs:/etc/broadcaster
+      - ./configs/config-1.yaml:/etc/dragonboat.yaml
       - ./data:/data
 
   broadcaster2:
     image: broadcaster:latest
     restart: on-failure
+    environment:
+      DC: "/etc/dragonboat.yaml"
     ports:
       - "9002:9090"
-    command: ["./broadcaster", "-dc", "/etc/broadcaster/config-2.json"]
+    command: ["./broadcaster"]
     volumes:
-      - ./configs:/etc/broadcaster
+      - ./configs/config-2.yaml:/etc/dragonboat.yaml
       - ./data:/data
 
   broadcaster3:
     image: broadcaster:latest
+    environment:
+      DC: "/etc/dragonboat.yaml"
     restart: on-failure
     ports:
       - "9003:9090"
-    command: ["./broadcaster", "-dc", "/etc/broadcaster/config-3.json"]
+    command: ["./broadcaster"]
     volumes:
-      - ./configs:/etc/broadcaster
+      - ./configs/config-3.yaml:/etc/dragonboat.yaml
       - ./data:/data
 
 

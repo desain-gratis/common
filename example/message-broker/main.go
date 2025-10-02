@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"net"
 	"net/http"
@@ -11,9 +10,8 @@ import (
 	"time"
 
 	logapi_impl_replicated "github.com/desain-gratis/common/delivery/log-api/impl/replicated"
-	"github.com/desain-gratis/common/utility/smregistry"
+	"github.com/desain-gratis/common/utility/replica"
 	"github.com/julienschmidt/httprouter"
-	"github.com/lni/dragonboat/v4"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
@@ -25,37 +23,43 @@ func init() {
 func main() {
 	ctx := context.Background()
 
-	var c, dc, address string
+	var c, address string
 	flag.StringVar(&c, "c", "config.json", "config path")
-	flag.StringVar(&dc, "dc", "dragonboat-config.json", "config path")
 	flag.StringVar(&address, "address", "0.0.0.0:9090", "api bind address")
 	flag.Parse()
 
 	initConfig(ctx, c)
 
-	dregistry, err := smregistry.NewDragonboat(ctx, dc)
+	err := replica.Init()
 	if err != nil {
-		log.Panic().Msgf("UHUY CONFIG %v", err)
+		log.Panic().Msgf("panic init replica: %v", err)
 	}
 
 	router := httprouter.New()
 
-	// register state machine of type "log"
-	smregistry.RegisterStateMachine(dregistry, "log", logapi_impl_replicated.CreateSM)
-	smregistry.RegisterFunc(dregistry, "log", func(dhost *dragonboat.NodeHost, instance smregistry.ShardConfig) {
-		// Create API handler for the state machine
-		brokerAPI := broker{
-			shardID:   instance.ShardID,
-			replicaID: instance.ReplicaID,
-			dhost:     dhost,
+	replica.ForEachType("message-broker", func(config replica.Config[logapi_impl_replicated.LogConfig]) error {
+		// Initialize
+
+		// Start replica based on config
+		smf := logapi_impl_replicated.CreateSM(config.AppConfig)
+		err := config.StartReplica(smf)
+		if err != nil {
+			return err
 		}
 
-		router.GET("/"+instance.Name, brokerAPI.GetTopic)
-		router.POST("/"+instance.Name, brokerAPI.Publish)
-		router.GET("/"+instance.Name+"/tail", brokerAPI.Tail)
-	})
+		// Create HTTP API handler to interact with the replica
+		brokerAPI := broker{
+			dhost:     config.Host,
+			shardID:   config.ShardID,
+			replicaID: config.ReplicaID,
+		}
 
-	dregistry.Start(context.Background())
+		router.GET("/log/"+config.ID, brokerAPI.GetTopic)
+		router.POST("/log/"+config.ID, brokerAPI.Publish)
+		router.GET("/log/"+config.ID+"/tail", brokerAPI.Tail)
+
+		return nil
+	})
 
 	router.HandleOPTIONS = true
 	router.PanicHandler = func(w http.ResponseWriter, r *http.Request, i interface{}) {
@@ -63,14 +67,14 @@ func main() {
 		w.Write([]byte("oh no"))
 	}
 
-	// provides a way for long running connnection to stop cleanly
-	ctx, stop := context.WithCancelCause(context.Background())
+	// provides a way to stop a long running connnection cleanly
+	ctx, stop := context.WithCancel(context.Background())
 	server := http.Server{
-		Addr:    address,
-		Handler: router,
+		Addr:        address,
+		Handler:     router,
+		ReadTimeout: 2 * time.Second,
 
-		// Important: do not set this if we enable long running connection like this example
-		// ReadTimeout:  15 * time.Second,
+		// important: do not set WriteTimeout if we enable long running connection like this example
 		// WriteTimeout: 15 * time.Second,
 
 		BaseContext: func(l net.Listener) context.Context { return ctx },
@@ -83,9 +87,9 @@ func main() {
 		<-sigint
 		log.Info().Msgf("SIGINT RECEIVED")
 
-		stop(errors.New("karena server closed"))
+		stop()
 
-		// We received an interrupt signal, shut down.
+		// We received an interrupt signal, shutdown sequence (stop listen, wait existing to finish), wait 30 second max.
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 

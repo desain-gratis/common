@@ -1,0 +1,19 @@
+host:
+    replica_id: 1
+    raft_address: "broadcaster1:21511"
+    wal_dir: "/data/data-1"
+    nodehost_dir: "/data/data-1"
+    deployment_id: 0
+    peer: 
+        2: "broadcaster2:21512"
+        3: "broadcaster3:21513"
+replica:
+    1:
+        bootstrap: true
+        id: "topic-a"
+        alias: "Topic A"
+        type: "message-broker"
+        config: |
+            {
+                "exit_message": "server 1! is closed, bye byee 🫰🏽💕 see u 🥹"
+            }
