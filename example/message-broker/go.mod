@@ -24,6 +24,7 @@ require (
 	github.com/cockroachdb/logtags v0.0.0-20211118104740-dabe8e521a4f // indirect
 	github.com/cockroachdb/pebble v0.0.0-20221207173255-0f086d933dac // indirect
 	github.com/cockroachdb/redact v1.1.3 // indirect
+	github.com/coder/websocket v1.8.14 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/getsentry/sentry-go v0.12.0 // indirect
 	github.com/go-faster/city v1.0.1 // indirect

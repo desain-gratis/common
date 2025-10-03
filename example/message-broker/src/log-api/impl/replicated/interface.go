@@ -49,8 +49,11 @@ const (
 	// Command_PublishMessage publishes to the topic
 	Command_PublishMessage Command = "publish-message"
 
-	EventName_Echo     EventName = "echo"
-	EventName_Identity EventName = "identity"
+	Command_NotifyOnline Command = "notify-online"
+
+	EventName_Echo         EventName = "echo"
+	EventName_Identity     EventName = "identity"
+	EventName_NotifyOnline EventName = "notify-online"
 )
 
 type StartSubscriptionData struct {

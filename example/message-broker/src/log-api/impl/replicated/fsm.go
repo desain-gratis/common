@@ -9,7 +9,6 @@ import (
 	"sync"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
-	"github.com/Pallinder/go-randomdata"
 	notifierapi "github.com/desain-gratis/common/example/message-broker/src/log-api"
 
 	"github.com/lni/dragonboat/v4/statemachine"
@@ -82,7 +81,9 @@ func (s *topicSM) Update(e sm.Entry) (sm.Result, error) {
 	case Command_StartSubscription:
 		return s.startSubscription(cmd.Data)
 	case Command_PublishMessage:
-		return s.publishMessage(cmd.Data)
+		return s.publishMessage(EventName_Echo, cmd.Data)
+	case Command_NotifyOnline:
+		return s.publishMessage(EventName_NotifyOnline, json.RawMessage(cmd.Data))
 	}
 
 	log.Info().Msgf("unknown command: %v", cmd.CmdName)
@@ -140,12 +141,6 @@ func (s *topicSM) RecoverFromSnapshot(r io.Reader,
 // method is not guaranteed to be called as node can crash at any time.
 func (s *topicSM) Close() error { return nil }
 
-type SubscriptionData struct {
-	IDToken    string
-	Name       string
-	StartIndex uint64
-}
-
 func (s *topicSM) startSubscription(rawData json.RawMessage) (sm.Result, error) {
 	var data StartSubscriptionData
 	err := json.Unmarshal(rawData, &data)
@@ -175,29 +170,8 @@ func (s *topicSM) startSubscription(rawData json.RawMessage) (sm.Result, error) 
 		return sm.Result{Value: uint64(0), Data: resp}, nil
 	}
 
-	name := randomdata.SillyName() + " " + randomdata.LastName()
-	subscriberData := &SubscriptionData{
-		IDToken:    subs.ID(), // todo: use proper jwt
-		Name:       name,
-		StartIndex: s.appliedIndex,
-	}
-
-	log.Info().Msgf("starting local subscriber: %v name: %v", subs.ID(), name)
+	log.Info().Msgf("starting local subscriber: %v", subs.ID())
 	subs.Start()
-
-	subs.Publish(context.Background(), Event{
-		EvtID:   s.appliedIndex,
-		EvtName: EventName_Identity,
-		EvtVer:  0,
-		Data:    subscriberData,
-	})
-
-	subs.Publish(context.Background(), Event{
-		EvtID:   s.appliedIndex,
-		EvtName: EventName_Echo,
-		EvtVer:  0,
-		Data:    fmt.Sprintf("Welcome! 👋🏼. You're logged as '%v'", name),
-	})
 
 	resp, _ := json.Marshal(UpdateResponse{
 		Message: "success",
@@ -206,10 +180,10 @@ func (s *topicSM) startSubscription(rawData json.RawMessage) (sm.Result, error) 
 	return sm.Result{Value: s.appliedIndex, Data: resp}, nil
 }
 
-func (s *topicSM) publishMessage(rawData json.RawMessage) (sm.Result, error) {
+func (s *topicSM) publishMessage(name EventName, rawData json.RawMessage) (sm.Result, error) {
 	// since we can publish without using the same connection, identity cannot be determined
 	s.topic.Broadcast(context.Background(), Event{
-		EvtName: EventName_Echo,
+		EvtName: name,
 		EvtVer:  0,
 		EvtID:   s.appliedIndex,
 		Data:    rawData,

@@ -57,14 +57,15 @@ func main() {
 		router.GET("/log/"+config.ID, brokerAPI.GetTopic)
 		router.POST("/log/"+config.ID, brokerAPI.Publish)
 		router.GET("/log/"+config.ID+"/tail", brokerAPI.Tail)
+		router.GET("/log/"+config.ID+"/ws", brokerAPI.Websocket)
 
 		return nil
 	})
 
-	router.PanicHandler = func(w http.ResponseWriter, r *http.Request, i interface{}) {
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte("oh no"))
-	}
+	// router.PanicHandler = func(w http.ResponseWriter, r *http.Request, i interface{}) {
+	// 	w.WriteHeader(http.StatusInternalServerError)
+	// 	w.Write([]byte("oh no"))
+	// }
 
 	// global cors handlign
 	router.HandleOPTIONS = true
