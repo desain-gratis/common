@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"sync"
 
-	notifierapi "github.com/desain-gratis/common/delivery/log-api"
+	notifierapi "github.com/desain-gratis/common/example/message-broker/src/log-api"
 	"github.com/rs/zerolog/log"
 )
 

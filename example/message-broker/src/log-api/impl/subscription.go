@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"time"
 
-	notifierapi "github.com/desain-gratis/common/delivery/log-api"
+	notifierapi "github.com/desain-gratis/common/example/message-broker/src/log-api"
 )
 
 var _ notifierapi.Subscription = &subscription{}

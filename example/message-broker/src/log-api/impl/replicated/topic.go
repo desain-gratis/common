@@ -7,9 +7,8 @@ import (
 	"fmt"
 	"time"
 
-	logapi "github.com/desain-gratis/common/delivery/log-api"
-	notifierapi "github.com/desain-gratis/common/delivery/log-api"
-	logapi_impl "github.com/desain-gratis/common/delivery/log-api/impl"
+	notifierapi "github.com/desain-gratis/common/example/message-broker/src/log-api"
+	logapi_impl "github.com/desain-gratis/common/example/message-broker/src/log-api/impl"
 	"github.com/lni/dragonboat/v4"
 	"github.com/lni/dragonboat/v4/statemachine"
 )
@@ -36,7 +35,7 @@ type LogConfig struct {
 }
 
 func CreateSM(appConfig LogConfig) statemachine.CreateStateMachineFunc {
-	subsGen := func(key string) logapi.Subscription {
+	subsGen := func(key string) notifierapi.Subscription {
 		return logapi_impl.NewSubscription(key, true, 0, appConfig.ExitMessage, time.Duration(appConfig.ListenTimeoutS)*time.Second)
 	}
 
@@ -56,7 +55,7 @@ func New(dhost *dragonboat.NodeHost, shardID uint64, replicaID uint64) notifiera
 	}
 }
 
-func (r *replicatedTopic) Subscribe() (logapi.Subscription, error) {
+func (r *replicatedTopic) Subscribe() (notifierapi.Subscription, error) {
 	sess := r.dhost.GetNoOPSession(r.shardID)
 
 	ctx, c := context.WithTimeout(context.Background(), 5*time.Second)
@@ -95,7 +94,7 @@ func (r *replicatedTopic) Subscribe() (logapi.Subscription, error) {
 	return l, nil
 }
 
-func (r *replicatedTopic) GetSubscription(id string) (logapi.Subscription, error) {
+func (r *replicatedTopic) GetSubscription(id string) (notifierapi.Subscription, error) {
 	return nil, errors.New("not supported")
 }
 

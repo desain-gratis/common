@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"time"
 
-	notifierapi "github.com/desain-gratis/common/delivery/log-api"
-	sm_topic "github.com/desain-gratis/common/delivery/log-api/impl/replicated"
+	notifierapi "github.com/desain-gratis/common/example/message-broker/src/log-api"
+	sm_topic "github.com/desain-gratis/common/example/message-broker/src/log-api/impl/replicated"
 	"github.com/julienschmidt/httprouter"
 	"github.com/lni/dragonboat/v4"
 	"github.com/rs/zerolog/log"
@@ -30,6 +30,11 @@ func (b *broker) GetTopic(w http.ResponseWriter, r *http.Request, p httprouter.P
 func (b *broker) Publish(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	// post message to topic
 	payload, _ := io.ReadAll(r.Body)
+
+	// since we can publish with Tail / connection, and are not web socket, we can use JWT for determining identity..
+	// TODO: validate JWT to obtain sender identity (that are created during Tail [TODO] as well
+	// parse jwt, and then modify the payload.
+	// since we can publish outside the stream connection... / from anywhere.
 
 	sess := b.dhost.GetNoOPSession(b.shardID)
 

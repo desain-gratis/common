@@ -9,7 +9,9 @@ import (
 	"sync"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
-	notifierapi "github.com/desain-gratis/common/delivery/log-api"
+	"github.com/Pallinder/go-randomdata"
+	notifierapi "github.com/desain-gratis/common/example/message-broker/src/log-api"
+
 	"github.com/lni/dragonboat/v4/statemachine"
 	sm "github.com/lni/dragonboat/v4/statemachine"
 	"github.com/rs/zerolog/log"
@@ -138,6 +140,12 @@ func (s *topicSM) RecoverFromSnapshot(r io.Reader,
 // method is not guaranteed to be called as node can crash at any time.
 func (s *topicSM) Close() error { return nil }
 
+type SubscriptionData struct {
+	IDToken    string
+	Name       string
+	StartIndex uint64
+}
+
 func (s *topicSM) startSubscription(rawData json.RawMessage) (sm.Result, error) {
 	var data StartSubscriptionData
 	err := json.Unmarshal(rawData, &data)
@@ -167,14 +175,28 @@ func (s *topicSM) startSubscription(rawData json.RawMessage) (sm.Result, error) 
 		return sm.Result{Value: uint64(0), Data: resp}, nil
 	}
 
-	log.Info().Msgf("starting local subscriber: %v", subs.ID())
+	name := randomdata.SillyName() + " " + randomdata.LastName()
+	subscriberData := &SubscriptionData{
+		IDToken:    subs.ID(), // todo: use proper jwt
+		Name:       name,
+		StartIndex: s.appliedIndex,
+	}
 
+	log.Info().Msgf("starting local subscriber: %v name: %v", subs.ID(), name)
 	subs.Start()
+
+	subs.Publish(context.Background(), Event{
+		EvtID:   s.appliedIndex,
+		EvtName: EventName_Identity,
+		EvtVer:  0,
+		Data:    subscriberData,
+	})
+
 	subs.Publish(context.Background(), Event{
 		EvtID:   s.appliedIndex,
 		EvtName: EventName_Echo,
 		EvtVer:  0,
-		Data:    fmt.Sprintf("Welcome! 👋🏼 starting to listen at: %v", s.appliedIndex),
+		Data:    fmt.Sprintf("Welcome! 👋🏼. You're logged as '%v'", name),
 	})
 
 	resp, _ := json.Marshal(UpdateResponse{
@@ -185,6 +207,7 @@ func (s *topicSM) startSubscription(rawData json.RawMessage) (sm.Result, error) 
 }
 
 func (s *topicSM) publishMessage(rawData json.RawMessage) (sm.Result, error) {
+	// since we can publish without using the same connection, identity cannot be determined
 	s.topic.Broadcast(context.Background(), Event{
 		EvtName: EventName_Echo,
 		EvtVer:  0,

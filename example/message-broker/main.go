@@ -9,7 +9,7 @@ import (
 	"os/signal"
 	"time"
 
-	logapi_impl_replicated "github.com/desain-gratis/common/delivery/log-api/impl/replicated"
+	logapi_impl_replicated "github.com/desain-gratis/common/example/message-broker/src/log-api/impl/replicated"
 	"github.com/desain-gratis/common/utility/replica"
 	"github.com/julienschmidt/httprouter"
 	"github.com/rs/zerolog"
@@ -61,17 +61,33 @@ func main() {
 		return nil
 	})
 
-	router.HandleOPTIONS = true
 	router.PanicHandler = func(w http.ResponseWriter, r *http.Request, i interface{}) {
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write([]byte("oh no"))
+	}
+
+	// global cors handlign
+	router.HandleOPTIONS = true
+	router.GlobalOPTIONS = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	withCors := func(router http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			header := w.Header()
+			header.Set("Access-Control-Allow-Methods", header.Get("Allow"))
+			header.Set("Access-Control-Allow-Origin", "*")
+			// header.Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+			header.Set("Access-Control-Allow-Headers", "Content-Type")
+			router.ServeHTTP(w, r)
+		})
 	}
 
 	// provides a way to stop a long running connnection cleanly
 	ctx, stop := context.WithCancel(context.Background())
 	server := http.Server{
 		Addr:        address,
-		Handler:     router,
+		Handler:     withCors(router),
 		ReadTimeout: 2 * time.Second,
 
 		// important: do not set WriteTimeout if we enable long running connection like this example
