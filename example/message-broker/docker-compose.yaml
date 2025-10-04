@@ -8,7 +8,7 @@ services:
       - "9001:9090"
     command: ["./broadcaster"]
     volumes:
-      - ./configs/config-1.yaml:/etc/dragonboat.yaml
+      - ./config/config-1.yaml:/etc/dragonboat.yaml
       - ./data:/data
 
   broadcaster2:
@@ -20,7 +20,7 @@ services:
       - "9002:9090"
     command: ["./broadcaster"]
     volumes:
-      - ./configs/config-2.yaml:/etc/dragonboat.yaml
+      - ./config/config-2.yaml:/etc/dragonboat.yaml
       - ./data:/data
 
   broadcaster3:
@@ -32,10 +32,10 @@ services:
       - "9003:9090"
     command: ["./broadcaster"]
     volumes:
-      - ./configs/config-3.yaml:/etc/dragonboat.yaml
+      - ./config/config-3.yaml:/etc/dragonboat.yaml
       - ./data:/data
 
 
 volumes:
-  configs:
+  config:
     driver: local
