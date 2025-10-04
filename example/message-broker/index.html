@@ -3,158 +3,130 @@
 
 <head>
     <meta charset="UTF-8" />
-    <title>Accessible WebSocket Chat</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Live Chat Stream</title>
     <style>
+        :root {
+            --bg: #f8fafc;
+            --bubble-bg: #fff;
+            --bubble-shadow: rgba(0, 0, 0, 0.08);
+            --info-bg: #e2e8f0;
+            --font: system-ui, -apple-system, sans-serif;
+        }
+
         body {
-            font-family: system-ui, sans-serif;
-            background: #111;
-            color: #eee;
             margin: 0;
+            background: var(--bg);
+            font-family: var(--font);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .container {
             display: flex;
             flex-direction: column;
-            height: 100vh;
+            height: 90vh;
+            width: 100%;
+            max-width: 600px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+            overflow: hidden;
         }
 
-        h2 {
-            padding: 0.5em;
-            margin: 0;
-        }
-
-        #log {
+        #messages {
             flex: 1;
             overflow-y: auto;
-            padding: 1.5em;
+            padding: 1rem;
             display: flex;
             flex-direction: column;
-            gap: 1.2em;
         }
 
-        .chat {
-            max-width: 70%;
-            padding: 1.2em 1.5em;
-            border-radius: 18px;
+        .message {
+            max-width: 75%;
+            margin-bottom: 0.75rem;
+            padding: 0.75rem 1rem;
+            border-radius: 12px;
+            background: var(--bubble-bg);
+            box-shadow: 0 2px 6px var(--bubble-shadow);
+            animation: fadeIn 0.25s ease-out;
             word-wrap: break-word;
-            line-height: 1.6;
-            margin: 0.3em 0;
-            box-shadow: 0 3px 8px rgba(0, 0, 0, 0.4);
-            font-size: 1.05em;
-            opacity: 0;
-            transform: translateY(8px);
-            animation: fadeInUp 0.35s ease forwards;
+            line-height: 1.4;
         }
 
-        .chat .sender {
-            font-weight: 700;
-            margin-bottom: 0.5em;
-            font-size: 0.95em;
-        }
-
-        .chat .sender a {
-            text-decoration: none;
-        }
-
-        .chat .sender a:focus,
-        .chat .sender a:hover {
-            text-decoration: underline;
-            outline: 2px solid #fff;
-            outline-offset: 2px;
-        }
-
-        .chat .message {
-            font-size: 1.05em;
-            white-space: pre-wrap;
-        }
-
-        .chat.other {
-            background: #2a2a2a;
-            align-self: flex-start;
-        }
-
-        .chat.self {
-            background: #005bbb;
+        .message.you {
             align-self: flex-end;
-            color: #fff;
+            background: #dbeafe;
+            border-bottom-right-radius: 0;
         }
 
-        .chat.self .sender {
-            text-align: right;
+        .message.other {
+            align-self: flex-start;
+            background: #f1f5f9;
+            border-bottom-left-radius: 0;
+        }
+
+        .sender {
+            font-weight: 600;
+            margin-bottom: 0.3rem;
+            font-size: 0.9rem;
+        }
+
+        .sender a {
+            text-decoration: none;
+            color: inherit;
+            font-weight: 700;
         }
 
         .info {
             align-self: center;
-            font-size: 1em;
-            font-style: italic;
-            color: #eee;
-            padding: 0.6em 1em;
-            background: #1e1e1e;
-            border-radius: 10px;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
-            opacity: 0;
-            transform: translateY(8px);
-            animation: fadeInUp 0.35s ease forwards;
-        }
-
-        .info a {
-            font-weight: bold;
-            color: #4da3ff;
-            text-decoration: none;
-        }
-
-        .info a:hover,
-        .info a:focus {
-            text-decoration: underline;
-            outline: 2px solid #fff;
-            outline-offset: 2px;
-        }
-
-        .input-container {
-            border-top: 1px solid #333;
-            background: #1a1a1a;
-            padding: 1em;
+            background: var(--info-bg);
+            color: #334155;
+            font-size: 0.85rem;
+            padding: 0.4rem 0.8rem;
+            border-radius: 8px;
+            margin: 0.4rem 0;
+            animation: fadeIn 0.25s ease-out;
         }
 
         form {
             display: flex;
-            gap: 0.6em;
-            width: 100%;
-            max-width: 700px;
-            margin: 0 auto;
+            padding: 0.8rem;
+            background: #f8fafc;
+            border-top: 1px solid #e5e7eb;
         }
 
         input[type="text"] {
             flex: 1;
-            padding: 1em 1.2em;
-            border-radius: 20px;
-            border: none;
-            font-family: inherit;
-            font-size: 1em;
-            min-width: 0;
-            background: #2d2d2d;
-            color: #eee;
-            box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.5);
+            padding: 0.6rem 1rem;
+            border: 1px solid #cbd5e1;
+            border-radius: 9999px;
+            font-size: 1rem;
+            outline: none;
         }
 
         button {
-            padding: 0.8em 1.4em;
-            background: #4da3ff;
+            margin-left: 0.5rem;
+            padding: 0.6rem 1rem;
+            background: #2563eb;
+            color: white;
             border: none;
-            border-radius: 20px;
-            color: #fff;
+            border-radius: 9999px;
             cursor: pointer;
-            font-size: 1em;
-            font-weight: 600;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-            flex-shrink: 0;
+            transition: background 0.2s;
         }
 
         button:hover {
-            background: #3993f7;
+            background: #1d4ed8;
         }
 
-        @keyframes fadeInUp {
+        @keyframes fadeIn {
             from {
                 opacity: 0;
-                transform: translateY(8px);
+                transform: translateY(10px);
             }
 
             to {
@@ -166,136 +138,127 @@
 </head>
 
 <body>
-    <h2>💬 Accessible Chat</h2>
-    <div id="log"></div>
-
-    <div class="input-container">
-        <form id="message-form">
-            <input type="text" id="msg" placeholder="Type a message..." autocomplete="off"
-                aria-label="Type your message" />
+    <div class="container">
+        <div id="messages" aria-live="polite"></div>
+        <form id="chat-form" autocomplete="off">
+            <input id="msg" type="text" placeholder="Type a message…" aria-label="Type your message" autofocus />
             <button type="submit">Send</button>
         </form>
     </div>
 
     <script>
-        const wsUrl = "ws://localhost:9002/log/topic-a/ws";
-        let socket;
-        let myId = null;
-        let myName = null;
+        const messages = document.getElementById('messages');
+        const form = document.getElementById('chat-form');
+        const input = document.getElementById('msg');
 
-        const userColors = {};
-        const SELF_COLOR = "#00e0ff";
+        let ws;
+        let selfIdentity = null;
+        const userColors = new Map();
 
         function hashColor(id) {
-            if (!id) return "#aaa";
-            let hash = 0;
-            for (let i = 0; i < id.toString().length; i++) {
-                hash = id.charCodeAt(i) + ((hash << 5) - hash);
-            }
-            const hue = Math.abs(hash) % 360;
-            return `hsl(${hue}, 80%, 50%)`;
+            const h = Math.abs([...id.toString()].reduce((a, c) => a + c.charCodeAt(0), 0)) % 360;
+            return `hsl(${h}, 70%, 45%)`;
         }
 
-        function getUserColor(id, isSelf) {
-            if (isSelf) return SELF_COLOR;
-            if (!userColors[id]) {
-                userColors[id] = hashColor(id.toString());
-            }
-            return userColors[id];
+        function ensureColor(id) {
+            if (!userColors.has(id)) userColors.set(id, hashColor(id));
+            return userColors.get(id);
         }
 
-        function connect() {
-            socket = new WebSocket(wsUrl);
+        function appendInfo(text) {
+            const div = document.createElement('div');
+            div.className = 'info';
+            div.textContent = text;
+            messages.appendChild(div);
+            messages.scrollTop = messages.scrollHeight;
+        }
 
-            socket.onopen = () => {
-                console.log("✅ Connected to WebSocket");
+        function appendMessage(data) {
+            const div = document.createElement('div');
+            const isYou = selfIdentity && data.id === selfIdentity.id;
+            div.className = `message ${isYou ? 'you' : 'other'}`;
+
+            const sender = document.createElement('div');
+            sender.className = 'sender';
+
+            const nameLink = document.createElement('a');
+            nameLink.href = `#${data.id}`;
+            nameLink.style.color = ensureColor(data.id);
+            nameLink.textContent = data.name + (isYou ? ' (You)' : '');
+            sender.appendChild(nameLink);
+
+            const msgText = document.createElement('div');
+            msgText.textContent = data.data;
+
+            div.appendChild(sender);
+            div.appendChild(msgText);
+            messages.appendChild(div);
+            messages.scrollTop = messages.scrollHeight;
+        }
+
+        function connectWebSocket(retry = 0) {
+            ws = new WebSocket("ws://localhost:9002/log/topic-a/ws");
+
+            ws.onopen = () => {
+                appendInfo("✅ Connected to server");
+                retry = 0;
             };
 
-            socket.onmessage = (event) => {
+            ws.onmessage = (event) => {
                 try {
-                    const obj = JSON.parse(event.data);
-                    renderEvent(obj);
-                } catch (err) {
-                    console.error("Bad JSON:", event.data);
+                    const msg = JSON.parse(event.data);
+                    if (msg.evt_name === "identity") {
+                        selfIdentity = msg.data;
+                        appendInfo(`You are ${msg.data.name} (You)`);
+                    } else if (msg.evt_name === "echo") {
+                        appendMessage(msg.data);
+                    } else if (msg.evt_name === "notify-online") {
+                        const name = msg.data.name;
+                        const text = (selfIdentity && msg.data.id === selfIdentity.id)
+                            ? `${name} (You) online`
+                            : `${name} is online`;
+                        appendInfo(text);
+                    } else if (msg.evt_name === "notify-offline") {
+                        const name = msg.data.name;
+                        const text = (selfIdentity && msg.data.id === selfIdentity.id)
+                            ? `${name} (You) went offline`
+                            : `${name} went offline`;
+                        appendInfo(text);
+                    } else if (msg.evt_name === "listen-server-closed") {
+                        appendInfo(`⚠️ ${msg.data}`);
+                    }
+                } catch (e) {
+                    console.error("Bad message", e);
                 }
             };
 
-            socket.onclose = () => {
-                console.warn("⚠️ WebSocket closed, retrying in 2s");
-                setTimeout(connect, 2000);
+            ws.onclose = () => {
+                appendInfo("⚠️ Disconnected from server. Retrying…");
+                const delay = Math.min(10000, 1000 * 2 ** retry);
+                setTimeout(() => connectWebSocket(retry + 1), delay);
+            };
+
+            ws.onerror = (err) => {
+                console.error("WebSocket error:", err);
+                ws.close();
             };
         }
 
-        function renderEvent(obj) {
-            const log = document.getElementById("log");
-            const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 5;
-
-            if (obj.evt_name === "identity") {
-                myId = obj.data.id;
-                myName = obj.data.name;
-                const info = document.createElement("div");
-                info.className = "info";
-                info.textContent = `👋 You are identified as ${myName}`;
-                log.appendChild(info);
-
-            } else if (obj.evt_name === "echo" && obj.data) {
-                const div = document.createElement("div");
-                const isSelf = obj.data.id === myId;
-                div.className = "chat " + (isSelf ? "self" : "other");
-
-                const sender = document.createElement("div");
-                sender.className = "sender";
-                const link = document.createElement("a");
-                link.href = `/user/${encodeURIComponent(obj.data.id)}`;
-                link.textContent = obj.data.name;
-                link.style.color = getUserColor(obj.data.id, isSelf);
-                sender.appendChild(link);
-
-                const message = document.createElement("div");
-                message.className = "message";
-                message.textContent = obj.data.data;
-
-                div.appendChild(sender);
-                div.appendChild(message);
-                log.appendChild(div);
-
-            } else if (obj.evt_name === "notify-online" && obj.data) {
-                const info = document.createElement("div");
-                info.className = "info";
-                const link = document.createElement("a");
-                link.href = `/user/${encodeURIComponent(obj.data.id)}`;
-                link.textContent = obj.data.name;
-                info.innerHTML = `🔔 ${link.outerHTML} is now online`;
-                log.appendChild(info);
-
-            } else {
-                const div = document.createElement("div");
-                div.className = "info";
-                div.textContent = JSON.stringify(obj);
-                log.appendChild(div);
-            }
-
-            if (atBottom) log.scrollTop = log.scrollHeight;
-        }
-
-        function sendMessage(value) {
-            if (socket && socket.readyState === WebSocket.OPEN) {
-                socket.send(value);
-            }
-        }
-
-        document.getElementById("message-form").addEventListener("submit", e => {
+        form.addEventListener('submit', (e) => {
             e.preventDefault();
-            const msgInput = document.getElementById("msg");
-            const value = msgInput.value.trim();
-            if (value) {
-                sendMessage(value);
-                msgInput.value = "";
-                msgInput.focus();
+            const text = input.value.trim();
+            if (text && ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(text);
+                input.value = '';
             }
         });
 
-        connect();
+        // Make sure typing any key focuses input
+        window.addEventListener("keydown", (e) => {
+            if (e.target !== input && e.key.length === 1) input.focus();
+        });
+
+        connectWebSocket();
     </script>
 </body>
 

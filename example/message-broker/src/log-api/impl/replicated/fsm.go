@@ -84,6 +84,8 @@ func (s *topicSM) Update(e sm.Entry) (sm.Result, error) {
 		return s.publishMessage(EventName_Echo, cmd.Data)
 	case Command_NotifyOnline:
 		return s.publishMessage(EventName_NotifyOnline, json.RawMessage(cmd.Data))
+	case Command_NotifyOffline:
+		return s.publishMessage(EventName_NotifyOffline, json.RawMessage(cmd.Data))
 	}
 
 	log.Info().Msgf("unknown command: %v", cmd.CmdName)

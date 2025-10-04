@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"time"
 
 	logapi_impl_replicated "github.com/desain-gratis/common/example/message-broker/src/log-api/impl/replicated"
@@ -85,7 +86,9 @@ func main() {
 	}
 
 	// provides a way to stop a long running connnection cleanly
-	ctx, stop := context.WithCancel(context.Background())
+	ender := make(chan struct{})
+	wg := &sync.WaitGroup{}
+	ctx, _ = context.WithCancel(context.Background())
 	server := http.Server{
 		Addr:        address,
 		Handler:     withCors(router),
@@ -94,17 +97,25 @@ func main() {
 		// important: do not set WriteTimeout if we enable long running connection like this example
 		// WriteTimeout: 15 * time.Second,
 
-		BaseContext: func(l net.Listener) context.Context { return ctx },
+		BaseContext: func(l net.Listener) context.Context {
+			return context.WithValue(context.WithValue(ctx, "ender", ender), "wg", wg)
+		},
 	}
 
 	idleConnsClosed := make(chan struct{})
 	go func() {
 		sigint := make(chan os.Signal, 1)
 		signal.Notify(sigint, os.Interrupt)
+		log.Info().Msgf("WAITING FOR SIGINT")
 		<-sigint
 		log.Info().Msgf("SIGINT RECEIVED")
 
-		stop()
+		close(ender)
+		log.Info().Msgf("ENDER CLOSED, waiting for close!")
+		wg.Wait()
+		log.Info().Msgf("CLOSED ALL WS")
+
+		// stop() // move stop here (so we can still send to ws in code above)
 
 		// We received an interrupt signal, shutdown sequence (stop listen, wait existing to finish), wait 30 second max.
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

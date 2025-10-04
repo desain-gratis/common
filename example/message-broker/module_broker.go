@@ -8,6 +8,7 @@ import (
 	"io"
 	"math/rand"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/Pallinder/go-randomdata"
@@ -106,11 +107,26 @@ type SubscriptionData struct {
 }
 
 func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+	ender := r.Context().Value("ender").(chan struct{})
+
+	select {
+	case _, closed := <-ender:
+		if closed {
+			// reject new new connection if server already closing..
+			return
+		}
+	default:
+	}
+
+	wg := r.Context().Value("wg").(*sync.WaitGroup)
+	wg.Add(1)
 
 	name := randomdata.SillyName() + " " + randomdata.LastName()
 	id := rand.Int()
 
 	sess := b.dhost.GetNoOPSession(b.shardID)
+
+	oricontext := r.Context()
 
 	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{
 		OriginPatterns: []string{"http://localhost:*"},
@@ -119,7 +135,41 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 		log.Error().Msgf("error accept %v", err)
 		return
 	}
-	defer c.CloseNow()
+	defer func() {
+		log.Info().Msgf("close now trigger")
+		c.CloseNow()
+	}()
+	log.Info().Msgf("LOh")
+	go func() {
+		defer wg.Done()
+		log.Info().Msgf("HRUSNYA LANGSUGN WAIING FOR ENDER")
+		<-ender // select ender / ws closed
+		log.Info().Msgf("ENDER DONE")
+
+		d := map[string]any{
+			"evt_name": "listen-server-closed",
+			"evt_ver":  0,
+			"data":     "Server closed.",
+		}
+
+		data, err := json.Marshal(d)
+		if err != nil {
+			log.Error().Msgf("invalid jsonk %v", d)
+			return
+		}
+
+		// _, err = b.dhost.SyncPropose(context.Background(), sess, data)
+		// if err != nil {
+		// 	log.Error().Msgf("error propose %v", err)
+		// 	return
+		// }
+		err = c.Write(context.Background(), websocket.MessageText, data)
+		if err != nil {
+			log.Error().Msgf("oyoyoyoy... %v %v", err, "Server closed")
+		}
+
+		log.Info().Msgf("SERVER ENDED GOODBYE ENDER, PROCESSING CLEAN CLOSE")
+	}()
 
 	// tail topic log
 	notifier, err := b.getListener(w)
@@ -130,9 +180,39 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 
 	// after listening, start input reader goroutine
 	cccc, cancer := context.WithCancel(r.Context())
-	defer cancer()
+
+	log.Info().Msgf("contextnya %v; kalau ini: %v", oricontext.Err(), r.Context().Err())
 
 	go func() {
+		defer cancer()
+		defer func() {
+			// notify i'm offline (raft)
+			d := map[string]any{
+				"cmd_name": "notify-offline",
+				"cmd_ver":  0,
+				"data": map[string]any{
+					"name": name,
+					"id":   id,
+				},
+			}
+
+			data, err := json.Marshal(d)
+			if err != nil {
+				return
+			}
+
+			for i := 0; i < 3; i++ {
+				ctx, cca := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cca()
+
+				_, err = b.dhost.SyncPropose(ctx, sess, data)
+				if err == nil {
+					break
+				}
+				time.Sleep(500 * time.Millisecond)
+			}
+		}()
+
 		for {
 			t, payload, err := c.Read(cccc)
 			if err != nil {
@@ -168,10 +248,10 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 
 			_, err = b.dhost.SyncPropose(ctx, sess, data)
 			if err != nil {
-				w.WriteHeader(http.StatusInternalServerError)
-				fmt.Fprintf(w, "error cuk: %v", err)
-				return
+				log.Error().Msgf("error propose %v", err)
+				continue
 			}
+			c()
 		}
 	}()
 
@@ -219,6 +299,7 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 
 		c.Write(r.Context(), websocket.MessageText, data)
 	}
+	log.Info().Msgf("UHUUUY =======")
 
 	log.Info().Msgf("closing..")
 	c.Close(websocket.StatusNormalClosure, "")
