@@ -77,7 +77,6 @@
 
         .sender a {
             text-decoration: none;
-            color: inherit;
             font-weight: 700;
         }
 
@@ -106,6 +105,22 @@
             border-radius: 9999px;
             font-size: 1rem;
             outline: none;
+            transition: all 0.25s ease;
+            background: white;
+        }
+
+        input::placeholder {
+            color: #94a3b8;
+            transition: opacity 0.25s ease;
+        }
+
+        input:focus::placeholder {
+            opacity: 0;
+        }
+
+        input:focus {
+            box-shadow: 0 0 0 2px #93c5fd;
+            border-color: #60a5fa;
         }
 
         button {
@@ -153,15 +168,22 @@
 
         let ws;
         let selfIdentity = null;
+
+        // ✅ Curated pastel but readable palette for names
+        const palette = [
+            "#1E40AF", "#BE185D", "#047857", "#9333EA", "#DC2626",
+            "#0D9488", "#B45309", "#7C3AED", "#2563EB", "#059669"
+        ];
+
         const userColors = new Map();
 
-        function hashColor(id) {
-            const h = Math.abs([...id.toString()].reduce((a, c) => a + c.charCodeAt(0), 0)) % 360;
-            return `hsl(${h}, 70%, 45%)`;
-        }
-
-        function ensureColor(id) {
-            if (!userColors.has(id)) userColors.set(id, hashColor(id));
+        // Assign each identity a stable, visually pleasant color from palette
+        function assignColor(id) {
+            if (!userColors.has(id)) {
+                const hash = Math.abs([...id.toString()].reduce((a, c) => a + c.charCodeAt(0), 0));
+                const color = palette[hash % palette.length];
+                userColors.set(id, color);
+            }
             return userColors.get(id);
         }
 
@@ -183,8 +205,8 @@
 
             const nameLink = document.createElement('a');
             nameLink.href = `#${data.id}`;
-            nameLink.style.color = ensureColor(data.id);
             nameLink.textContent = data.name + (isYou ? ' (You)' : '');
+            nameLink.style.color = assignColor(data.id); // ✅ pleasant, consistent name color
             sender.appendChild(nameLink);
 
             const msgText = document.createElement('div');
@@ -253,7 +275,6 @@
             }
         });
 
-        // Make sure typing any key focuses input
         window.addEventListener("keydown", (e) => {
             if (e.target !== input && e.key.length === 1) input.focus();
         });
