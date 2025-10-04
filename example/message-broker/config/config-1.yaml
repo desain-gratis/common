@@ -1,8 +1,8 @@
 host:
     replica_id: 1
     raft_address: "broadcaster1:21511"
-    wal_dir: "/data/data-1"
-    nodehost_dir: "/data/data-1"
+    wal_dir: "/data"
+    nodehost_dir: "/data"
     deployment_id: 0
     peer: 
         2: "broadcaster2:21512"

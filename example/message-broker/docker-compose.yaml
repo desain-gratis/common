@@ -9,7 +9,7 @@ services:
     command: ["./broadcaster"]
     volumes:
       - ./config/config-1.yaml:/etc/dragonboat.yaml
-      - ./data:/data
+      - ./data/data-1:/data
 
   broadcaster2:
     image: broadcaster:latest
@@ -21,7 +21,7 @@ services:
     command: ["./broadcaster"]
     volumes:
       - ./config/config-2.yaml:/etc/dragonboat.yaml
-      - ./data:/data
+      - ./data/data-2:/data
 
   broadcaster3:
     image: broadcaster:latest
@@ -33,7 +33,7 @@ services:
     command: ["./broadcaster"]
     volumes:
       - ./config/config-3.yaml:/etc/dragonboat.yaml
-      - ./data:/data
+      - ./data/data-3:/data
 
 
 volumes:
