@@ -1,12 +1,13 @@
 host:
     replica_id: 2
-    raft_address: "broadcaster2:21512"
+    raft_address: "mb2:21512"
     wal_dir: "/data"
     nodehost_dir: "/data"
     deployment_id: 0
     peer: 
-        1: "broadcaster1:21511"
-        3: "broadcaster3:21513"
+        1: "mb1:21511"
+        2: "mb2:21512"
+        3: "mb3:21513"
 replica:
     1:
         bootstrap: false

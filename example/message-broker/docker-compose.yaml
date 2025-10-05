@@ -1,5 +1,5 @@
 services:
-  broadcaster1:
+  mb1:
     image: broadcaster:latest
     environment:
       DC: "/etc/dragonboat.yaml"
@@ -11,7 +11,7 @@ services:
       - ./config/config-1.yaml:/etc/dragonboat.yaml
       - ./data/data-1:/data
 
-  broadcaster2:
+  mb2:
     image: broadcaster:latest
     restart: on-failure
     environment:
@@ -23,7 +23,7 @@ services:
       - ./config/config-2.yaml:/etc/dragonboat.yaml
       - ./data/data-2:/data
 
-  broadcaster3:
+  mb3:
     image: broadcaster:latest
     environment:
       DC: "/etc/dragonboat.yaml"

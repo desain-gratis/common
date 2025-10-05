@@ -9,8 +9,5 @@ WORKDIR /app
 # Copy the compiled binary from the builder stage
 COPY ./broadcaster .
 
-# Expose the port your application listens on (if applicable)
-EXPOSE 9090
-
 # Command to run the application
 CMD ["./broadcaster"]

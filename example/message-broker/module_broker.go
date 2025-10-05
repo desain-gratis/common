@@ -129,7 +129,7 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 	oricontext := r.Context()
 
 	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		OriginPatterns: []string{"http://localhost:*"},
+		OriginPatterns: []string{"http://localhost:*", "https://chat.desain.gratis"},
 	})
 	if err != nil {
 		log.Error().Msgf("error accept %v", err)

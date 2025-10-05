@@ -156,10 +156,13 @@
         const userColors = new Map();
 
         function hashColor(id) {
-            const h = Math.abs([...id.toString()].reduce((a, c) => a + c.charCodeAt(0), 0)) % 360;
-            return `hsl(${h}, 70%, 45%)`;
-        }
+            const base = Math.abs([...id.toString()].reduce((a, c) => a + c.charCodeAt(0), 0));
+            const hue = (base * 30); // limit to 100–220° range (greens/teals)
+            const saturation = 60 + (base % 15); // moderate vibrancy
+            const lightness = 40 + (base % 15);  // keep readable
 
+            return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+        }
         function ensureColor(id) {
             if (!userColors.has(id)) userColors.set(id, hashColor(id));
             return userColors.get(id);
@@ -197,7 +200,7 @@
         }
 
         function connectWebSocket(retry = 0) {
-            ws = new WebSocket("ws://localhost:9002/log/topic-a/ws");
+            ws = new WebSocket("ws://mb1:9090/log/topic-a/ws");
 
             ws.onopen = () => {
                 appendInfo("✅ Connected to server");

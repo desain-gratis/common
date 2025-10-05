@@ -11,16 +11,17 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-func getPeer(x map[int]string, cfg config2) map[uint64]dragonboat.Target {
+func getPeer(x map[int]string, _ config2) map[uint64]dragonboat.Target {
 	y := make(map[uint64]dragonboat.Target)
 	for replicaID, peerRaftAddress := range x {
 		y[uint64(replicaID)] = dragonboat.Target(peerRaftAddress)
 	}
 
-	// add our own self address
-	if x != nil {
-		y[cfg.Host.ReplicaID] = cfg.Host.RaftAddress
-	}
+	// commented this out because listening IP address can different..; need to configure explicitly
+	// // add our own self address
+	// if x != nil {
+	// 	y[cfg.Host.ReplicaID] = cfg.Host.RaftAddress
+	// }
 
 	return y
 }
