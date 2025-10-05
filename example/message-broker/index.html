@@ -200,7 +200,7 @@
         }
 
         function connectWebSocket(retry = 0) {
-            ws = new WebSocket("ws://mb1:9090/log/topic-a/ws");
+            ws = new WebSocket("https://mb.desain.gratis/log/topic-a/ws");
 
             ws.onopen = () => {
                 appendInfo("✅ Connected to server");
