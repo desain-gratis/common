@@ -1,29 +1,124 @@
----
-version: "3.7"
 services:
-  ts-sidecar:
-    image: tailscale/tailscale:latest
-    container_name: ts-sidecar
-    hostname: ts-sidecar
+  mb1:
+    image: broadcaster:latest
     environment:
-      - TS_AUTHKEY=tskey-auth-kWp9EzumbW11CNTRL-2tE656JGmuN2GBpp8C5dtNfaWzpq45ER
-      - TS_STATE_DIR=/var/lib/tailscale
-      - TS_ACCEPT_DNS=true
-      - TS_USERSPACE=false
-      - TS_HOSTNAME=mbg2
+      DC: "/etc/dragonboat.yaml"
+    restart: on-failure
+    ports:
+      - "9001:9090"
     volumes:
-      - ${PWD}/ts-nginx-test/state:/var/lib/tailscale
-    devices:
-      - /dev/net/tun:/dev/net/tun
-    cap_add:
-      - net_admin
-    restart: unless-stopped
-  broadcaster:
-    image: broadcaster
-    container_name: broadcaster
-    network_mode: service:ts-sidecar
+      - ./config/config-1.yaml:/etc/dragonboat.yaml
+      - ./data/data-1:/data
+    depends_on:
+      - clickhouse-mb1
+    networks:
+      - appnet
+    command: >
+      sh -c "
+        echo '⏳ Waiting for ClickHouse...';
+        until nc -z clickhouse-mb1 9000; do
+          echo 'ClickHouse not ready yet...';
+          sleep 2;
+          done;
+        echo '✅ ClickHouse is ready!';
+        ./broadcaster
+        "
+  mb2:
+    image: broadcaster:latest
+    restart: on-failure
+    environment:
+      DC: "/etc/dragonboat.yaml"
+    ports:
+      - "9002:9090"
     volumes:
-      - ${PWD}/dragonboat.yaml:/etc/dragonboat.yaml
-      - ${PWD}/data:/data
+      - ./config/config-2.yaml:/etc/dragonboat.yaml
+      - ./data/data-2:/data
+    depends_on:
+      - clickhouse-mb2
+    networks:
+      - appnet
+    command: >
+      sh -c "
+        echo '⏳ Waiting for ClickHouse...';
+        until nc -z clickhouse-mb2 9000; do
+          echo 'ClickHouse not ready yet...';
+          sleep 2;
+          done;
+        echo '✅ ClickHouse is ready!';
+        ./broadcaster
+        "
+  mb3:
+    image: broadcaster:latest
+    environment:
+      DC: "/etc/dragonboat.yaml"
+    restart: on-failure
+    ports:
+      - "9003:9090"
+    volumes:
+      - ./config/config-3.yaml:/etc/dragonboat.yaml
+      - ./data/data-3:/data
+    depends_on:
+      - clickhouse-mb3
+    networks:
+      - appnet
+    command: >
+      sh -c "
+        echo '⏳ Waiting for ClickHouse...';
+        until nc -z clickhouse-mb3 9000; do
+          echo 'ClickHouse not ready yet...';
+          sleep 2;
+          done;
+        echo '✅ ClickHouse is ready!';
+        ./broadcaster
+        "
+  clickhouse-mb1:
+    image: clickhouse/clickhouse-server:latest
+    container_name: clickhouse-mb1
+    environment:
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: default
+    ports:
+      - "8801:8123"
+      - "9901:9000"
+    volumes:
+      - ./data/clickhouse_data_mb1:/var/lib/clickhouse
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - appnet
 
+  clickhouse-mb2:
+    image: clickhouse/clickhouse-server:latest
+    container_name: clickhouse-mb2
+    environment:
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: default
+    ports:
+      - "8802:8123"
+      - "9902:9000"
+    volumes:
+      - ./data/clickhouse_data_mb2:/var/lib/clickhouse
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - appnet
 
+  clickhouse-mb3:
+    image: clickhouse/clickhouse-server:latest
+    container_name: clickhouse-mb3
+    environment:
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: default
+    ports:
+      - "8803:8123"
+      - "9903:9000"
+    volumes:
+      - ./data/clickhouse_data_mb3:/var/lib/clickhouse
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - appnet
+
+volumes:
+  config:
+    driver: local
+
+networks:
+  appnet:
