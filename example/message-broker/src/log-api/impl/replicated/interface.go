@@ -2,9 +2,12 @@ package replicated
 
 import "encoding/json"
 
-type Query string
-
 type QuerySubscribe struct{}
+
+type QueryChatFromOffset struct {
+	// Offset represent the current chat offset; you get it by subscribing
+	Offset uint64
+}
 
 type Command string
 type EventName string

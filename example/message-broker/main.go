@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	logapi "github.com/desain-gratis/common/example/message-broker/src/log-api"
+	logapi_impl "github.com/desain-gratis/common/example/message-broker/src/log-api/impl"
 	logapi_impl_replicated "github.com/desain-gratis/common/example/message-broker/src/log-api/impl/replicated"
 	"github.com/desain-gratis/common/utility/replica"
 	"github.com/julienschmidt/httprouter"
@@ -59,6 +61,33 @@ func main() {
 		router.POST("/log/"+config.ID, brokerAPI.Publish)
 		router.GET("/log/"+config.ID+"/tail", brokerAPI.Tail)
 		router.GET("/log/"+config.ID+"/ws", brokerAPI.Websocket)
+
+		return nil
+	})
+
+	replica.ForEachType("happy", func(config replica.Config[logapi_impl_replicated.LogConfig]) error {
+		topic := logapi_impl.NewTopic(func(key string) logapi.Subscription {
+			return logapi_impl.NewSubscription(key, true, 0, config.AppConfig.ExitMessage, time.Duration(config.AppConfig.ListenTimeoutS)*time.Second)
+		})
+
+		happy := logapi_impl_replicated.NewHappy(topic, config.AppConfig.ClickhouseAddr)
+
+		err := config.StartOnDiskReplica(happy)
+		if err != nil {
+			return err
+		}
+
+		// Create HTTP API handler to interact with the replica
+		brokerAPI := broker{
+			dhost:     config.Host,
+			shardID:   config.ShardID,
+			replicaID: config.ReplicaID,
+		}
+
+		router.GET("/happy/"+config.ID, brokerAPI.GetTopic)
+		router.POST("/happy/"+config.ID, brokerAPI.Publish)
+		router.GET("/happy/"+config.ID+"/tail", brokerAPI.Tail)
+		router.GET("/happy/"+config.ID+"/ws", brokerAPI.Websocket)
 
 		return nil
 	})

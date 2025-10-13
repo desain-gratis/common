@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"sync"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	notifierapi "github.com/desain-gratis/common/example/message-broker/src/log-api"
@@ -24,9 +23,6 @@ type topicSM struct {
 	appliedIndex uint64
 	conn         driver.Conn
 	topic        notifierapi.Topic
-
-	listener map[string]notifierapi.Subscription
-	lock     *sync.RWMutex
 }
 
 // NewSM specify message topic implementation
@@ -36,8 +32,6 @@ func NewSMF(topic notifierapi.Topic) statemachine.CreateStateMachineFunc {
 			shardID:   shardID,
 			replicaID: replicaID,
 			topic:     topic,
-			lock:      &sync.RWMutex{},
-			listener:  make(map[string]notifierapi.Subscription),
 		}
 	}
 }
@@ -95,6 +89,10 @@ func (s *topicSM) Update(e sm.Entry) (sm.Result, error) {
 	})
 
 	return sm.Result{Value: s.appliedIndex, Data: resp}, nil
+}
+
+func (s *topicSM) PrepareSnapshot() (interface{}, error) {
+	return nil, nil
 }
 
 // SaveSnapshot saves the current IStateMachine state into a snapshot using the

@@ -59,7 +59,7 @@ func (b *broker) Publish(w http.ResponseWriter, r *http.Request, p httprouter.Pa
 
 func (b *broker) Tail(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	// tail topic log
-	notifier, err := b.getListener(w)
+	notifier, _, err := b.getListener(w)
 	if err != nil {
 		return
 	}
@@ -139,6 +139,7 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 		log.Info().Msgf("close now trigger")
 		c.CloseNow()
 	}()
+
 	log.Info().Msgf("LOh")
 	go func() {
 		defer wg.Done()
@@ -172,7 +173,7 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 	}()
 
 	// tail topic log
-	notifier, err := b.getListener(w)
+	notifier, chatOffset, err := b.getListener(w)
 	if err != nil {
 		log.Error().Msgf("error get listener %v", err)
 		return
@@ -265,6 +266,13 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 	})
 	c.Write(r.Context(), websocket.MessageText, idd)
 
+	// notify what's the chat offset
+	idd, _ = json.Marshal(map[string]any{
+		"evt_name": "chat-offset",
+		"data":     chatOffset,
+	})
+	c.Write(r.Context(), websocket.MessageText, idd)
+
 	// notify i'm online (raft)
 	d := map[string]any{
 		"cmd_name": "notify-online",
@@ -306,7 +314,7 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 	log.Info().Msgf("miroslav..")
 }
 
-func (b *broker) getListener(w http.ResponseWriter) (notifierapi.Listener, error) {
+func (b *broker) getListener(w http.ResponseWriter) (notifierapi.Listener, uint64, error) {
 	sess := b.dhost.GetNoOPSession(b.shardID)
 
 	ctx, c := context.WithTimeout(context.Background(), 5*time.Second)
@@ -317,14 +325,14 @@ func (b *broker) getListener(w http.ResponseWriter) (notifierapi.Listener, error
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		fmt.Fprintf(w, "sync read error: %v", err)
-		return nil, err
+		return nil, 0, err
 	}
 
 	l, ok := v.(notifierapi.Listener)
 	if !ok {
 		w.WriteHeader(http.StatusInternalServerError)
 		fmt.Fprintf(w, "not a listener error: %v", err)
-		return nil, errors.New("not notifier")
+		return nil, 0, errors.New("not notifier")
 	}
 
 	// 2. start consuming data from the subscription
@@ -335,19 +343,50 @@ func (b *broker) getListener(w http.ResponseWriter) (notifierapi.Listener, error
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		fmt.Fprintf(w, "error: %v", err)
-		return nil, err
+		return nil, 0, err
 	}
+
 	payload, _ := json.Marshal(sm_topic.UpdateRequest{
 		CmdName: sm_topic.Command_StartSubscription,
 		Data:    data,
 	})
 
-	_, err = b.dhost.SyncPropose(ctx, sess, payload)
+	result, err := b.dhost.SyncPropose(ctx, sess, payload)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		fmt.Fprintf(w, "lapolizia: %v", err)
-		return nil, err
+		return nil, 0, err
 	}
 
-	return l, nil
+	return l, result.Value, nil
+}
+
+type Message struct {
+	Type string
+	Data json.RawMessage
+}
+
+type QueryChat struct {
+	CurrentOffset uint64
+}
+
+func parseMessage(payload []byte) error {
+	var msg Message
+	if err := json.Unmarshal(payload, &msg); err != nil {
+		return err
+	}
+
+	switch msg.Type {
+	case "chat":
+		// send data to raft
+		// return immediately ()
+	case "query-chat":
+		var queryChat QueryChat
+		if err := json.Unmarshal(msg.Data, &queryChat); err != nil {
+			return err
+		}
+		// query, get iterator, write to web socket for each entry
+	}
+
+	return errors.New("message type not supported")
 }

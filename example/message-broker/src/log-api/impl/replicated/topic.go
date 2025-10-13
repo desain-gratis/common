@@ -32,6 +32,7 @@ type LogConfig struct {
 	Async          bool    `json:"async"`
 	BufferSize     uint64  `json:"buffer_size"`
 	ListenTimeoutS uint32  `json:"listen_timeout_s"`
+	ClickhouseAddr string  `json:"clickhouse_addr"`
 }
 
 func CreateSM(appConfig LogConfig) statemachine.CreateStateMachineFunc {

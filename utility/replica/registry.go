@@ -24,6 +24,31 @@ type Config[T any] struct {
 	AppConfig T
 }
 
+func (c *Config[T]) StartOnDiskReplica(fn statemachine.CreateOnDiskStateMachineFunc) error {
+	var target map[uint64]dragonboat.Target
+	if c.internal.Bootstrap {
+		target = getPeer(cfg.Host.Peer, cfg)
+	}
+
+	join := len(target) == 0
+
+	err := dhost.StartOnDiskReplica(target, join, fn, config.Config{
+		ShardID:            c.internal.shardID,
+		ReplicaID:          c.internal.replicaID,
+		HeartbeatRTT:       1,
+		CheckQuorum:        true,
+		ElectionRTT:        10,
+		SnapshotEntries:    0, // todo: set to 0. let manual snapshot by cron by calling request snapshot.
+		CompactionOverhead: 5,
+	})
+
+	if err != nil {
+		log.Panic().Msgf("start replica: %v", err)
+	}
+
+	return nil
+}
+
 func (c *Config[T]) StartReplica(fn statemachine.CreateStateMachineFunc) error {
 	var target map[uint64]dragonboat.Target
 	if c.internal.Bootstrap {
@@ -95,6 +120,10 @@ func Init() error {
 
 func ForEachType[T any](appType string, f func(config Config[T]) error) {
 	for _, sc := range cfg.Replica {
+		if sc.Type != appType {
+			continue
+		}
+
 		shardID := sc.shardID
 
 		listener.ShardListener[shardID] = notifyLeader(dhost, shardID, cfg.Host.ReplicaID)

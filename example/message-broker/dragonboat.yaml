@@ -5,9 +5,8 @@ host:
     nodehost_dir: "/data"
     deployment_id: 0
     peer: 
-        1: "mb1:21511"
-        2: "mb2:21512"
-        3: "mb3:21513"
+        1: "mbg1:21511"
+        2: "mbg2:21512"
 replica:
     1:
         bootstrap: false
@@ -18,13 +17,4 @@ replica:
             {
                 "exit_message": "server 3, is closed. 🔋"
             }
-    2:
-        bootstrap: false
-        id: "ondisk-fsm-poc"
-        alias: "Happy"
-        type: "happy"
-        config: |
-            {
-                "exit_message": "server 3, is closed. 🔋",
-                "clickhouse_addr": "clickhouse-mb3:9000"
-            }
+

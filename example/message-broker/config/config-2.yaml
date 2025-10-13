@@ -18,3 +18,13 @@ replica:
             {
                 "exit_message": "server 2? is closed, bye byee 🧧 💵"
             }
+    2:
+        bootstrap: false
+        id: "ondisk-fsm-poc"
+        alias: "Happy"
+        type: "happy"
+        config: |
+            {
+                "exit_message": "server 2? is closed, bye byee 🧧 💵",
+                "clickhouse_addr": "clickhouse-mb2:9000"
+            }
