@@ -13,16 +13,7 @@ services:
       - clickhouse-mb1
     networks:
       - appnet
-    command: >
-      sh -c "
-        echo '⏳ Waiting for ClickHouse...';
-        until nc -z clickhouse-mb1 9000; do
-          echo 'ClickHouse not ready yet...';
-          sleep 2;
-          done;
-        echo '✅ ClickHouse is ready!';
-        ./broadcaster
-        "
+    command: [ "./broadcaster"]
   mb2:
     image: broadcaster:latest
     restart: on-failure
@@ -37,16 +28,7 @@ services:
       - clickhouse-mb2
     networks:
       - appnet
-    command: >
-      sh -c "
-        echo '⏳ Waiting for ClickHouse...';
-        until nc -z clickhouse-mb2 9000; do
-          echo 'ClickHouse not ready yet...';
-          sleep 2;
-          done;
-        echo '✅ ClickHouse is ready!';
-        ./broadcaster
-        "
+    command: [ "./broadcaster"]
   mb3:
     image: broadcaster:latest
     environment:
@@ -61,16 +43,7 @@ services:
       - clickhouse-mb3
     networks:
       - appnet
-    command: >
-      sh -c "
-        echo '⏳ Waiting for ClickHouse...';
-        until nc -z clickhouse-mb3 9000; do
-          echo 'ClickHouse not ready yet...';
-          sleep 2;
-          done;
-        echo '✅ ClickHouse is ready!';
-        ./broadcaster
-        "
+    command: [ "./broadcaster"]
   clickhouse-mb1:
     image: clickhouse/clickhouse-server:latest
     container_name: clickhouse-mb1
@@ -82,7 +55,7 @@ services:
       - "9901:9000"
     volumes:
       - ./data/clickhouse_data_mb1:/var/lib/clickhouse
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+      # - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
       - appnet
 
@@ -97,7 +70,7 @@ services:
       - "9902:9000"
     volumes:
       - ./data/clickhouse_data_mb2:/var/lib/clickhouse
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+      # - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
       - appnet
 
@@ -112,7 +85,7 @@ services:
       - "9903:9000"
     volumes:
       - ./data/clickhouse_data_mb3:/var/lib/clickhouse
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+      # - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
       - appnet
 

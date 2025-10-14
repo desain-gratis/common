@@ -88,6 +88,7 @@ func main() {
 		router.POST("/happy/"+config.ID, brokerAPI.Publish)
 		router.GET("/happy/"+config.ID+"/tail", brokerAPI.Tail)
 		router.GET("/happy/"+config.ID+"/ws", brokerAPI.Websocket)
+		// TODO: brokerAPI.Websocket(wsController)
 
 		return nil
 	})
@@ -115,8 +116,8 @@ func main() {
 	}
 
 	// provides a way to stop a long running connnection cleanly
-	ender := make(chan struct{})
-	wg := &sync.WaitGroup{}
+	// ender := make(chan struct{})
+	// wg := &sync.WaitGroup{}
 	ctx, _ = context.WithCancel(context.Background())
 	server := http.Server{
 		Addr:        address,
@@ -127,7 +128,8 @@ func main() {
 		// WriteTimeout: 15 * time.Second,
 
 		BaseContext: func(l net.Listener) context.Context {
-			return context.WithValue(context.WithValue(ctx, "ender", ender), "wg", wg)
+			// inject with application context.
+			return context.WithValue(ctx, "app-ctx", ctx)
 		},
 	}
 
@@ -139,14 +141,7 @@ func main() {
 		<-sigint
 		log.Info().Msgf("SIGINT RECEIVED")
 
-		close(ender)
-		log.Info().Msgf("ENDER CLOSED, waiting for close!")
-		wg.Wait()
-		log.Info().Msgf("CLOSED ALL WS")
-
-		// stop() // move stop here (so we can still send to ws in code above)
-
-		// We received an interrupt signal, shutdown sequence (stop listen, wait existing to finish), wait 30 second max.
+		// close HTTP connection
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
@@ -155,7 +150,21 @@ func main() {
 			// Error from closing listeners, or context timeout:
 			log.Err(err).Msgf("HTTP server Shutdown")
 		}
-		log.Info().Msgf("Stopped serving new connections.")
+
+		// close hijacked websocket connection
+
+		// close(ender)
+		// log.Info().Msgf("Waiting for websocket close..")
+		// appStop()
+
+		// TODO: wsController.Shutdown(ctx)
+		// wg.Wait()
+		// log.Info().Msgf("CLOSED ALL WS")
+
+		// stop() // move stop here (so we can still send to ws in code above)
+
+		// We received an interrupt signal, shutdown sequence (stop listen, wait existing to finish), wait 30 second max.
+
 		close(idleConnsClosed)
 	}()
 
@@ -167,4 +176,8 @@ func main() {
 
 	<-idleConnsClosed
 	log.Info().Msgf("Bye bye")
+}
+
+type Stopper struct {
+	wg *sync.WaitGroup
 }

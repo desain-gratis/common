@@ -34,7 +34,7 @@ func NewDiskKV(shardID uint64, replicaID uint64) sm.IOnDiskStateMachine {
 // Open opens the state machine and return the index of the last Raft Log entry
 // already updated into the state machine.
 func (d *baseDiskSM) Open(stopc <-chan struct{}) (uint64, error) {
-	conn, err := clickhouse.Open(&clickhouse.Options{
+	opts := &clickhouse.Options{
 		Addr: []string{d.clickhouseAddr},
 		Auth: clickhouse.Auth{
 			Username: "default",
@@ -48,14 +48,35 @@ func (d *baseDiskSM) Open(stopc <-chan struct{}) (uint64, error) {
 		},
 		DialTimeout: 5 * time.Second,
 		ReadTimeout: 10 * time.Second,
-	})
-	if err != nil {
-		log.Fatal().Msgf("failed to open connection base to clickhouse: %v err: %v", d.clickhouseAddr, err)
 	}
 
-	d.conn = conn
+	var attempt int
+	var conn driver.Conn
+	var err error
+
+	for {
+		attempt++
+		conn, err = clickhouse.Open(opts)
+		if err == nil {
+			break
+		}
+		time.Sleep(1 * time.Second)
+	}
+
+	var s string
+	if attempt > 1 {
+		s = "s"
+	}
+
+	if err != nil {
+		log.Fatal().Msgf("failed to open connection base to clickhouse: %v after %v attempt%v err: %v", d.clickhouseAddr, attempt, s, err)
+	}
+
+	log.Info().Msgf("✅ Connected to ClickHouse in %v attempt%v", attempt, s)
 
 	ctx := context.Background()
+
+	d.conn = conn
 
 	// get or create database
 	err = d.prepareDB(ctx)
