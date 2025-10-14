@@ -8,7 +8,6 @@ import (
 	"io"
 	"math/rand"
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/Pallinder/go-randomdata"
@@ -17,6 +16,8 @@ import (
 	sm_topic "github.com/desain-gratis/common/example/message-broker/src/log-api/impl/replicated"
 	"github.com/julienschmidt/httprouter"
 	"github.com/lni/dragonboat/v4"
+	"github.com/lni/dragonboat/v4/client"
+	"github.com/lni/dragonboat/v4/statemachine"
 	"github.com/rs/zerolog/log"
 )
 
@@ -59,7 +60,7 @@ func (b *broker) Publish(w http.ResponseWriter, r *http.Request, p httprouter.Pa
 
 func (b *broker) Tail(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	// tail topic log
-	notifier, _, err := b.getListener(w)
+	notifier, _, err := b.getListener()
 	if err != nil {
 		return
 	}
@@ -107,26 +108,17 @@ type SubscriptionData struct {
 }
 
 func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	ender := r.Context().Value("ender").(chan struct{})
+	appCtx := r.Context().Value("app-ctx").(context.Context)
+	// ender := r.Context().Value("ender").(chan struct{})
 
-	select {
-	case _, closed := <-ender:
-		if closed {
-			// reject new new connection if server already closing..
-			return
-		}
-	default:
-	}
-
-	wg := r.Context().Value("wg").(*sync.WaitGroup)
-	wg.Add(1)
-
-	name := randomdata.SillyName() + " " + randomdata.LastName()
-	id := rand.Int()
-
-	sess := b.dhost.GetNoOPSession(b.shardID)
-
-	oricontext := r.Context()
+	// select {
+	// case _, closed := <-ender:
+	// 	if closed {
+	// 		// reject new new connection if server already closing..
+	// 		return
+	// 	}
+	// default:
+	// }
 
 	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{
 		OriginPatterns: []string{"http://localhost:*", "https://chat.desain.gratis"},
@@ -136,59 +128,27 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 		return
 	}
 	defer func() {
-		log.Info().Msgf("close now trigger")
-		c.CloseNow()
+		err := c.CloseNow()
+		if err != nil {
+			log.Err(err).Msgf("failed to close websocket")
+		}
+		log.Info().Msgf("successfully closed ws connection")
 	}()
 
-	log.Info().Msgf("LOh")
+	wsCtx, cancel := context.WithCancel(appCtx)
+
+	id := rand.Int()
+	sess := b.dhost.GetNoOPSession(b.shardID)
+
+	name := randomdata.SillyName() + " " + randomdata.LastName()
+
+	// Reader goroutine
 	go func() {
-		defer wg.Done()
-		log.Info().Msgf("HRUSNYA LANGSUGN WAIING FOR ENDER")
-		<-ender // select ender / ws closed
-		log.Info().Msgf("ENDER DONE")
+		defer cancel()
 
-		d := map[string]any{
-			"evt_name": "listen-server-closed",
-			"evt_ver":  0,
-			"data":     "Server closed.",
-		}
-
-		data, err := json.Marshal(d)
-		if err != nil {
-			log.Error().Msgf("invalid jsonk %v", d)
-			return
-		}
-
-		// _, err = b.dhost.SyncPropose(context.Background(), sess, data)
-		// if err != nil {
-		// 	log.Error().Msgf("error propose %v", err)
-		// 	return
-		// }
-		err = c.Write(context.Background(), websocket.MessageText, data)
-		if err != nil {
-			log.Error().Msgf("oyoyoyoy... %v %v", err, "Server closed")
-		}
-
-		log.Info().Msgf("SERVER ENDED GOODBYE ENDER, PROCESSING CLEAN CLOSE")
-	}()
-
-	// tail topic log
-	notifier, chatOffset, err := b.getListener(w)
-	if err != nil {
-		log.Error().Msgf("error get listener %v", err)
-		return
-	}
-
-	// after listening, start input reader goroutine
-	cccc, cancer := context.WithCancel(r.Context())
-
-	log.Info().Msgf("contextnya %v; kalau ini: %v", oricontext.Err(), r.Context().Err())
-
-	go func() {
-		defer cancer()
 		defer func() {
 			// notify i'm offline (raft)
-			d := map[string]any{
+			msg := map[string]any{
 				"cmd_name": "notify-offline",
 				"cmd_ver":  0,
 				"data": map[string]any{
@@ -196,28 +156,21 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 					"id":   id,
 				},
 			}
-
-			data, err := json.Marshal(d)
+			_, err := b.publishToRaft(wsCtx, sess, msg)
 			if err != nil {
 				return
 			}
 
-			for i := 0; i < 3; i++ {
-				ctx, cca := context.WithTimeout(context.Background(), 5*time.Second)
-				defer cca()
-
-				_, err = b.dhost.SyncPropose(ctx, sess, data)
-				if err == nil {
-					break
-				}
-				time.Sleep(500 * time.Millisecond)
-			}
 		}()
 
 		for {
-			t, payload, err := c.Read(cccc)
+			t, payload, err := c.Read(wsCtx)
+			if websocket.CloseStatus(err) > 0 {
+				log.Info().Msgf("closing connection")
+				return
+			}
 			if err != nil {
-				log.Info().Msgf("reader bye bye")
+				log.Err(err).Msgf("unknown error. closing connection")
 				return
 			}
 
@@ -226,12 +179,9 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 				continue
 			}
 
-			ctx, c := context.WithTimeout(context.Background(), 5*time.Second)
-			defer c()
-
 			ppp, _ := json.Marshal(string(payload))
 
-			d := map[string]any{
+			msg := map[string]any{
 				"cmd_name": "publish-message",
 				"cmd_ver":  0,
 				"data": map[string]any{
@@ -241,40 +191,38 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 				},
 			}
 
-			data, err := json.Marshal(d)
-			if err != nil {
-				log.Info().Msgf("invalid jsonk %v", string(payload))
-				continue
-			}
-
-			_, err = b.dhost.SyncPropose(ctx, sess, data)
+			_, err = b.publishToRaft(wsCtx, sess, msg)
 			if err != nil {
 				log.Error().Msgf("error propose %v", err)
 				continue
 			}
-			c()
 		}
 	}()
 
+	// tail chat log
+	notifier, chatOffset, err := b.getListener()
+	if err != nil {
+		log.Error().Msgf("error get listener %v", err)
+		return
+	}
+
 	// notify my identity (local)
-	idd, _ := json.Marshal(map[string]any{
+	msg := map[string]any{
 		"evt_name": "identity",
 		"data": map[string]any{
-			"name": name,
-			"id":   id,
+			"name":   name,
+			"id":     id,
+			"offset": chatOffset,
 		},
-	})
-	c.Write(r.Context(), websocket.MessageText, idd)
+	}
+	err = b.publishTextToWebsocket(wsCtx, c, msg)
+	if err != nil {
+		log.Error().Msgf("error publish notify-online message %v", err)
+		return
+	}
 
-	// notify what's the chat offset
-	idd, _ = json.Marshal(map[string]any{
-		"evt_name": "chat-offset",
-		"data":     chatOffset,
-	})
-	c.Write(r.Context(), websocket.MessageText, idd)
-
-	// notify i'm online (raft)
-	d := map[string]any{
+	// notify i'm online to raft
+	msg = map[string]any{
 		"cmd_name": "notify-online",
 		"cmd_ver":  0,
 		"data": map[string]any{
@@ -282,39 +230,80 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 			"id":   id,
 		},
 	}
-
-	data, err := json.Marshal(d)
+	_, err = b.publishToRaft(wsCtx, sess, msg)
 	if err != nil {
+		log.Error().Msgf("error publish notify-online message %v", err)
 		return
 	}
 
-	ctx, cca := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cca()
-
-	_, err = b.dhost.SyncPropose(ctx, sess, data)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprintf(w, "error cuk: %v", err)
-		return
-	}
-
-	for msg := range notifier.Listen(r.Context()) {
+	for msg := range notifier.Listen(wsCtx) {
 		data, err := json.Marshal(msg)
 		if err != nil {
 			log.Err(err).Msgf("marshal feel %v", msg)
 			continue
 		}
 
-		c.Write(r.Context(), websocket.MessageText, data)
+		c.Write(wsCtx, websocket.MessageText, data)
 	}
-	log.Info().Msgf("UHUUUY =======")
 
-	log.Info().Msgf("closing..")
-	c.Close(websocket.StatusNormalClosure, "")
-	log.Info().Msgf("miroslav..")
+	log.Info().Msgf("Did i get up?")
+
+	// server close
+	d := map[string]any{
+		"evt_name": "listen-server-closed",
+		"evt_ver":  0,
+		"data":     "Server closed.",
+	}
+
+	err = b.publishTextToWebsocket(wsCtx, c, d)
+	if err != nil {
+		log.Error().Msgf("oyoyoyoy... %v %v", err, "Server closed")
+	}
+
+	err = c.Close(websocket.StatusNormalClosure, "super duper X")
+	if err != nil {
+		log.Err(err).Msgf("failed to close websocket connection normally")
+	}
+
+	log.Info().Msgf("websocket connection closed")
 }
 
-func (b *broker) getListener(w http.ResponseWriter) (notifierapi.Listener, uint64, error) {
+func (b *broker) publishToRaft(ctx context.Context, sess *client.Session, msg any) ([]byte, error) {
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return nil, err
+	}
+
+	var res statemachine.Result
+	for range 3 {
+		ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		res, err = b.dhost.SyncPropose(ctx, sess, data)
+		if err == nil {
+			cancel()
+			break
+		}
+		cancel()
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	return res.Data, nil
+}
+
+func (b *broker) publishTextToWebsocket(ctx context.Context, wsconn *websocket.Conn, msg any) error {
+	payload, err := json.Marshal(msg)
+	if err != nil {
+		return err
+	}
+
+	err = wsconn.Write(ctx, websocket.MessageText, payload)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (b *broker) getListener() (notifierapi.Listener, uint64, error) {
 	sess := b.dhost.GetNoOPSession(b.shardID)
 
 	ctx, c := context.WithTimeout(context.Background(), 5*time.Second)
@@ -323,15 +312,11 @@ func (b *broker) getListener(w http.ResponseWriter) (notifierapi.Listener, uint6
 	// 1. get & register local instance of the subscription
 	v, err := b.dhost.SyncRead(ctx, b.shardID, sm_topic.QuerySubscribe{})
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprintf(w, "sync read error: %v", err)
 		return nil, 0, err
 	}
 
 	l, ok := v.(notifierapi.Listener)
 	if !ok {
-		w.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprintf(w, "not a listener error: %v", err)
 		return nil, 0, errors.New("not notifier")
 	}
 
@@ -341,8 +326,6 @@ func (b *broker) getListener(w http.ResponseWriter) (notifierapi.Listener, uint6
 		ReplicaID:      b.replicaID,
 	})
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprintf(w, "error: %v", err)
 		return nil, 0, err
 	}
 
@@ -353,8 +336,6 @@ func (b *broker) getListener(w http.ResponseWriter) (notifierapi.Listener, uint6
 
 	result, err := b.dhost.SyncPropose(ctx, sess, payload)
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprintf(w, "lapolizia: %v", err)
 		return nil, 0, err
 	}
 
