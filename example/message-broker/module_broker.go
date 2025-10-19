@@ -8,6 +8,7 @@ import (
 	"io"
 	"math/rand"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/Pallinder/go-randomdata"
@@ -108,18 +109,6 @@ type SubscriptionData struct {
 }
 
 func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	appCtx := r.Context().Value("app-ctx").(context.Context)
-	// ender := r.Context().Value("ender").(chan struct{})
-
-	// select {
-	// case _, closed := <-ender:
-	// 	if closed {
-	// 		// reject new new connection if server already closing..
-	// 		return
-	// 	}
-	// default:
-	// }
-
 	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{
 		OriginPatterns: []string{"http://localhost:*", "https://chat.desain.gratis"},
 	})
@@ -127,24 +116,24 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 		log.Error().Msgf("error accept %v", err)
 		return
 	}
-	defer func() {
-		err := c.CloseNow()
-		if err != nil {
-			log.Err(err).Msgf("failed to close websocket")
-		}
-		log.Info().Msgf("successfully closed ws connection")
-	}()
 
-	wsCtx, cancel := context.WithCancel(appCtx)
+	wsWg := r.Context().Value("ws-wg").(*sync.WaitGroup)
+	wsWg.Add(1)
+	defer wsWg.Done()
+
+	lctx, lcancel := context.WithCancel(r.Context().Value("app-ctx").(context.Context))
+	pctx, pcancel := context.WithCancel(context.Background())
 
 	id := rand.Int()
 	sess := b.dhost.GetNoOPSession(b.shardID)
 
 	name := randomdata.SillyName() + " " + randomdata.LastName()
 
-	// Reader goroutine
+	// Reader goroutine, detect client connection close as well.
 	go func() {
-		defer cancel()
+		// close listener & publisher ctx
+		defer lcancel()
+		defer pcancel()
 
 		defer func() {
 			// notify i'm offline (raft)
@@ -156,17 +145,16 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 					"id":   id,
 				},
 			}
-			_, err := b.publishToRaft(wsCtx, sess, msg)
+			_, err := b.publishToRaft(pctx, sess, msg)
 			if err != nil {
 				return
 			}
-
 		}()
 
 		for {
-			t, payload, err := c.Read(wsCtx)
+			t, payload, err := c.Read(pctx)
 			if websocket.CloseStatus(err) > 0 {
-				log.Info().Msgf("closing connection")
+				log.Info().Msgf("closing connection..")
 				return
 			}
 			if err != nil {
@@ -191,7 +179,7 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 				},
 			}
 
-			_, err = b.publishToRaft(wsCtx, sess, msg)
+			_, err = b.publishToRaft(pctx, sess, msg)
 			if err != nil {
 				log.Error().Msgf("error propose %v", err)
 				continue
@@ -215,7 +203,7 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 			"offset": chatOffset,
 		},
 	}
-	err = b.publishTextToWebsocket(wsCtx, c, msg)
+	err = b.publishTextToWebsocket(pctx, c, msg)
 	if err != nil {
 		log.Error().Msgf("error publish notify-online message %v", err)
 		return
@@ -230,39 +218,48 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 			"id":   id,
 		},
 	}
-	_, err = b.publishToRaft(wsCtx, sess, msg)
+	_, err = b.publishToRaft(pctx, sess, msg)
 	if err != nil {
 		log.Error().Msgf("error publish notify-online message %v", err)
 		return
 	}
 
-	for msg := range notifier.Listen(wsCtx) {
+	for msg := range notifier.Listen(lctx) {
 		data, err := json.Marshal(msg)
 		if err != nil {
 			log.Err(err).Msgf("marshal feel %v", msg)
 			continue
 		}
 
-		c.Write(wsCtx, websocket.MessageText, data)
+		err = c.Write(pctx, websocket.MessageText, data)
+		if err != nil && websocket.CloseStatus(err) == -1 {
+			log.Err(err).Msgf("err listen to notifier event %v", string(data))
+			return
+		}
 	}
 
-	log.Info().Msgf("Did i get up?")
+	// if we cannot publish anymore, return immediately
+	if err := pctx.Err(); err != nil {
+		return
+	}
 
-	// server close
+	// else, send goodbye message
 	d := map[string]any{
 		"evt_name": "listen-server-closed",
 		"evt_ver":  0,
 		"data":     "Server closed.",
 	}
 
-	err = b.publishTextToWebsocket(wsCtx, c, d)
-	if err != nil {
-		log.Error().Msgf("oyoyoyoy... %v %v", err, "Server closed")
+	err = b.publishTextToWebsocket(pctx, c, d)
+	if err != nil && websocket.CloseStatus(err) == -1 {
+		log.Err(err).Msgf("failed to send message")
+		return
 	}
 
 	err = c.Close(websocket.StatusNormalClosure, "super duper X")
-	if err != nil {
+	if err != nil && websocket.CloseStatus(err) == -1 {
 		log.Err(err).Msgf("failed to close websocket connection normally")
+		return
 	}
 
 	log.Info().Msgf("websocket connection closed")

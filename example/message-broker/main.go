@@ -117,8 +117,8 @@ func main() {
 
 	// provides a way to stop a long running connnection cleanly
 	// ender := make(chan struct{})
-	// wg := &sync.WaitGroup{}
-	ctx, _ = context.WithCancel(context.Background())
+	wsWg := &sync.WaitGroup{}
+	wsCtx, wsCancel := context.WithCancel(context.Background())
 	server := http.Server{
 		Addr:        address,
 		Handler:     withCors(router),
@@ -129,7 +129,9 @@ func main() {
 
 		BaseContext: func(l net.Listener) context.Context {
 			// inject with application context.
-			return context.WithValue(ctx, "app-ctx", ctx)
+			ctx := context.WithValue(ctx, "app-ctx", wsCtx)
+			ctx = context.WithValue(ctx, "ws-wg", wsWg)
+			return ctx
 		},
 	}
 
@@ -151,19 +153,10 @@ func main() {
 			log.Err(err).Msgf("HTTP server Shutdown")
 		}
 
-		// close hijacked websocket connection
-
-		// close(ender)
-		// log.Info().Msgf("Waiting for websocket close..")
-		// appStop()
-
-		// TODO: wsController.Shutdown(ctx)
-		// wg.Wait()
-		// log.Info().Msgf("CLOSED ALL WS")
-
-		// stop() // move stop here (so we can still send to ws in code above)
-
-		// We received an interrupt signal, shutdown sequence (stop listen, wait existing to finish), wait 30 second max.
+		// websocket ws (todo: better naming)
+		wsCancel()
+		log.Info().Msgf("Waiting for websocket connection to close..")
+		wsWg.Wait()
 
 		close(idleConnsClosed)
 	}()
@@ -176,8 +169,4 @@ func main() {
 
 	<-idleConnsClosed
 	log.Info().Msgf("Bye bye")
-}
-
-type Stopper struct {
-	wg *sync.WaitGroup
 }
