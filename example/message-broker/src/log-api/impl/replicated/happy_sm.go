@@ -53,28 +53,67 @@ func (s *happySM) Lookup(ctx context.Context, query interface{}) (interface{}, e
 	case QuerySubscribe:
 		subs, err := s.topic.Subscribe()
 		if err != nil {
+			log.Err(err).Msgf("LOH PAK BU")
 			return nil, err
 		}
 
 		log.Info().Msgf("created local subscriber: %v", subs.ID())
 
 		return subs, nil
-	case QueryChatFromOffset:
+	case QueryLog:
 		conn, ok := ctx.Value(chConnKey).(driver.Conn)
 		if !ok {
 			return nil, errors.New("not a clickhouse context")
 		}
 
-		rows, err := conn.Query(ctx, DQLReadChatFromOffset, q.Offset)
-		if err != nil {
-			return nil, err
+		var rows driver.Rows
+		var err error
+
+		log.Info().Msgf("current offset: %+v", q)
+
+		if q.FromDateTime != nil {
+			rows, err = conn.Query(ctx, DQLReadAll, q.CurrentOffset, *q.FromDateTime)
+		} else {
+			rows, err = conn.Query(ctx, DQLReadAll, q.CurrentOffset)
 		}
 
-		// consumer need defer close after usage
-		return rows, nil
+		if err != nil {
+			log.Err(err).Msgf("helo failed to qeuery clickhouse")
+			return nil, err
+		}
+		log.Info().Msgf("querying")
+
+		result := make(chan Log)
+		go func() {
+			defer close(result)
+			defer rows.Close()
+			defer func() {
+				log.Info().Msgf("query finished")
+			}()
+
+			for rows.Next() {
+				var lg Log
+				var namespace string
+				err := rows.Scan(&namespace, &lg.EventID, &lg.ServerTimestamp, &lg.Data)
+				if err != nil {
+					log.Err(err).Msgf("error scaning row")
+					return
+				}
+				log.Info().Msgf("DATANYA: %v", string(lg.Data))
+				result <- lg
+			}
+		}()
+
+		return result, nil
 	}
 
 	return nil, errors.New("unsupported query")
+}
+
+type Log struct {
+	EventID         uint64    `json:"event_id"`
+	ServerTimestamp time.Time `json:"server_timestamp"`
+	Data            []byte    `json:"data"`
 }
 
 // PrepareUpdate prepare the resources for upcoming message
@@ -104,8 +143,6 @@ func (s *happySM) OnUpdate(ctx context.Context, e sm.Entry) OnAfterApply {
 			return sm.Result{Data: resp}, nil
 		}
 	}
-
-	log.Info().Msgf("applying update: %v", string(e.Cmd))
 
 	metadata, ok := ctx.Value(metadataKey).(*Metadata)
 	if !ok {
@@ -189,6 +226,11 @@ func (s *happySM) Apply(ctx context.Context) error {
 		return err
 	}
 
+	err = chatBatch.Close()
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -196,6 +238,7 @@ func (s *happySM) startSubscription(ent sm.Entry, rawData json.RawMessage, start
 	var data StartSubscriptionData
 	err := json.Unmarshal(rawData, &data)
 	if err != nil {
+		log.Err(err).Msgf("err while start subscription unmarshal %v", err)
 		resp, _ := json.Marshal(AddSubscriptionResponse{
 			Error: err,
 		})
@@ -214,6 +257,7 @@ func (s *happySM) startSubscription(ent sm.Entry, rawData json.RawMessage, start
 
 	subs, err := s.topic.GetSubscription(data.SubscriptionID)
 	if err != nil {
+		log.Err(err).Msgf("err get subs %v: %v %v", err, data.SubscriptionID, string(rawData))
 		resp, _ := json.Marshal(UpdateResponse{
 			Message: "skip (no listener)",
 		})
@@ -221,7 +265,7 @@ func (s *happySM) startSubscription(ent sm.Entry, rawData json.RawMessage, start
 		return sm.Result{Value: uint64(0), Data: resp}, nil
 	}
 
-	log.Info().Msgf("starting local subscriber: %v", subs.ID())
+	log.Info().Msgf("starting local subscriber: %v %v", subs.ID(), string(rawData))
 	subs.Start()
 
 	resp, _ := json.Marshal(UpdateResponse{

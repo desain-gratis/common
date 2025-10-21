@@ -15,6 +15,8 @@ import (
 	logapi_impl_replicated "github.com/desain-gratis/common/example/message-broker/src/log-api/impl/replicated"
 	"github.com/desain-gratis/common/utility/replica"
 	"github.com/julienschmidt/httprouter"
+	"github.com/lni/dragonboat/v4/client"
+	"github.com/lni/goutils/random"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
@@ -49,12 +51,15 @@ func main() {
 		if err != nil {
 			return err
 		}
+		// Create HTTP API handler to interact with the replica
+		sess := client.NewNoOPSession(config.ShardID, random.NewLockedRand())
 
 		// Create HTTP API handler to interact with the replica
 		brokerAPI := broker{
 			dhost:     config.Host,
 			shardID:   config.ShardID,
 			replicaID: config.ReplicaID,
+			sess:      sess,
 		}
 
 		router.GET("/log/"+config.ID, brokerAPI.GetTopic)
@@ -66,9 +71,12 @@ func main() {
 	})
 
 	replica.ForEachType("happy", func(config replica.Config[logapi_impl_replicated.LogConfig]) error {
-		topic := logapi_impl.NewTopic(func(key string) logapi.Subscription {
-			return logapi_impl.NewSubscription(key, true, 0, config.AppConfig.ExitMessage, time.Duration(config.AppConfig.ListenTimeoutS)*time.Second)
-		})
+		topic := logapi_impl.NewTopic()
+		topic.Csf = func(key string) logapi.Subscription {
+			return logapi_impl.NewSubscription(key, true, 0, config.AppConfig.ExitMessage, time.Duration(config.AppConfig.ListenTimeoutS)*time.Second, func() {
+				topic.RemoveSubscription(key)
+			})
+		}
 
 		happy := logapi_impl_replicated.NewHappy(topic, config.AppConfig.ClickhouseAddr)
 
@@ -78,10 +86,13 @@ func main() {
 		}
 
 		// Create HTTP API handler to interact with the replica
+		sess := client.NewNoOPSession(config.ShardID, random.NewLockedRand())
+
 		brokerAPI := broker{
 			dhost:     config.Host,
 			shardID:   config.ShardID,
 			replicaID: config.ReplicaID,
+			sess:      sess,
 		}
 
 		router.GET("/happy/"+config.ID, brokerAPI.GetTopic)

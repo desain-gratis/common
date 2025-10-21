@@ -36,11 +36,13 @@ type LogConfig struct {
 }
 
 func CreateSM(appConfig LogConfig) statemachine.CreateStateMachineFunc {
-	subsGen := func(key string) notifierapi.Subscription {
-		return logapi_impl.NewSubscription(key, true, 0, appConfig.ExitMessage, time.Duration(appConfig.ListenTimeoutS)*time.Second)
-	}
+	topic := logapi_impl.NewTopic()
 
-	topic := logapi_impl.NewTopic(subsGen)
+	topic.Csf = func(key string) notifierapi.Subscription {
+		return logapi_impl.NewSubscription(key, true, 0, appConfig.ExitMessage, time.Duration(appConfig.ListenTimeoutS)*time.Second, func() {
+			topic.RemoveSubscription(key)
+		})
+	}
 
 	stateMachineFn := NewSMF(topic)
 

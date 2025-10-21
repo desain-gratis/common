@@ -1,6 +1,10 @@
 package replicated
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"github.com/rs/zerolog/log"
+)
 
 type Metadata struct {
 	// AppliedIndex is the raft applied index
@@ -31,6 +35,8 @@ func deserializeMetadata(payload []byte) (*Metadata, error) {
 		var counter uint64
 		metadata.ChatLog_EvtIndex_Counter = &counter
 	}
+
+	log.Info().Msgf("METADATA %+v", *metadata.AppliedIndex)
 
 	return &metadata, nil
 }

@@ -1,12 +1,17 @@
 package replicated
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"time"
+)
 
 type QuerySubscribe struct{}
 
-type QueryChatFromOffset struct {
+type QueryLog struct {
 	// Offset represent the current chat offset; you get it by subscribing
-	Offset uint64
+	CurrentOffset uint64
+	FromDateTime  *time.Time
+	FromOffset    *uint64
 }
 
 type Command string
@@ -64,4 +69,5 @@ const (
 type StartSubscriptionData struct {
 	SubscriptionID string `json:"subscription_id"`
 	ReplicaID      uint64 `json:"replica_id"`
+	Debug          string `json:"debug"`
 }

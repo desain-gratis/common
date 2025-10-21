@@ -23,6 +23,9 @@ type Subscription interface {
 	// Publish to this single subscription
 	// intended to be called by Broker or for debugging purpose
 	Publish(ctx context.Context, message any) error
+
+	// Remove subscription
+	Stop()
 }
 
 type Listener interface {
@@ -30,4 +33,6 @@ type Listener interface {
 	ID() string
 
 	Listen(ctx context.Context) <-chan any
+
+	IsListening() bool
 }

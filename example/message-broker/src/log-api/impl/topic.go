@@ -6,6 +6,7 @@ import (
 	"math/rand/v2"
 	"strconv"
 	"sync"
+	"time"
 
 	notifierapi "github.com/desain-gratis/common/example/message-broker/src/log-api"
 	"github.com/rs/zerolog/log"
@@ -17,7 +18,7 @@ var _ notifierapi.Topic = &topic{}
 type topic struct {
 	listener map[uint64]notifierapi.Subscription
 	lock     *sync.RWMutex
-	csf      CreateSubscription
+	Csf      CreateSubscription
 }
 
 var (
@@ -27,11 +28,12 @@ var (
 
 type CreateSubscription func(id string) notifierapi.Subscription
 
+var _ notifierapi.Topic = &topic{}
+
 // NewTopic create a new topic with create subscription function
-func NewTopic(csf CreateSubscription) notifierapi.Topic {
+func NewTopic() *topic {
 	return &topic{
 		listener: make(map[uint64]notifierapi.Subscription),
-		csf:      csf,
 		lock:     &sync.RWMutex{},
 	}
 }
@@ -44,13 +46,23 @@ func getKey(uid uint64) string {
 func (s *topic) Subscribe() (notifierapi.Subscription, error) {
 	id := rand.Uint64() // change id impl to avoid conflict if needed
 
-	subs := s.csf(getKey(id))
+	subs := s.Csf(getKey(id))
 
 	s.lock.Lock()
 	s.listener[id] = subs
 	s.lock.Unlock()
 
-	// todo: add timeout if there is no active listener to close the listener.
+	go func(id uint64) {
+		time.Sleep(4 * time.Second)
+		if subs.IsListening() {
+			return
+		}
+
+		log.Error().Msgf("listen timed out")
+		s.lock.Lock()
+		defer s.lock.Unlock()
+		delete(s.listener, id)
+	}(id)
 
 	return s.listener[id], nil
 }
@@ -91,11 +103,18 @@ func (s *topic) Broadcast(ctx context.Context, message any) error {
 
 	wg := new(sync.WaitGroup)
 	for key, listener := range s.listener {
+		// if !listener.IsListening() {
+		// 	continue
+		// }
+		log.Info().Msgf("listener: %v gets it.", key)
+
 		wg.Add(1)
 		go func(k uint64, l notifierapi.Subscription) {
 			defer wg.Done()
 			err := listener.Publish(ctx, message)
-			if err != nil {
+			// todo: refactor here
+			if err != nil && !errors.Is(err, ErrNotStarted) {
+				log.Err(err).Msgf("error during publish.. I delete: %v", key)
 				delKey = append(delKey, key)
 			}
 		}(key, listener)
@@ -104,6 +123,7 @@ func (s *topic) Broadcast(ctx context.Context, message any) error {
 
 	s.lock.Lock()
 	defer s.lock.Unlock()
+
 	for _, key := range delKey {
 		log.Info().Msgf("deletion: %v", key)
 		delete(s.listener, key)

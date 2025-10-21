@@ -200,7 +200,8 @@
         }
 
         function connectWebSocket(retry = 0) {
-                ws = new WebSocket("http://localhost:9001/happy/ondisk-fsm-poc/ws"); // dev
+            // ws = new WebSocket("http://localhost:9001/happy/ondisk-fsm-poc/ws"); // dev
+            ws = new WebSocket("http://dxb-keenan.tailnet-ee99.ts.net:9001/happy/ondisk-fsm-poc/ws"); // dev
             // ws = new WebSocket("https://mb.desain.gratis/log/topic-a/ws"); // prod
 
             ws.onopen = () => {

@@ -14,6 +14,7 @@ import (
 	"github.com/Pallinder/go-randomdata"
 	"github.com/coder/websocket"
 	notifierapi "github.com/desain-gratis/common/example/message-broker/src/log-api"
+	"github.com/desain-gratis/common/example/message-broker/src/log-api/impl/replicated"
 	sm_topic "github.com/desain-gratis/common/example/message-broker/src/log-api/impl/replicated"
 	"github.com/julienschmidt/httprouter"
 	"github.com/lni/dragonboat/v4"
@@ -26,6 +27,7 @@ type broker struct {
 	shardID   uint64
 	replicaID uint64
 	dhost     *dragonboat.NodeHost
+	sess      *client.Session
 }
 
 func (b *broker) GetTopic(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
@@ -43,12 +45,10 @@ func (b *broker) Publish(w http.ResponseWriter, r *http.Request, p httprouter.Pa
 	// parse jwt, and then modify the payload.
 	// since we can publish outside the stream connection... / from anywhere.
 
-	sess := b.dhost.GetNoOPSession(b.shardID)
-
 	ctx, c := context.WithTimeout(context.Background(), 5*time.Second)
 	defer c()
 
-	v, err := b.dhost.SyncPropose(ctx, sess, payload)
+	v, err := b.dhost.SyncPropose(ctx, b.sess, payload)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		fmt.Fprintf(w, "error cuk: %v", err)
@@ -61,7 +61,7 @@ func (b *broker) Publish(w http.ResponseWriter, r *http.Request, p httprouter.Pa
 
 func (b *broker) Tail(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	// tail topic log
-	notifier, _, err := b.getListener()
+	notifier, _, err := b.getListener("csv")
 	if err != nil {
 		return
 	}
@@ -110,12 +110,13 @@ type SubscriptionData struct {
 
 func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		OriginPatterns: []string{"http://localhost:*", "https://chat.desain.gratis"},
+		OriginPatterns: []string{"http://localhost:*", "http://localhost", "https://chat.desain.gratis", "http://dxb-keenan.tailnet-ee99.ts.net", "https://dxb-keenan.tailnet-ee99.ts.net"},
 	})
 	if err != nil {
 		log.Error().Msgf("error accept %v", err)
 		return
 	}
+	defer c.Close(websocket.StatusNormalClosure, "super duper X")
 
 	wsWg := r.Context().Value("ws-wg").(*sync.WaitGroup)
 	wsWg.Add(1)
@@ -125,10 +126,12 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 	pctx, pcancel := context.WithCancel(context.Background())
 
 	id := rand.Int()
-	sess := b.dhost.GetNoOPSession(b.shardID)
-
 	name := randomdata.SillyName() + " " + randomdata.LastName()
 
+	sessID := &SessID{
+		ID:   id,
+		Name: name,
+	}
 	// Reader goroutine, detect client connection close as well.
 	go func() {
 		// close listener & publisher ctx
@@ -145,7 +148,7 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 					"id":   id,
 				},
 			}
-			_, err := b.publishToRaft(pctx, sess, msg)
+			_, err := b.publishToRaft(pctx, b.sess, msg)
 			if err != nil {
 				return
 			}
@@ -167,32 +170,27 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 				continue
 			}
 
-			ppp, _ := json.Marshal(string(payload))
-
-			msg := map[string]any{
-				"cmd_name": "publish-message",
-				"cmd_ver":  0,
-				"data": map[string]any{
-					"name": name,
-					"id":   id,
-					"data": json.RawMessage(ppp),
-				},
-			}
-
-			_, err = b.publishToRaft(pctx, sess, msg)
+			err = b.parseMessage(pctx, c, b.sess, sessID, payload)
 			if err != nil {
-				log.Error().Msgf("error propose %v", err)
-				continue
+				log.Err(err).Msgf("unknown error. closing connection")
+				return
 			}
 		}
 	}()
 
 	// tail chat log
-	notifier, chatOffset, err := b.getListener()
+	notifier, chatOffset, err := b.getListener(name)
 	if err != nil {
 		log.Error().Msgf("error get listener %v", err)
 		return
 	}
+
+	// todo: defer query unsubscribe to avoid nyangkut
+	// investigate nyangkut case when add (but it's not gotten to subscriber in Topic)
+	// bisa ngirim, tetapi gak dapet message jadinya..
+
+	// todo:
+	// ada juga kasus connected, but disconnected (when starting up)
 
 	// notify my identity (local)
 	msg := map[string]any{
@@ -218,9 +216,21 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 			"id":   id,
 		},
 	}
-	_, err = b.publishToRaft(pctx, sess, msg)
+	_, err = b.publishToRaft(pctx, b.sess, msg)
 	if err != nil {
 		log.Error().Msgf("error publish notify-online message %v", err)
+		return
+	}
+
+	// Loading last 7 dayds data..
+
+	aWeekBefore := time.Now().AddDate(0, 0, 7)
+	err = b.queryLog(pctx, c, replicated.QueryLog{
+		CurrentOffset: chatOffset,
+		FromDateTime:  &aWeekBefore,
+	})
+	if err != nil {
+		log.Error().Msgf("error querying last log %v", err)
 		return
 	}
 
@@ -274,7 +284,7 @@ func (b *broker) publishToRaft(ctx context.Context, sess *client.Session, msg an
 	var res statemachine.Result
 	for range 3 {
 		ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		res, err = b.dhost.SyncPropose(ctx, sess, data)
+		res, err = b.dhost.SyncPropose(ctx, b.sess, data)
 		if err == nil {
 			cancel()
 			break
@@ -300,9 +310,7 @@ func (b *broker) publishTextToWebsocket(ctx context.Context, wsconn *websocket.C
 	return nil
 }
 
-func (b *broker) getListener() (notifierapi.Listener, uint64, error) {
-	sess := b.dhost.GetNoOPSession(b.shardID)
-
+func (b *broker) getListener(name string) (notifierapi.Listener, uint64, error) {
 	ctx, c := context.WithTimeout(context.Background(), 5*time.Second)
 	defer c()
 
@@ -321,6 +329,7 @@ func (b *broker) getListener() (notifierapi.Listener, uint64, error) {
 	data, err := json.Marshal(sm_topic.StartSubscriptionData{
 		SubscriptionID: l.ID(),
 		ReplicaID:      b.replicaID,
+		Debug:          name,
 	})
 	if err != nil {
 		return nil, 0, err
@@ -331,7 +340,10 @@ func (b *broker) getListener() (notifierapi.Listener, uint64, error) {
 		Data:    data,
 	})
 
-	result, err := b.dhost.SyncPropose(ctx, sess, payload)
+	ctx2, c2 := context.WithTimeout(context.Background(), 5*time.Second)
+	defer c2()
+
+	result, err := b.dhost.SyncPropose(ctx2, b.sess, payload)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -339,32 +351,83 @@ func (b *broker) getListener() (notifierapi.Listener, uint64, error) {
 	return l, result.Value, nil
 }
 
-type Message struct {
-	Type string
-	Data json.RawMessage
+type Command struct {
+	Type    string
+	Version uint32
+	Data    json.RawMessage
+}
+type SessID struct {
+	ID   int
+	Name string
 }
 
-type QueryChat struct {
-	CurrentOffset uint64
-}
-
-func parseMessage(payload []byte) error {
-	var msg Message
-	if err := json.Unmarshal(payload, &msg); err != nil {
-		return err
+func (b *broker) parseMessage(pctx context.Context, wsconn *websocket.Conn, raftSess *client.Session, sessID *SessID, payload []byte) error {
+	var cmd Command
+	if err := json.Unmarshal(payload, &cmd); err != nil {
+		// ignore
 	}
 
-	switch msg.Type {
-	case "chat":
-		// send data to raft
-		// return immediately ()
-	case "query-chat":
-		var queryChat QueryChat
-		if err := json.Unmarshal(msg.Data, &queryChat); err != nil {
+	switch cmd.Type {
+	case "query-log":
+		var qlog replicated.QueryLog
+		if err := json.Unmarshal(cmd.Data, &qlog); err != nil {
 			return err
 		}
-		// query, get iterator, write to web socket for each entry
+		return b.queryLog(pctx, wsconn, qlog)
+	case "send-chat":
 	}
 
-	return errors.New("message type not supported")
+	// so it's not breaking client
+	ppp, _ := json.Marshal(string(payload))
+	msg := map[string]any{
+		"cmd_name": "publish-message",
+		"cmd_ver":  0,
+		"data": map[string]any{
+			"name": sessID.Name,
+			"id":   sessID.ID,
+			"data": json.RawMessage(ppp),
+		},
+	}
+
+	_, err := b.publishToRaft(pctx, raftSess, msg)
+	if err != nil {
+		log.Error().Msgf("error propose %v", err)
+		return err
+	}
+	return nil
+}
+
+func (b *broker) queryLog(pctx context.Context, wsconn *websocket.Conn, qlog replicated.QueryLog) error {
+	ctx, c := context.WithTimeout(pctx, 5*time.Second)
+	defer c()
+
+	q, err := b.dhost.SyncRead(ctx, b.shardID, qlog)
+	if err != nil {
+		return err
+	}
+	logstream, ok := q.(chan replicated.Log)
+	if !ok {
+		return errors.New("it's not a log")
+	}
+
+	log.Info().Msgf("logstream acquired") // todo: investigate why nyangkut
+
+	defer log.Info().Msgf("logstream released")
+	for msg := range logstream {
+		d := map[string]any{
+			"evt_name":         "echo",
+			"evt_ver":          0,
+			"table":            "chat_log",
+			"server_timestamp": msg.ServerTimestamp,
+			"evt_id":           msg.EventID,
+			"data":             json.RawMessage(msg.Data),
+		}
+
+		err = b.publishTextToWebsocket(pctx, wsconn, d)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

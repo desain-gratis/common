@@ -54,6 +54,8 @@ func (s *topicSM) Lookup(query interface{}) (interface{}, error) {
 		return nil, err
 	}
 
+	// TODO: query unsubscribe
+
 	log.Info().Msgf("created local subscriber: %v", subs.ID())
 
 	return subs, nil
@@ -170,7 +172,7 @@ func (s *topicSM) startSubscription(rawData json.RawMessage) (sm.Result, error) 
 		return sm.Result{Value: uint64(0), Data: resp}, nil
 	}
 
-	log.Info().Msgf("starting local subscriber: %v", subs.ID())
+	log.Info().Msgf("starting local subscriber: %v %v", subs.ID(), string(rawData))
 	subs.Start()
 
 	resp, _ := json.Marshal(UpdateResponse{

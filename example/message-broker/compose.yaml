@@ -44,6 +44,7 @@ services:
     networks:
       - appnet
     command: [ "./broadcaster"]
+
   clickhouse-mb1:
     image: clickhouse/clickhouse-server:latest
     container_name: clickhouse-mb1
@@ -58,6 +59,10 @@ services:
       # - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
       - appnet
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
 
   clickhouse-mb2:
     image: clickhouse/clickhouse-server:latest
@@ -73,6 +78,10 @@ services:
       # - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
       - appnet
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
 
   clickhouse-mb3:
     image: clickhouse/clickhouse-server:latest
@@ -88,6 +97,10 @@ services:
       # - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
       - appnet
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
 
 volumes:
   config:

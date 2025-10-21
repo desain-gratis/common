@@ -29,9 +29,14 @@ const (
 SELECT data FROM metadata WHERE namespace='default';
 	`
 
-	// DQLReadChatFromOffset read chat
-	DQLReadChatFromOffset = `
-SELECT namespace, event_id, server_timestamp, data FROM chat_log WHERE event_id < ? ORDER BY event_id DESC;
+	// DQLReadAll read log
+	DQLReadAll = `
+SELECT namespace, event_id, server_timestamp, data FROM chat_log WHERE event_id < ? ORDER BY event_id ASC;
+`
+
+	// DQLReadAllFromDateTime read log
+	DQLReadAllFromDateTime = `
+SELECT namespace, event_id, server_timestamp, data FROM chat_log WHERE event_id < ? AND server_timestamp >= ? ORDER BY event_id ASC;
 `
 )
 

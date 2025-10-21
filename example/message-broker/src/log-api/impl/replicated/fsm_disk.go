@@ -18,17 +18,10 @@ type baseDiskSM struct {
 	conn           driver.Conn
 	closed         bool
 	smMetadata     *Metadata
+	initialApplied uint64
 	happy          Happy
 	database       string
 	clickhouseAddr string
-}
-
-// NewDiskKV creates a new disk kv test state machine.
-func NewDiskKV(shardID uint64, replicaID uint64) sm.IOnDiskStateMachine {
-	d := &baseDiskSM{
-		database: "_default",
-	}
-	return d
 }
 
 // Open opens the state machine and return the index of the last Raft Log entry
@@ -122,8 +115,12 @@ func (d *baseDiskSM) Update(ents []sm.Entry) ([]sm.Entry, error) {
 	// Process message one-by-one
 	afterApplys := make([]OnAfterApply, len(ents))
 	for idx := range ents {
+		if ents[idx].Index <= d.initialApplied {
+			log.Panic().Msgf("oh no initial")
+		}
 		afterApplys[idx] = d.happy.OnUpdate(ctx, ents[idx])
 	}
+	log.Info().Msgf("entry size: %v", len(ents))
 
 	// Apply update to disk
 	err = d.happy.Apply(ctx)
@@ -134,6 +131,11 @@ func (d *baseDiskSM) Update(ents []sm.Entry) ([]sm.Entry, error) {
 
 	// Execute function after successful apply
 	for idx := range ents {
+		if ents[idx].Index <= d.initialApplied {
+			log.Panic().Msgf("oh no initial")
+			// continue
+		}
+
 		res, err := afterApplys[idx]()
 		if err != nil {
 			// or panic..
@@ -146,7 +148,7 @@ func (d *baseDiskSM) Update(ents []sm.Entry) ([]sm.Entry, error) {
 
 	err = d.saveMetadata()
 	if err != nil {
-		log.Panic().Msgf("base save metadata failed")
+		log.Panic().Msgf("base save metadata failed %v", err)
 	}
 
 	return ents, nil
@@ -209,9 +211,29 @@ func (s *baseDiskSM) prepareDB(ctx context.Context) error {
 		return err
 	}
 
-	if err := s.conn.Exec(ctx, "USE "+s.database); err != nil {
+	opts := &clickhouse.Options{
+		Addr: []string{s.clickhouseAddr},
+		Auth: clickhouse.Auth{
+			Username: "default",
+			Password: "default",
+			Database: s.database,
+		},
+		Settings: map[string]interface{}{
+			"max_execution_time": 60,
+		},
+		Compression: &clickhouse.Compression{
+			Method: clickhouse.CompressionLZ4,
+		},
+		DialTimeout: 5 * time.Second,
+		ReadTimeout: 10 * time.Second,
+	}
+
+	conn, err := clickhouse.Open(opts)
+	if err != nil {
 		return err
 	}
+	// replace with default database
+	s.conn = conn
 
 	return nil
 }
@@ -243,6 +265,9 @@ func (s *baseDiskSM) loadMetadata(ctx context.Context) error {
 
 	s.smMetadata = metadata
 
+	s.initialApplied = *metadata.AppliedIndex
+	s.lastApplied = *metadata.AppliedIndex
+
 	return nil
 }
 
@@ -252,7 +277,12 @@ func (s *baseDiskSM) saveMetadata() error {
 		return err
 	}
 
-	err = s.conn.Exec(context.Background(), DMLWriteRaftMetadata, string(payload))
+	// err = s.conn.Exec(context.Background(), DMLWriteRaftMetadata, string(payload))
+	// if err != nil {
+	// 	return err
+	// }
+
+	err = s.conn.AsyncInsert(context.Background(), DMLWriteRaftMetadata, true, string(payload))
 	if err != nil {
 		return err
 	}

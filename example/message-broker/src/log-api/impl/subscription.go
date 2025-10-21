@@ -7,6 +7,7 @@ import (
 	"time"
 
 	notifierapi "github.com/desain-gratis/common/example/message-broker/src/log-api"
+	"github.com/rs/zerolog/log"
 )
 
 var _ notifierapi.Subscription = &subscription{}
@@ -18,6 +19,7 @@ var (
 	ErrListenTimedOut = errors.New("listen timed out")
 )
 
+// TODO: major refactor this
 type subscription struct {
 	id          string
 	started     bool
@@ -27,9 +29,10 @@ type subscription struct {
 	async       bool
 	listen      bool
 	timeout     bool
+	stop        func()
 }
 
-func NewSubscription(id string, async bool, bufferSize uint32, exitMessage any, listenTimeout time.Duration) *subscription {
+func NewSubscription(id string, async bool, bufferSize uint32, exitMessage any, listenTimeout time.Duration, stop func()) *subscription {
 	// add go routine to Close this subscription
 	// if it's not listened up immediately after certain time (eg. 2 seconds)
 	s := &subscription{
@@ -37,17 +40,12 @@ func NewSubscription(id string, async bool, bufferSize uint32, exitMessage any, 
 		exitMessage: exitMessage,
 		ch:          make(chan any, bufferSize),
 		id:          id,
-	}
-
-	if listenTimeout > 0 {
-		go func() {
-			time.Sleep(listenTimeout)
-			s.timeout = true
-		}()
+		stop:        stop,
 	}
 
 	return s
 }
+
 func (c *subscription) ID() string {
 	return c.id
 }
@@ -56,8 +54,18 @@ func (c *subscription) Start() {
 	c.started = true
 }
 
+func (c *subscription) Stop() {
+	log.Info().Msgf("stopping: %v", c.id)
+	c.stop()
+}
+
+func (c *subscription) IsListening() bool {
+	return c.listen
+}
+
 func (c *subscription) Listen(ctx context.Context) <-chan any {
 	go func() {
+		defer c.Stop()
 		defer close(c.ch)
 
 		<-ctx.Done()
