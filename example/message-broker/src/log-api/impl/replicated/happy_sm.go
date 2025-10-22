@@ -50,67 +50,80 @@ func (s *happySM) Lookup(ctx context.Context, query interface{}) (interface{}, e
 	}
 
 	switch q := query.(type) {
-	case QuerySubscribe:
-		subs, err := s.topic.Subscribe()
-		if err != nil {
-			log.Err(err).Msgf("LOH PAK BU")
-			return nil, err
-		}
-
-		log.Info().Msgf("created local subscriber: %v", subs.ID())
-
-		return subs, nil
+	case SubscribeLog:
+		// subscribe to real time event for log update
+		return s.getSubscription()
 	case QueryLog:
-		conn, ok := ctx.Value(chConnKey).(driver.Conn)
-		if !ok {
-			return nil, errors.New("not a clickhouse context")
-		}
-
-		var rows driver.Rows
-		var err error
-
-		log.Info().Msgf("current offset: %+v", q)
-
-		if q.FromDateTime != nil {
-			rows, err = conn.Query(ctx, DQLReadAll, q.CurrentOffset, *q.FromDateTime)
-		} else {
-			rows, err = conn.Query(ctx, DQLReadAll, q.CurrentOffset)
-		}
-
-		if err != nil {
-			log.Err(err).Msgf("helo failed to qeuery clickhouse")
-			return nil, err
-		}
-		log.Info().Msgf("querying")
-
-		result := make(chan Log)
-		go func() {
-			defer close(result)
-			defer rows.Close()
-			defer func() {
-				log.Info().Msgf("query finished")
-			}()
-
-			for rows.Next() {
-				var lg Log
-				var namespace string
-				err := rows.Scan(&namespace, &lg.EventID, &lg.ServerTimestamp, &lg.Data)
-				if err != nil {
-					log.Err(err).Msgf("error scaning row")
-					return
-				}
-				log.Info().Msgf("DATANYA: %v", string(lg.Data))
-				result <- lg
-			}
-		}()
-
-		return result, nil
+		// query historical log
+		return s.queryLog(ctx, q)
 	}
 
 	return nil, errors.New("unsupported query")
 }
 
+func (s *happySM) getSubscription() (notifierapi.Subscription, error) {
+	subs, err := s.topic.Subscribe()
+	if err != nil {
+		log.Err(err).Msgf("LOH PAK BU")
+		return nil, err
+	}
+
+	log.Info().Msgf("created local subscriber: %v", subs.ID())
+
+	return subs, nil
+}
+
+func (s *happySM) queryLog(ctx context.Context, q QueryLog) (chan Event, error) {
+	conn, ok := ctx.Value(chConnKey).(driver.Conn)
+	if !ok {
+		return nil, errors.New("not a clickhouse context")
+	}
+
+	var rows driver.Rows
+	var err error
+
+	if q.FromDatetime != nil {
+		rows, err = conn.Query(ctx, DQLReadAll, q.ToOffset, *q.FromDatetime)
+	} else {
+		rows, err = conn.Query(ctx, DQLReadAll, q.ToOffset)
+	}
+
+	if err != nil {
+		log.Err(err).Msgf("helo failed to qeuery clickhouse")
+		return nil, err
+	}
+
+	result := make(chan Event)
+	go func() {
+		defer close(result)
+		defer rows.Close()
+		defer func() {
+			log.Info().Msgf("query finished")
+		}()
+
+		for rows.Next() {
+			var evt Event
+
+			evt.EvtTable = "chat_log"
+			evt.EvtName = EventName_Echo // todo: maybe move it somewher
+
+			var namespace string
+			var data string
+			err := rows.Scan(&namespace, &evt.EvtID, &evt.ServerTimestamp, &data)
+			if err != nil {
+				log.Err(err).Msgf("error scaning row")
+				return
+			}
+			evt.Data = []byte(data)
+			result <- evt
+		}
+	}()
+
+	return result, nil
+}
+
 type Log struct {
+	TableID         string    `json:"table_id"`
 	EventID         uint64    `json:"event_id"`
 	ServerTimestamp time.Time `json:"server_timestamp"`
 	Data            []byte    `json:"data"`
@@ -167,9 +180,8 @@ func (s *happySM) OnUpdate(ctx context.Context, e sm.Entry) OnAfterApply {
 		return func() (sm.Result, error) {
 			s.topic.Broadcast(context.Background(), Event{
 				EvtName: EventName(cmd.CmdName),
-				EvtVer:  0,
 				EvtID:   chatIdx, // latest chat index;
-				Data:    json.RawMessage(cmd.Data),
+				Data:    cmd.Data,
 			})
 
 			return sm.Result{Value: chatIdx, Data: []byte("success!")}, nil
@@ -183,21 +195,26 @@ func (s *happySM) OnUpdate(ctx context.Context, e sm.Entry) OnAfterApply {
 			}
 		}
 
+		// what we store is what we publish
+		serverTimestamp := time.Now()
 		chat := Event{
-			EvtName: EventName_Echo,
-			EvtVer:  0,
-			EvtID:   *metadata.ChatLog_EvtIndex_Counter, // latest chat index; unmoving if it's not
-			Data:    json.RawMessage(cmd.Data),
+			EvtTable:        "chat_log",
+			EvtName:         EventName_Echo,
+			EvtID:           chatIdx,
+			ServerTimestamp: serverTimestamp,
+
+			// user defined. the actual log.
+			Data: cmd.Data,
 		}
 
-		// we store the event
-		chatBatch.Append("default", chatIdx, time.Now(), string(cmd.Data))
+		// we store "only" the user defined data. the actual log.
+		chatBatch.Append("default", chatIdx, serverTimestamp, string(cmd.Data))
 
 		// increment our index
 		*metadata.ChatLog_EvtIndex_Counter++
 
 		return func() (sm.Result, error) {
-			// we publish the event upon successful commit
+			// we publish wrapped data
 			s.topic.Broadcast(context.Background(), chat)
 
 			return sm.Result{Value: chat.EvtID, Data: []byte("success!")}, nil

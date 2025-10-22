@@ -5,13 +5,13 @@ import (
 	"time"
 )
 
-type QuerySubscribe struct{}
+type SubscribeLog struct{}
 
 type QueryLog struct {
 	// Offset represent the current chat offset; you get it by subscribing
-	CurrentOffset uint64
-	FromDateTime  *time.Time
-	FromOffset    *uint64
+	FromOffset   *uint64    `json:"from_offset,omitempty"`
+	FromDatetime *time.Time `json:"from_datetime,omitempty"`
+	ToOffset     uint64     `json:"to_offset,omitempty"`
 }
 
 type Command string
@@ -37,10 +37,11 @@ type AddSubscriptionResponse struct {
 // Event represent serializable events emanating from the state machine
 // published in the topic
 type Event struct {
-	EvtID   uint64    `json:"evt_id"` // offset
-	EvtName EventName `json:"evt_name"`
-	EvtVer  uint64    `json:"evt_version"`
-	Data    any       `json:"data"`
+	EvtID           uint64    `json:"evt_id"` // offset
+	EvtName         EventName `json:"evt_name"`
+	EvtTable        string    `json:"evt_table"`
+	Data            []byte    `json:"data"`
+	ServerTimestamp time.Time `json:"server_timestamp"`
 }
 
 type EventStartListener struct {

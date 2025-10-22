@@ -44,7 +44,7 @@ func (s *topicSM) Lookup(query interface{}) (interface{}, error) {
 		return nil, fmt.Errorf("empty query")
 	}
 
-	_, ok := query.(QuerySubscribe)
+	_, ok := query.(QueryLog)
 	if !ok {
 		return nil, fmt.Errorf("invalid query")
 	}
@@ -186,7 +186,6 @@ func (s *topicSM) publishMessage(name EventName, rawData json.RawMessage) (sm.Re
 	// since we can publish without using the same connection, identity cannot be determined
 	s.topic.Broadcast(context.Background(), Event{
 		EvtName: name,
-		EvtVer:  0,
 		EvtID:   s.appliedIndex,
 		Data:    rawData,
 	})

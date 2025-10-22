@@ -65,7 +65,7 @@ func (r *replicatedTopic) Subscribe() (notifierapi.Subscription, error) {
 	defer c()
 
 	// 1. get & register local instance of the subscription
-	v, err := r.dhost.SyncRead(ctx, r.shardID, QuerySubscribe{})
+	v, err := r.dhost.SyncRead(ctx, r.shardID, SubscribeLog{})
 	if err != nil {
 		return nil, err
 	}

@@ -3,7 +3,7 @@ services:
     image: broadcaster:latest
     environment:
       DC: "/etc/dragonboat.yaml"
-    restart: on-failure
+      TZ: Asia/Jakarta
     ports:
       - "9001:9090"
     volumes:
@@ -19,6 +19,7 @@ services:
     restart: on-failure
     environment:
       DC: "/etc/dragonboat.yaml"
+      TZ: Asia/Jakarta
     ports:
       - "9002:9090"
     volumes:
@@ -33,6 +34,7 @@ services:
     image: broadcaster:latest
     environment:
       DC: "/etc/dragonboat.yaml"
+      TZ: Asia/Jakarta
     restart: on-failure
     ports:
       - "9003:9090"

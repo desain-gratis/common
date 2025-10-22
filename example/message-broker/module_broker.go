@@ -87,7 +87,18 @@ func (b *broker) Tail(w http.ResponseWriter, r *http.Request, p httprouter.Param
 		// G is used to query logs before the tail;
 		// or if we were to use a Key-Value storage snapshot, G is used to
 		// query the message between latest applied snapshot to G inclusive.
-		data, err := json.Marshal(msg)
+		msg, ok := msg.(replicated.Event)
+		if !ok {
+			log.Error().Msgf("its not an event 😔")
+			continue
+		}
+		data, err := json.Marshal(map[string]any{
+			"evt_name":         msg.EvtName,
+			"table":            msg.EvtTable,
+			"evt_id":           msg.EvtID,
+			"server_timestamp": msg.ServerTimestamp,
+			"data":             json.RawMessage(msg.Data),
+		})
 		if err != nil {
 			log.Err(err).Msgf("marshal feel %v", msg)
 			continue
@@ -224,10 +235,11 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 
 	// Loading last 7 dayds data..
 
-	aWeekBefore := time.Now().AddDate(0, 0, 7)
+	aDayBefore := time.Now().AddDate(0, 0, -1).Local().Truncate(time.Hour * 24)
+	log.Info().Msgf("a day before: %v", aDayBefore.Format(time.RFC3339))
 	err = b.queryLog(pctx, c, replicated.QueryLog{
-		CurrentOffset: chatOffset,
-		FromDateTime:  &aWeekBefore,
+		ToOffset:     chatOffset,
+		FromDatetime: &aDayBefore,
 	})
 	if err != nil {
 		log.Error().Msgf("error querying last log %v", err)
@@ -235,7 +247,18 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 	}
 
 	for msg := range notifier.Listen(lctx) {
-		data, err := json.Marshal(msg)
+		msg, ok := msg.(replicated.Event)
+		if !ok {
+			log.Error().Msgf("its not an event 😔")
+			continue
+		}
+		data, err := json.Marshal(map[string]any{
+			"evt_name":         msg.EvtName,
+			"table":            msg.EvtTable,
+			"evt_id":           msg.EvtID,
+			"server_timestamp": msg.ServerTimestamp,
+			"data":             json.RawMessage(msg.Data),
+		})
 		if err != nil {
 			log.Err(err).Msgf("marshal feel %v", msg)
 			continue
@@ -315,7 +338,7 @@ func (b *broker) getListener(name string) (notifierapi.Listener, uint64, error) 
 	defer c()
 
 	// 1. get & register local instance of the subscription
-	v, err := b.dhost.SyncRead(ctx, b.shardID, sm_topic.QuerySubscribe{})
+	v, err := b.dhost.SyncRead(ctx, b.shardID, sm_topic.SubscribeLog{})
 	if err != nil {
 		return nil, 0, err
 	}
@@ -405,9 +428,9 @@ func (b *broker) queryLog(pctx context.Context, wsconn *websocket.Conn, qlog rep
 	if err != nil {
 		return err
 	}
-	logstream, ok := q.(chan replicated.Log)
+	logstream, ok := q.(chan replicated.Event)
 	if !ok {
-		return errors.New("it's not a log")
+		return errors.New("it's not an event")
 	}
 
 	log.Info().Msgf("logstream acquired") // todo: investigate why nyangkut
@@ -415,11 +438,10 @@ func (b *broker) queryLog(pctx context.Context, wsconn *websocket.Conn, qlog rep
 	defer log.Info().Msgf("logstream released")
 	for msg := range logstream {
 		d := map[string]any{
-			"evt_name":         "echo",
-			"evt_ver":          0,
-			"table":            "chat_log",
+			"evt_name":         msg.EvtName,
+			"table":            msg.EvtTable,
+			"evt_id":           msg.EvtID,
 			"server_timestamp": msg.ServerTimestamp,
-			"evt_id":           msg.EventID,
 			"data":             json.RawMessage(msg.Data),
 		}
 
