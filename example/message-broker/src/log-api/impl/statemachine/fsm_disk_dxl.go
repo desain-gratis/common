@@ -1,4 +1,4 @@
-package replicated
+package statemachine
 
 const (
 	// DDLRaftMetadata used to store raft metadata such as last applied index
@@ -26,7 +26,7 @@ ORDER BY (namespace, event_id);
 const (
 	// DQLReadRaftMetadata is used to query the raft metadata
 	DQLReadRaftMetadata = `
-SELECT data FROM metadata WHERE namespace='default';
+SELECT data FROM metadata WHERE namespace=?;
 	`
 
 	// DQLReadAll read log
@@ -43,7 +43,7 @@ SELECT namespace, event_id, server_timestamp, data FROM chat_log WHERE event_id 
 const (
 	// DMLSaveRaftMetadata write metadata
 	DMLWriteRaftMetadata = `
-INSERT INTO metadata (namespace, data) VALUES ('default', ?);
+INSERT INTO metadata (namespace, data) VALUES (?, ?);
 	`
 
 	// DMLWriteChat write chat data

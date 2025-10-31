@@ -1,4 +1,4 @@
-package replicated
+package chatlogwriter
 
 import (
 	"context"
@@ -8,9 +8,7 @@ import (
 	"time"
 
 	notifierapi "github.com/desain-gratis/common/example/message-broker/src/log-api"
-	logapi_impl "github.com/desain-gratis/common/example/message-broker/src/log-api/impl"
 	"github.com/lni/dragonboat/v4"
-	"github.com/lni/dragonboat/v4/statemachine"
 )
 
 var _ notifierapi.Topic = &replicatedTopic{}
@@ -33,20 +31,6 @@ type LogConfig struct {
 	BufferSize     uint64  `json:"buffer_size"`
 	ListenTimeoutS uint32  `json:"listen_timeout_s"`
 	ClickhouseAddr string  `json:"clickhouse_addr"`
-}
-
-func CreateSM(appConfig LogConfig) statemachine.CreateStateMachineFunc {
-	topic := logapi_impl.NewTopic()
-
-	topic.Csf = func(key string) notifierapi.Subscription {
-		return logapi_impl.NewSubscription(key, true, 0, appConfig.ExitMessage, time.Duration(appConfig.ListenTimeoutS)*time.Second, func() {
-			topic.RemoveSubscription(key)
-		})
-	}
-
-	stateMachineFn := NewSMF(topic)
-
-	return stateMachineFn
 }
 
 // New extends the default topic with replication ability using dragonboat raft library

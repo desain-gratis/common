@@ -12,7 +12,8 @@ import (
 
 	logapi "github.com/desain-gratis/common/example/message-broker/src/log-api"
 	logapi_impl "github.com/desain-gratis/common/example/message-broker/src/log-api/impl"
-	logapi_impl_replicated "github.com/desain-gratis/common/example/message-broker/src/log-api/impl/replicated"
+	chatlogwriter "github.com/desain-gratis/common/example/message-broker/src/log-api/impl/chat-log-writer"
+	"github.com/desain-gratis/common/example/message-broker/src/log-api/impl/statemachine"
 	"github.com/desain-gratis/common/utility/replica"
 	"github.com/julienschmidt/httprouter"
 	"github.com/lni/dragonboat/v4/client"
@@ -42,35 +43,7 @@ func main() {
 
 	router := httprouter.New()
 
-	replica.ForEachType("message-broker", func(config replica.Config[logapi_impl_replicated.LogConfig]) error {
-		// Initialize
-
-		// Start replica based on config
-		smf := logapi_impl_replicated.CreateSM(config.AppConfig)
-		err := config.StartReplica(smf)
-		if err != nil {
-			return err
-		}
-		// Create HTTP API handler to interact with the replica
-		sess := client.NewNoOPSession(config.ShardID, random.NewLockedRand())
-
-		// Create HTTP API handler to interact with the replica
-		brokerAPI := broker{
-			dhost:     config.Host,
-			shardID:   config.ShardID,
-			replicaID: config.ReplicaID,
-			sess:      sess,
-		}
-
-		router.GET("/log/"+config.ID, brokerAPI.GetTopic)
-		router.POST("/log/"+config.ID, brokerAPI.Publish)
-		router.GET("/log/"+config.ID+"/tail", brokerAPI.Tail)
-		router.GET("/log/"+config.ID+"/ws", brokerAPI.Websocket)
-
-		return nil
-	})
-
-	replica.ForEachType("happy", func(config replica.Config[logapi_impl_replicated.LogConfig]) error {
+	replica.ForEachType("happy", func(config replica.Config[chatlogwriter.LogConfig]) error {
 		topic := logapi_impl.NewTopic()
 		topic.Csf = func(key string) logapi.Subscription {
 			return logapi_impl.NewSubscription(key, true, 0, config.AppConfig.ExitMessage, time.Duration(config.AppConfig.ListenTimeoutS)*time.Second, func() {
@@ -78,9 +51,11 @@ func main() {
 			})
 		}
 
-		happy := logapi_impl_replicated.NewHappy(topic, config.AppConfig.ClickhouseAddr)
+		happy := chatlogwriter.NewHappy(topic, config.ShardID, config.ReplicaID)
 
-		err := config.StartOnDiskReplica(happy)
+		sm := statemachine.NewWithHappy(config.AppConfig.ClickhouseAddr, happy)
+
+		err := config.StartOnDiskReplica(sm)
 		if err != nil {
 			return err
 		}
@@ -88,6 +63,8 @@ func main() {
 		// Create HTTP API handler to interact with the replica
 		sess := client.NewNoOPSession(config.ShardID, random.NewLockedRand())
 
+		log.Info().Msgf("BOKEER: %v %v %v", config.Host, config.ShardID, config.ReplicaID)
+		log.Info().Msgf("WWIIW: %+v", config)
 		brokerAPI := broker{
 			dhost:     config.Host,
 			shardID:   config.ShardID,
@@ -99,7 +76,6 @@ func main() {
 		router.POST("/happy/"+config.ID, brokerAPI.Publish)
 		router.GET("/happy/"+config.ID+"/tail", brokerAPI.Tail)
 		router.GET("/happy/"+config.ID+"/ws", brokerAPI.Websocket)
-		// TODO: brokerAPI.Websocket(wsController)
 
 		return nil
 	})

@@ -95,6 +95,9 @@ func (c *subscription) Publish(_ context.Context, msg any) error {
 
 	if c.async {
 		go func(msg any) {
+			if c.closed {
+				return
+			}
 			c.ch <- msg
 		}(msg)
 	} else {

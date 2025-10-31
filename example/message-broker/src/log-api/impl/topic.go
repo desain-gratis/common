@@ -106,7 +106,6 @@ func (s *topic) Broadcast(ctx context.Context, message any) error {
 		// if !listener.IsListening() {
 		// 	continue
 		// }
-		log.Info().Msgf("listener: %v gets it.", key)
 
 		wg.Add(1)
 		go func(k uint64, l notifierapi.Subscription) {

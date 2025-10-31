@@ -14,8 +14,7 @@ import (
 	"github.com/Pallinder/go-randomdata"
 	"github.com/coder/websocket"
 	notifierapi "github.com/desain-gratis/common/example/message-broker/src/log-api"
-	"github.com/desain-gratis/common/example/message-broker/src/log-api/impl/replicated"
-	sm_topic "github.com/desain-gratis/common/example/message-broker/src/log-api/impl/replicated"
+	chatlogwriter "github.com/desain-gratis/common/example/message-broker/src/log-api/impl/chat-log-writer"
 	"github.com/julienschmidt/httprouter"
 	"github.com/lni/dragonboat/v4"
 	"github.com/lni/dragonboat/v4/client"
@@ -87,7 +86,7 @@ func (b *broker) Tail(w http.ResponseWriter, r *http.Request, p httprouter.Param
 		// G is used to query logs before the tail;
 		// or if we were to use a Key-Value storage snapshot, G is used to
 		// query the message between latest applied snapshot to G inclusive.
-		msg, ok := msg.(replicated.Event)
+		msg, ok := msg.(chatlogwriter.Event)
 		if !ok {
 			log.Error().Msgf("its not an event 😔")
 			continue
@@ -190,6 +189,8 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 	}()
 
 	// tail chat log
+	// TODO: HANDLE CONTEXT CANCELLED HERE AS WELL..;
+	// TODO: HANDLE CONTEXT CANCELLED IN THE notifierapi as well / topic
 	notifier, chatOffset, err := b.getListener(name)
 	if err != nil {
 		log.Error().Msgf("error get listener %v", err)
@@ -233,11 +234,11 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 		return
 	}
 
-	// Loading last 7 dayds data..
+	// Loading last 1 days data..
 
 	aDayBefore := time.Now().AddDate(0, 0, -1).Local().Truncate(time.Hour * 24)
 	log.Info().Msgf("a day before: %v", aDayBefore.Format(time.RFC3339))
-	err = b.queryLog(pctx, c, replicated.QueryLog{
+	err = b.queryLog(pctx, c, chatlogwriter.QueryLog{
 		ToOffset:     chatOffset,
 		FromDatetime: &aDayBefore,
 	})
@@ -246,10 +247,10 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 		return
 	}
 
-	for msg := range notifier.Listen(lctx) {
-		msg, ok := msg.(replicated.Event)
+	for anymsg := range notifier.Listen(lctx) {
+		msg, ok := anymsg.(chatlogwriter.Event)
 		if !ok {
-			log.Error().Msgf("its not an event 😔")
+			log.Error().Msgf("its not an event 😔 %T %+v", msg, msg)
 			continue
 		}
 		data, err := json.Marshal(map[string]any{
@@ -338,7 +339,7 @@ func (b *broker) getListener(name string) (notifierapi.Listener, uint64, error) 
 	defer c()
 
 	// 1. get & register local instance of the subscription
-	v, err := b.dhost.SyncRead(ctx, b.shardID, sm_topic.SubscribeLog{})
+	v, err := b.dhost.SyncRead(ctx, b.shardID, chatlogwriter.SubscribeLog{})
 	if err != nil {
 		return nil, 0, err
 	}
@@ -349,7 +350,7 @@ func (b *broker) getListener(name string) (notifierapi.Listener, uint64, error) 
 	}
 
 	// 2. start consuming data from the subscription
-	data, err := json.Marshal(sm_topic.StartSubscriptionData{
+	data, err := json.Marshal(chatlogwriter.StartSubscriptionData{
 		SubscriptionID: l.ID(),
 		ReplicaID:      b.replicaID,
 		Debug:          name,
@@ -358,8 +359,8 @@ func (b *broker) getListener(name string) (notifierapi.Listener, uint64, error) 
 		return nil, 0, err
 	}
 
-	payload, _ := json.Marshal(sm_topic.UpdateRequest{
-		CmdName: sm_topic.Command_StartSubscription,
+	payload, _ := json.Marshal(chatlogwriter.UpdateRequest{
+		CmdName: chatlogwriter.Command_StartSubscription,
 		Data:    data,
 	})
 
@@ -392,7 +393,7 @@ func (b *broker) parseMessage(pctx context.Context, wsconn *websocket.Conn, raft
 
 	switch cmd.Type {
 	case "query-log":
-		var qlog replicated.QueryLog
+		var qlog chatlogwriter.QueryLog
 		if err := json.Unmarshal(cmd.Data, &qlog); err != nil {
 			return err
 		}
@@ -420,7 +421,7 @@ func (b *broker) parseMessage(pctx context.Context, wsconn *websocket.Conn, raft
 	return nil
 }
 
-func (b *broker) queryLog(pctx context.Context, wsconn *websocket.Conn, qlog replicated.QueryLog) error {
+func (b *broker) queryLog(pctx context.Context, wsconn *websocket.Conn, qlog chatlogwriter.QueryLog) error {
 	ctx, c := context.WithTimeout(pctx, 5*time.Second)
 	defer c()
 
@@ -428,7 +429,7 @@ func (b *broker) queryLog(pctx context.Context, wsconn *websocket.Conn, qlog rep
 	if err != nil {
 		return err
 	}
-	logstream, ok := q.(chan replicated.Event)
+	logstream, ok := q.(chan chatlogwriter.Event)
 	if !ok {
 		return errors.New("it's not an event")
 	}

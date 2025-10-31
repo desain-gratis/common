@@ -1,4 +1,4 @@
-package replicated
+package statemachine
 
 import (
 	"encoding/json"

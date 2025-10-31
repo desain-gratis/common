@@ -1,4 +1,4 @@
-package replicated
+package chatlogwriter
 
 import (
 	"encoding/json"

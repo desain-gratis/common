@@ -1,4 +1,4 @@
-package replicated
+package logwriter
 
 import (
 	"context"
@@ -9,6 +9,8 @@ import (
 type OnAfterApply func() (sm.Result, error)
 
 type Happy interface {
+	// Init
+	Init(ctx context.Context) error
 
 	// PrepareApply is to prepare for update scoped resource
 	PrepareUpdate(ctx context.Context) (context.Context, error)
