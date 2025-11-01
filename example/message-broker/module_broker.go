@@ -138,6 +138,8 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 	id := rand.Int()
 	name := randomdata.SillyName() + " " + randomdata.LastName()
 
+	var signedIn bool
+
 	sessID := &SessID{
 		ID:   id,
 		Name: name,
@@ -149,6 +151,9 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 		defer pcancel()
 
 		defer func() {
+			if !signedIn {
+				return
+			}
 			// notify i'm offline (raft)
 			msg := map[string]any{
 				"cmd_name": "notify-offline",
@@ -162,12 +167,13 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 			if err != nil {
 				return
 			}
+
+			log.Info().Msgf("closed connection for: %v", name)
 		}()
 
 		for {
 			t, payload, err := c.Read(pctx)
 			if websocket.CloseStatus(err) > 0 {
-				log.Info().Msgf("closing connection..")
 				return
 			}
 			if err != nil {
@@ -191,6 +197,30 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 			}
 		}
 	}()
+
+	// notify my identity (local)
+	msg := map[string]any{
+		"evt_name": "identity",
+		"data": map[string]any{
+			"name": name,
+			"id":   id,
+		},
+	}
+	err = b.publishTextToWebsocket(pctx, c, msg)
+	if err != nil {
+		if errors.Is(err, context.Canceled) || pctx.Err() != nil || lctx.Err() != nil {
+			return
+		}
+		// or warn..
+		// log.Error().Msgf("error publish notify-online message %v", err)
+		return
+	}
+
+	// simple protection (to state machine) against quick open-close connection
+	time.Sleep(100 * time.Millisecond)
+	if pctx.Err() != nil || lctx.Err() != nil {
+		return
+	}
 
 	// tail chat log
 	notifier, chatOffset, err := b.getListener(lctx, name)
@@ -218,11 +248,9 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 	// ada juga kasus connected, but disconnected (when starting up)
 
 	// notify my identity (local)
-	msg := map[string]any{
-		"evt_name": "identity",
+	msg = map[string]any{
+		"evt_name": "chat-offset",
 		"data": map[string]any{
-			"name":   name,
-			"id":     id,
 			"offset": chatOffset,
 		},
 	}
@@ -255,6 +283,8 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 		log.Warn().Msgf("error publish notify-online message %v", err)
 		return
 	}
+
+	signedIn = true
 
 	// Loading last 1 days data..
 

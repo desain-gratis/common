@@ -280,6 +280,9 @@ func (s *happySM) startSubscription(ent sm.Entry, rawData json.RawMessage, start
 func (s *happySM) getSubscription(ctx context.Context) (notifierapi.Subscription, error) {
 	subs, err := s.topic.Subscribe(ctx)
 	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			return nil, err
+		}
 		log.Err(err).Msgf("LOH PAK BU")
 		return nil, err
 	}
