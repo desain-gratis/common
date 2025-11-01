@@ -10,6 +10,7 @@ import (
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	notifierapi "github.com/desain-gratis/common/example/message-broker/src/log-api"
+	"github.com/desain-gratis/common/example/message-broker/src/log-api/impl"
 	"github.com/desain-gratis/common/example/message-broker/src/log-api/impl/statemachine"
 	"github.com/desain-gratis/common/lib/logwriter"
 	sm "github.com/lni/dragonboat/v4/statemachine"
@@ -257,7 +258,9 @@ func (s *happySM) startSubscription(ent sm.Entry, rawData json.RawMessage, start
 
 	subs, err := s.topic.GetSubscription(data.SubscriptionID)
 	if err != nil {
-		log.Err(err).Msgf("err get subs %v: %v %v", err, data.SubscriptionID, string(rawData))
+		if !errors.Is(err, impl.ErrNotFound) {
+			log.Err(err).Msgf("err get subs %v: %v %v", err, data.SubscriptionID, string(rawData))
+		}
 		resp, _ := json.Marshal(UpdateResponse{
 			Message: "skip (no listener)",
 		})

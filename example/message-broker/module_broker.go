@@ -171,7 +171,7 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 				return
 			}
 			if err != nil {
-				log.Err(err).Msgf("unknown error. closing connection")
+				// log.Warn().Msgf("unknown error. closing connection: %v")
 				return
 			}
 
@@ -198,7 +198,15 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 		if errors.Is(err, context.Canceled) {
 			return
 		}
-		log.Error().Msgf("error get listener %v", err)
+		if errors.Is(err, dragonboat.ErrShardNotReady) {
+			return
+		}
+		if errors.Is(err, dragonboat.ErrCanceled) {
+			// log.Warn().Msgf("error get listener %v", err)
+			return
+		}
+
+		log.Err(err).Msgf("error get listener %v", err)
 		return
 	}
 
@@ -220,10 +228,11 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 	}
 	err = b.publishTextToWebsocket(pctx, c, msg)
 	if err != nil {
-		if errors.Is(err, context.Canceled) {
+		if errors.Is(err, context.Canceled) || pctx.Err() != nil || lctx.Err() != nil {
 			return
 		}
-		log.Error().Msgf("error publish notify-online message %v", err)
+		// or warn..
+		// log.Error().Msgf("error publish notify-online message %v", err)
 		return
 	}
 
@@ -238,7 +247,12 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 	}
 	_, err = b.publishToRaft(pctx, b.sess, msg)
 	if err != nil {
-		log.Error().Msgf("error publish notify-online message %v", err)
+		if errors.Is(err, context.Canceled) || pctx.Err() != nil || lctx.Err() != nil {
+			return
+		}
+
+		// or warn
+		log.Warn().Msgf("error publish notify-online message %v", err)
 		return
 	}
 
@@ -270,24 +284,19 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 			log.Error().Msgf("its not an event 😔 %T %+v", msg, msg)
 			continue
 		}
-		data, err := json.Marshal(map[string]any{
+
+		err = b.publishTextToWebsocket(pctx, c, map[string]any{
 			"evt_name":         msg.EvtName,
 			"table":            msg.EvtTable,
 			"evt_id":           msg.EvtID,
 			"server_timestamp": msg.ServerTimestamp,
 			"data":             json.RawMessage(msg.Data),
 		})
-		if err != nil {
-			log.Err(err).Msgf("marshal feel %v", msg)
-			continue
-		}
-
-		err = c.Write(pctx, websocket.MessageText, data)
 		if err != nil && websocket.CloseStatus(err) == -1 {
 			if pctx.Err() != nil {
 				return
 			}
-			log.Warn().Msgf("err listen to notifier event: %v %v", err, string(data))
+			// log.Warn().Msgf("err listen to notifier event: %v %v", err, string(data))
 			return
 		}
 	}
@@ -361,7 +370,7 @@ func (b *broker) publishTextToWebsocket(ctx context.Context, wsconn *websocket.C
 }
 
 func (b *broker) getListener(ctx context.Context, name string) (notifierapi.Listener, uint64, error) {
-	rctx, c := context.WithTimeout(ctx, 2*time.Second)
+	rctx, c := context.WithTimeout(ctx, 5*time.Second)
 	defer c()
 
 	// 1. get & register local instance of the subscription
@@ -395,7 +404,7 @@ func (b *broker) getListener(ctx context.Context, name string) (notifierapi.List
 		Data:    data,
 	})
 
-	ctx2, c2 := context.WithTimeout(ctx, 2*time.Second)
+	ctx2, c2 := context.WithTimeout(ctx, 5*time.Second)
 	defer c2()
 
 	result, err := b.dhost.SyncPropose(ctx2, b.sess, payload)

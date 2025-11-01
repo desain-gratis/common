@@ -104,24 +104,18 @@ func (s *topic) RemoveSubscription(id string) error {
 func (s *topic) Broadcast(ctx context.Context, message any) error {
 	delKey := make([]uint64, 0)
 
-	// wg := new(sync.WaitGroup)
-	for key, listener := range s.listener {
-		// if !listener.IsListening() {
-		// 	continue
-		// }
-
-		// wg.Add(1)
-		// go func(k uint64, l notifierapi.Subscription) {
-		// 	defer wg.Done()
-		err := listener.Publish(ctx, message)
-		// todo: refactor here
-		if err != nil && !errors.Is(err, ErrNotStarted) {
-			log.Err(err).Msgf("error during publish.. I delete: %v", key)
-			delKey = append(delKey, key)
+	func() {
+		s.lock.RLock()
+		defer s.lock.RUnlock()
+		for key, listener := range s.listener {
+			err := listener.Publish(message)
+			// todo: refactor here
+			if err != nil && !errors.Is(err, ErrNotStarted) {
+				log.Err(err).Msgf("error during publish.. I delete: %v", key)
+				delKey = append(delKey, key)
+			}
 		}
-		// }(key, listener)
-	}
-	// wg.Wait()
+	}()
 
 	s.lock.Lock()
 	defer s.lock.Unlock()

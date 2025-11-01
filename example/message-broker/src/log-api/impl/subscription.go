@@ -106,7 +106,7 @@ func (c *subscription) Listen(ctx context.Context) <-chan any {
 	return c.ch
 }
 
-func (c *subscription) Publish(_ context.Context, msg any) error {
+func (c *subscription) Publish(msg any) error {
 	if c.closed {
 		return ErrListenerClosed
 	}

@@ -22,7 +22,7 @@ type Subscription interface {
 
 	// Publish to this single subscription
 	// intended to be called by Broker or for debugging purpose
-	Publish(ctx context.Context, message any) error
+	Publish(message any) error
 }
 
 type Listener interface {
