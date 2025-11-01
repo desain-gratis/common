@@ -60,7 +60,7 @@ func (b *broker) Publish(w http.ResponseWriter, r *http.Request, p httprouter.Pa
 
 func (b *broker) Tail(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	// tail topic log
-	notifier, _, err := b.getListener("csv")
+	notifier, _, err := b.getListener(r.Context(), "csv")
 	if err != nil {
 		return
 	}
@@ -182,6 +182,10 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 
 			err = b.parseMessage(pctx, c, b.sess, sessID, payload)
 			if err != nil {
+				if errors.Is(err, context.Canceled) {
+					return
+				}
+
 				log.Err(err).Msgf("unknown error. closing connection")
 				return
 			}
@@ -189,10 +193,11 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 	}()
 
 	// tail chat log
-	// TODO: HANDLE CONTEXT CANCELLED HERE AS WELL..;
-	// TODO: HANDLE CONTEXT CANCELLED IN THE notifierapi as well / topic
-	notifier, chatOffset, err := b.getListener(name)
+	notifier, chatOffset, err := b.getListener(lctx, name)
 	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			return
+		}
 		log.Error().Msgf("error get listener %v", err)
 		return
 	}
@@ -215,6 +220,9 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 	}
 	err = b.publishTextToWebsocket(pctx, c, msg)
 	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			return
+		}
 		log.Error().Msgf("error publish notify-online message %v", err)
 		return
 	}
@@ -241,13 +249,22 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 	err = b.queryLog(pctx, c, chatlogwriter.QueryLog{
 		ToOffset:     chatOffset,
 		FromDatetime: &aDayBefore,
+		Ctx:          pctx,
 	})
 	if err != nil {
+		if errors.Is(err, context.Canceled) || pctx.Err() != err {
+			return
+		}
+
 		log.Error().Msgf("error querying last log %v", err)
 		return
 	}
 
 	for anymsg := range notifier.Listen(lctx) {
+		if pctx.Err() != nil {
+			break
+		}
+
 		msg, ok := anymsg.(chatlogwriter.Event)
 		if !ok {
 			log.Error().Msgf("its not an event 😔 %T %+v", msg, msg)
@@ -267,7 +284,10 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 
 		err = c.Write(pctx, websocket.MessageText, data)
 		if err != nil && websocket.CloseStatus(err) == -1 {
-			log.Err(err).Msgf("err listen to notifier event %v", string(data))
+			if pctx.Err() != nil {
+				return
+			}
+			log.Warn().Msgf("err listen to notifier event: %v %v", err, string(data))
 			return
 		}
 	}
@@ -286,6 +306,9 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 
 	err = b.publishTextToWebsocket(pctx, c, d)
 	if err != nil && websocket.CloseStatus(err) == -1 {
+		if errors.Is(err, context.Canceled) {
+			return
+		}
 		log.Err(err).Msgf("failed to send message")
 		return
 	}
@@ -321,6 +344,9 @@ func (b *broker) publishToRaft(ctx context.Context, sess *client.Session, msg an
 }
 
 func (b *broker) publishTextToWebsocket(ctx context.Context, wsconn *websocket.Conn, msg any) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 	payload, err := json.Marshal(msg)
 	if err != nil {
 		return err
@@ -334,14 +360,19 @@ func (b *broker) publishTextToWebsocket(ctx context.Context, wsconn *websocket.C
 	return nil
 }
 
-func (b *broker) getListener(name string) (notifierapi.Listener, uint64, error) {
-	ctx, c := context.WithTimeout(context.Background(), 5*time.Second)
+func (b *broker) getListener(ctx context.Context, name string) (notifierapi.Listener, uint64, error) {
+	rctx, c := context.WithTimeout(ctx, 2*time.Second)
 	defer c()
 
 	// 1. get & register local instance of the subscription
-	v, err := b.dhost.SyncRead(ctx, b.shardID, chatlogwriter.SubscribeLog{})
+	v, err := b.dhost.SyncRead(rctx, b.shardID, chatlogwriter.SubscribeLog{Ctx: ctx})
 	if err != nil {
 		return nil, 0, err
+	}
+
+	// abort if contxet deadline
+	if ctx.Err() != nil {
+		return nil, 0, ctx.Err()
 	}
 
 	l, ok := v.(notifierapi.Listener)
@@ -364,7 +395,7 @@ func (b *broker) getListener(name string) (notifierapi.Listener, uint64, error) 
 		Data:    data,
 	})
 
-	ctx2, c2 := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx2, c2 := context.WithTimeout(ctx, 2*time.Second)
 	defer c2()
 
 	result, err := b.dhost.SyncPropose(ctx2, b.sess, payload)
@@ -397,6 +428,7 @@ func (b *broker) parseMessage(pctx context.Context, wsconn *websocket.Conn, raft
 		if err := json.Unmarshal(cmd.Data, &qlog); err != nil {
 			return err
 		}
+		qlog.Ctx = pctx
 		return b.queryLog(pctx, wsconn, qlog)
 	case "send-chat":
 	}
@@ -438,6 +470,10 @@ func (b *broker) queryLog(pctx context.Context, wsconn *websocket.Conn, qlog cha
 
 	defer log.Info().Msgf("logstream released")
 	for msg := range logstream {
+		if pctx.Err() != err {
+			return nil
+		}
+
 		d := map[string]any{
 			"evt_name":         msg.EvtName,
 			"table":            msg.EvtTable,

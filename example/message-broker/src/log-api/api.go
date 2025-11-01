@@ -31,7 +31,7 @@ func (c *api) ListenHandler(w http.ResponseWriter, r *http.Request, p httprouter
 		return
 	}
 
-	subs, err := c.n.Subscribe()
+	subs, err := c.n.Subscribe(r.Context())
 	if err != nil {
 		http.Error(w, "failed to subscribe to topic", http.StatusInternalServerError)
 		return

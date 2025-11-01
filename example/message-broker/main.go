@@ -28,6 +28,7 @@ func init() {
 
 func main() {
 	ctx := context.Background()
+	appCtx, appCancel := context.WithCancel(ctx)
 
 	var c, address string
 	flag.StringVar(&c, "c", "config.json", "config path")
@@ -45,8 +46,8 @@ func main() {
 
 	replica.ForEachType("happy", func(config replica.Config[chatlogwriter.LogConfig]) error {
 		topic := logapi_impl.NewTopic()
-		topic.Csf = func(key string) logapi.Subscription {
-			return logapi_impl.NewSubscription(key, true, 0, config.AppConfig.ExitMessage, time.Duration(config.AppConfig.ListenTimeoutS)*time.Second, func() {
+		topic.Csf = func(ctx context.Context, key string) logapi.Subscription {
+			return logapi_impl.NewSubscription(ctx, appCtx, key, true, 0, config.AppConfig.ExitMessage, time.Duration(config.AppConfig.ListenTimeoutS)*time.Second, func() {
 				topic.RemoveSubscription(key)
 			})
 		}
@@ -63,8 +64,6 @@ func main() {
 		// Create HTTP API handler to interact with the replica
 		sess := client.NewNoOPSession(config.ShardID, random.NewLockedRand())
 
-		log.Info().Msgf("BOKEER: %v %v %v", config.Host, config.ShardID, config.ReplicaID)
-		log.Info().Msgf("WWIIW: %+v", config)
 		brokerAPI := broker{
 			dhost:     config.Host,
 			shardID:   config.ShardID,
@@ -105,7 +104,6 @@ func main() {
 	// provides a way to stop a long running connnection cleanly
 	// ender := make(chan struct{})
 	wsWg := &sync.WaitGroup{}
-	wsCtx, wsCancel := context.WithCancel(context.Background())
 	server := http.Server{
 		Addr:        address,
 		Handler:     withCors(router),
@@ -116,7 +114,7 @@ func main() {
 
 		BaseContext: func(l net.Listener) context.Context {
 			// inject with application context.
-			ctx := context.WithValue(ctx, "app-ctx", wsCtx)
+			ctx := context.WithValue(ctx, "app-ctx", appCtx)
 			ctx = context.WithValue(ctx, "ws-wg", wsWg)
 			return ctx
 		},
@@ -141,7 +139,7 @@ func main() {
 		}
 
 		// websocket ws (todo: better naming)
-		wsCancel()
+		appCancel()
 		log.Info().Msgf("Waiting for websocket connection to close..")
 		wsWg.Wait()
 

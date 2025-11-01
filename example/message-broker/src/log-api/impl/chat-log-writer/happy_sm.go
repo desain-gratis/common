@@ -54,7 +54,7 @@ func (s *happySM) Lookup(ctx context.Context, query interface{}) (interface{}, e
 	case SubscribeLog:
 		// subscribe to real time event for log update
 		log.Info().Msgf("I WANT TO SUBSCRIBE: %T %+v", q, q)
-		return s.getSubscription()
+		return s.getSubscription(q.Ctx)
 	case QueryLog:
 		// query historical log
 		return s.queryLog(ctx, q)
@@ -102,14 +102,15 @@ func (s *happySM) Init(ctx context.Context) error {
 
 // PrepareUpdate prepare the resources for upcoming message
 func (s *happySM) PrepareUpdate(ctx context.Context) (context.Context, error) {
-	conn := statemachine.GetClickhouseConnection(ctx)
+	// conn := statemachine.GetClickhouseConnection(ctx)
 
-	batch, err := conn.PrepareBatch(context.Background(), DMLWriteChat)
-	if err != nil {
-		return ctx, err
-	}
+	// batch, err := conn.PrepareBatch(ctx, DMLWriteChat)
+	// if err != nil {
+	// 	return ctx, err
+	// }
 
-	return context.WithValue(ctx, chatTableKey, batch), nil
+	// return context.WithValue(ctx, chatTableKey, batch), nil
+	return ctx, nil
 }
 
 // OnUpdate updates the object using the specified committed raft entry.
@@ -153,14 +154,6 @@ func (s *happySM) OnUpdate(ctx context.Context, e sm.Entry) logwriter.OnAfterApp
 			return sm.Result{Value: chatIdx, Data: []byte("success!")}, nil
 		}
 	case Command_PublishMessage:
-		// persist in batch
-		chatBatch, ok := ctx.Value(chatTableKey).(driver.Batch)
-		if !ok {
-			return func() (sm.Result, error) {
-				return sm.Result{Data: []byte("error")}, nil
-			}
-		}
-
 		// what we store is what we publish
 		serverTimestamp := time.Now()
 		chat := Event{
@@ -173,8 +166,23 @@ func (s *happySM) OnUpdate(ctx context.Context, e sm.Entry) logwriter.OnAfterApp
 			Data: cmd.Data,
 		}
 
+		// persist in batch
+		// chatBatch, ok := ctx.Value(chatTableKey).(driver.Batch)
+		// if !ok {
+		// 	return func() (sm.Result, error) {
+		// 		return sm.Result{Data: []byte("error")}, nil
+		// 	}
+		// }
+
 		// we store "only" the user defined data. the actual log.
-		chatBatch.Append("default", chatIdx, serverTimestamp, string(cmd.Data))
+		// chatBatch.Append("default", chatIdx, serverTimestamp, string(cmd.Data))
+
+		// try to use async insert instead of batch
+		conn := statemachine.GetClickhouseConnection(ctx)
+		err = conn.AsyncInsert(ctx, DMLWriteChat, true, "default", chatIdx, serverTimestamp, string(cmd.Data))
+		if err != nil {
+			log.Panic().Msgf("err async insert: %v", err)
+		}
 
 		// increment our index
 		*s.state.ChatIndex++
@@ -202,24 +210,24 @@ func (s *happySM) OnUpdate(ctx context.Context, e sm.Entry) logwriter.OnAfterApp
 
 // Apply or "Sync". The core of dragonboat's state machine "Update" function.
 func (s *happySM) Apply(ctx context.Context) error {
-	chatBatch, ok := ctx.Value(chatTableKey).(driver.Batch)
-	if !ok {
-		log.Panic().Msgf("tidak semestinya")
-	}
+	// chatBatch, ok := ctx.Value(chatTableKey).(driver.Batch)
+	// if !ok {
+	// 	log.Panic().Msgf("tidak semestinya")
+	// }
 
-	err := chatBatch.Send()
-	if err != nil {
-		return err
-	}
+	// err := chatBatch.Send()
+	// if err != nil {
+	// 	return err
+	// }
 
-	err = chatBatch.Close()
-	if err != nil {
-		return err
-	}
+	// err = chatBatch.Close()
+	// if err != nil {
+	// 	return err
+	// }
 
 	// save metadata
 	payload, _ := json.Marshal(s.state)
-	err = statemachine.SetMetadata(ctx, appName, payload)
+	err := statemachine.SetMetadata(ctx, appName, payload)
 	if err != nil {
 		return err
 	}
@@ -266,14 +274,12 @@ func (s *happySM) startSubscription(ent sm.Entry, rawData json.RawMessage, start
 	return sm.Result{Value: ent.Index, Data: resp}, nil
 }
 
-func (s *happySM) getSubscription() (notifierapi.Subscription, error) {
-	subs, err := s.topic.Subscribe()
+func (s *happySM) getSubscription(ctx context.Context) (notifierapi.Subscription, error) {
+	subs, err := s.topic.Subscribe(ctx)
 	if err != nil {
 		log.Err(err).Msgf("LOH PAK BU")
 		return nil, err
 	}
-
-	log.Info().Msgf("created local subscriber: %v", subs.ID())
 
 	return subs, nil
 }
@@ -283,12 +289,15 @@ func (s *happySM) queryLog(ctx context.Context, q QueryLog) (chan Event, error) 
 	var err error
 
 	if q.FromDatetime != nil {
-		rows, err = s.conn.Query(ctx, DQLReadAll, q.ToOffset, *q.FromDatetime)
+		rows, err = s.conn.Query(q.Ctx, DQLReadAll, q.ToOffset, *q.FromDatetime)
 	} else {
-		rows, err = s.conn.Query(ctx, DQLReadAll, q.ToOffset)
+		rows, err = s.conn.Query(q.Ctx, DQLReadAll, q.ToOffset)
 	}
 
 	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			return nil, err
+		}
 		log.Err(err).Msgf("helo failed to qeuery clickhouse")
 		return nil, err
 	}
@@ -302,6 +311,10 @@ func (s *happySM) queryLog(ctx context.Context, q QueryLog) (chan Event, error) 
 		}()
 
 		for rows.Next() {
+			if q.Ctx.Err() != nil {
+				return
+			}
+
 			var evt Event
 
 			evt.EvtTable = "chat_log"

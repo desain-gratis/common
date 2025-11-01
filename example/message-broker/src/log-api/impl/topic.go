@@ -6,7 +6,6 @@ import (
 	"math/rand/v2"
 	"strconv"
 	"sync"
-	"time"
 
 	notifierapi "github.com/desain-gratis/common/example/message-broker/src/log-api"
 	"github.com/rs/zerolog/log"
@@ -26,7 +25,7 @@ var (
 	ErrInvalidKey = errors.New("invalid key")
 )
 
-type CreateSubscription func(id string) notifierapi.Subscription
+type CreateSubscription func(ctx context.Context, id string) notifierapi.Subscription
 
 var _ notifierapi.Topic = &topic{}
 
@@ -43,25 +42,29 @@ func getKey(uid uint64) string {
 	return idstr
 }
 
-func (s *topic) Subscribe() (notifierapi.Subscription, error) {
+// TODO: maybe add appCtx as well
+func (s *topic) Subscribe(ctx context.Context) (notifierapi.Subscription, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
 	id := rand.Uint64() // change id impl to avoid conflict if needed
 
-	subs := s.Csf(getKey(id))
+	subs := s.Csf(ctx, getKey(id))
+
+	log.Info().Msgf("topic: created new %v", id)
 
 	s.lock.Lock()
 	s.listener[id] = subs
 	s.lock.Unlock()
 
 	go func(id uint64) {
-		time.Sleep(4 * time.Second)
-		if subs.IsListening() {
-			return
-		}
+		_ = <-ctx.Done()
 
-		log.Error().Msgf("listen timed out")
 		s.lock.Lock()
 		defer s.lock.Unlock()
 		delete(s.listener, id)
+		log.Info().Msgf("topic: closed properly %v", id)
 	}(id)
 
 	return s.listener[id], nil
@@ -101,24 +104,24 @@ func (s *topic) RemoveSubscription(id string) error {
 func (s *topic) Broadcast(ctx context.Context, message any) error {
 	delKey := make([]uint64, 0)
 
-	wg := new(sync.WaitGroup)
+	// wg := new(sync.WaitGroup)
 	for key, listener := range s.listener {
 		// if !listener.IsListening() {
 		// 	continue
 		// }
 
-		wg.Add(1)
-		go func(k uint64, l notifierapi.Subscription) {
-			defer wg.Done()
-			err := listener.Publish(ctx, message)
-			// todo: refactor here
-			if err != nil && !errors.Is(err, ErrNotStarted) {
-				log.Err(err).Msgf("error during publish.. I delete: %v", key)
-				delKey = append(delKey, key)
-			}
-		}(key, listener)
+		// wg.Add(1)
+		// go func(k uint64, l notifierapi.Subscription) {
+		// 	defer wg.Done()
+		err := listener.Publish(ctx, message)
+		// todo: refactor here
+		if err != nil && !errors.Is(err, ErrNotStarted) {
+			log.Err(err).Msgf("error during publish.. I delete: %v", key)
+			delKey = append(delKey, key)
+		}
+		// }(key, listener)
 	}
-	wg.Wait()
+	// wg.Wait()
 
 	s.lock.Lock()
 	defer s.lock.Unlock()

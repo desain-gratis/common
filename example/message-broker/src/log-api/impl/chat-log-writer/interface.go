@@ -1,13 +1,17 @@
 package chatlogwriter
 
 import (
+	"context"
 	"encoding/json"
 	"time"
 )
 
-type SubscribeLog struct{}
+type SubscribeLog struct {
+	Ctx context.Context
+}
 
 type QueryLog struct {
+	Ctx context.Context
 	// Offset represent the current chat offset; you get it by subscribing
 	FromOffset   *uint64    `json:"from_offset,omitempty"`
 	FromDatetime *time.Time `json:"from_datetime,omitempty"`
@@ -71,4 +75,12 @@ type StartSubscriptionData struct {
 	SubscriptionID string `json:"subscription_id"`
 	ReplicaID      uint64 `json:"replica_id"`
 	Debug          string `json:"debug"`
+}
+
+type LogConfig struct {
+	ExitMessage    *string `json:"exit_message,omitempty"`
+	Async          bool    `json:"async"`
+	BufferSize     uint64  `json:"buffer_size"`
+	ListenTimeoutS uint32  `json:"listen_timeout_s"`
+	ClickhouseAddr string  `json:"clickhouse_addr"`
 }

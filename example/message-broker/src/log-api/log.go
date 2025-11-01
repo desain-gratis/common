@@ -6,7 +6,7 @@ import (
 
 // Topic implementation
 type Topic interface {
-	Subscribe() (Subscription, error)
+	Subscribe(ctx context.Context) (Subscription, error)
 	GetSubscription(id string) (Subscription, error)
 	RemoveSubscription(id string) error
 	Broadcast(ctx context.Context, message any) error
@@ -23,9 +23,6 @@ type Subscription interface {
 	// Publish to this single subscription
 	// intended to be called by Broker or for debugging purpose
 	Publish(ctx context.Context, message any) error
-
-	// Remove subscription
-	Stop()
 }
 
 type Listener interface {

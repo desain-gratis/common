@@ -32,8 +32,13 @@ const (
 INSERT INTO metadata (namespace, data) VALUES (?, ?);
 	`
 
+	// DMLWriteChatBatch write chat data with batch
+	DMLWriteChatBatch = `
+INSERT INTO chat_log (namespace, event_id, server_timestamp, data);
+`
+
 	// DMLWriteChat write chat data
 	DMLWriteChat = `
-INSERT INTO chat_log (namespace, event_id, server_timestamp, data);
+INSERT INTO chat_log (namespace, event_id, server_timestamp, data) VALUES (?, ?, ?, ?);
 `
 )

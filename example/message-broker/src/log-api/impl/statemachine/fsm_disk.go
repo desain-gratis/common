@@ -79,11 +79,12 @@ func (d *baseDiskSM) Lookup(key interface{}) (interface{}, error) {
 func (d *baseDiskSM) Update(ents []sm.Entry) ([]sm.Entry, error) {
 	ctx := context.WithValue(context.Background(), chConnKey, d.conn)
 
+	log.Info().Msgf("entry size: %v", len(ents))
+
 	metadataBatch, err := d.conn.PrepareBatch(ctx, `INSERT INTO metadata (namespace, data)`)
 	if err != nil {
 		log.Panic().Msgf("failed to apply")
 	}
-	defer metadataBatch.Close()
 
 	ctx = context.WithValue(ctx, metadataBatchKey, metadataBatch)
 
@@ -117,6 +118,11 @@ func (d *baseDiskSM) Update(ents []sm.Entry) ([]sm.Entry, error) {
 	err = metadataBatch.Send()
 	if err != nil {
 		log.Panic().Msgf("base save metadata failed send %v", err)
+	}
+
+	err = metadataBatch.Close()
+	if err != nil {
+		log.Panic().Msgf("base save metadata failed close %v", err)
 	}
 
 	// Execute function after successful apply

@@ -23,18 +23,25 @@ func Connect(address, database string) driver.Conn {
 		Compression: &clickhouse.Compression{
 			Method: clickhouse.CompressionLZ4,
 		},
-		DialTimeout: 5 * time.Second,
+		// DialTimeout: 5 * time.Second,
 		ReadTimeout: 10 * time.Second,
+		// MaxOpenConns: 2048,
 	}
 
 	var conn driver.Conn
 	var err error
-	retry(func() {
+	err = retry(func() error {
 		conn, err = clickhouse.Open(opts)
+		return err
+	}, 3)
+
+	ctx := context.Background()
+	err = retry(func() error {
+		return conn.Ping(ctx)
 	}, 3)
 
 	if err != nil {
-		log.Fatal().Msgf("failed to open connection base to clickhouse: %v after %v attempt%v err: %v", address, err)
+		log.Fatal().Msgf("failed to open connection base to clickhouse: %v  err: %v", address, err)
 	}
 
 	log.Info().Msgf("✅ Connected to ClickHouse")
@@ -61,15 +68,23 @@ func CreateDB(address, database string) error {
 
 	var conn driver.Conn
 	var err error
-	retry(func() {
+	err = retry(func() error {
 		conn, err = clickhouse.Open(opts)
+		return err
 	}, 3)
-
 	if err != nil {
 		log.Fatal().Msgf("failed to open connection base to clickhouse: %v err: %v", address, err)
 	}
 
 	defer conn.Close()
+
+	ctx := context.Background()
+	err = retry(func() error {
+		return conn.Ping(ctx)
+	}, 3)
+	if err != nil {
+		log.Fatal().Msgf("failed to open connection base to clickhouse: %v err: %v", address, err)
+	}
 
 	if err := conn.Exec(context.Background(), "CREATE DATABASE IF NOT EXISTS `"+database+"`"); err != nil {
 		log.Fatal().Msgf("failed to create DB clickhouse: %v err: %v", address, err)
@@ -78,13 +93,13 @@ func CreateDB(address, database string) error {
 	return nil
 }
 
-func retry(fn func(), times int) error {
+func retry(fn func() error, times int) error {
 	var attempt int
 
 	var err error
 	for {
 		attempt++
-		fn()
+		err = fn()
 		if err == nil || attempt >= times {
 			break
 		}
