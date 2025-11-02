@@ -12,7 +12,6 @@ import (
 
 	chatlogwriter "github.com/desain-gratis/common/example/message-broker/src/log-api/impl/chat-log-writer"
 	"github.com/desain-gratis/common/example/message-broker/src/log-api/impl/statemachine"
-	"github.com/desain-gratis/common/lib/notifier"
 	notifier_impl "github.com/desain-gratis/common/lib/notifier/impl"
 	"github.com/desain-gratis/common/utility/replica"
 	"github.com/julienschmidt/httprouter"
@@ -46,12 +45,7 @@ func main() {
 
 	replica.ForEachType("happy", func(config replica.Config[chatlogwriter.LogConfig]) error {
 		topic := notifier_impl.NewTopic()
-		topic.Csf = func(ctx context.Context, key string) notifier.Subscription {
-			return notifier_impl.NewSubscription(ctx, appCtx, key, config.AppConfig.ExitMessage)
-		}
-
 		happy := chatlogwriter.NewHappy(topic, config.ShardID, config.ReplicaID)
-
 		sm := statemachine.NewWithHappy(config.AppConfig.ClickhouseAddr, happy)
 
 		err := config.StartOnDiskReplica(sm)

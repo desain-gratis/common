@@ -4,9 +4,11 @@ import (
 	"context"
 )
 
+type CreateSubscription func(ctx context.Context, id string) Subscription
+
 // Topic implementation
 type Topic interface {
-	Subscribe(ctx context.Context) (Subscription, error)
+	Subscribe(ctx context.Context, fn CreateSubscription) (Subscription, error)
 	GetSubscription(id string) (Subscription, error)
 	RemoveSubscription(id string) error
 	Broadcast(ctx context.Context, message any) error

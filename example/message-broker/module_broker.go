@@ -15,6 +15,7 @@ import (
 	"github.com/coder/websocket"
 	chatlogwriter "github.com/desain-gratis/common/example/message-broker/src/log-api/impl/chat-log-writer"
 	"github.com/desain-gratis/common/lib/notifier"
+	"github.com/desain-gratis/common/lib/notifier/impl"
 	"github.com/julienschmidt/httprouter"
 	"github.com/lni/dragonboat/v4"
 	"github.com/lni/dragonboat/v4/client"
@@ -23,10 +24,11 @@ import (
 )
 
 type broker struct {
-	shardID   uint64
-	replicaID uint64
-	dhost     *dragonboat.NodeHost
-	sess      *client.Session
+	shardID     uint64
+	replicaID   uint64
+	exitMessage string
+	dhost       *dragonboat.NodeHost
+	sess        *client.Session
 }
 
 func (b *broker) GetTopic(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
@@ -60,7 +62,15 @@ func (b *broker) Publish(w http.ResponseWriter, r *http.Request, p httprouter.Pa
 
 func (b *broker) Tail(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	// tail topic log
-	notifier, _, err := b.getListener(r.Context(), "csv")
+
+	// TODO: wrapper on the impl itself
+	chatEventName := "chat_evt"
+	var chatSubscription = func(ctx context.Context, key string) notifier.Subscription {
+		// TODO: implement event filter here in the implementation
+		return impl.NewSubscription(ctx, r.Context(), key, b.exitMessage, nil)
+	}
+
+	notifier, _, err := b.getListener(r.Context(), chatEventName, chatSubscription, "csv")
 	if err != nil {
 		return
 	}
@@ -227,8 +237,17 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 		return
 	}
 
-	// tail chat log
-	notifier, chatOffset, err := b.getListener(lctx, name)
+	// TODO: wrapper on the impl itself
+	chatEventName := "chat_evt"
+	var chatSubscription = func(ctx context.Context, key string) notifier.Subscription {
+		return impl.NewSubscription(ctx, lctx, key, b.exitMessage, nil)
+	}
+
+	// subscribe to "chat_evt" (currently the value is ignored)
+	// published by our happy state machine.
+	// in the future, state machine will have multiple output "events" that
+	// can be listened to
+	notifier, chatOffset, err := b.getListener(lctx, chatEventName, chatSubscription, name)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			return
@@ -404,12 +423,14 @@ func (b *broker) publishTextToWebsocket(ctx context.Context, wsconn *websocket.C
 	return nil
 }
 
-func (b *broker) getListener(ctx context.Context, name string) (notifier.Listener, uint64, error) {
+// getListener get subscription to a topic, and then start listening for publish
+func (b *broker) getListener(ctx context.Context, topicName string, csfn notifier.CreateSubscription, name string) (
+	notifier.Listener, uint64, error) {
 	rctx, c := context.WithTimeout(ctx, 5*time.Second)
 	defer c()
 
-	// 1. get & register local instance of the subscription
-	v, err := b.dhost.SyncRead(rctx, b.shardID, chatlogwriter.SubscribeLog{Ctx: ctx})
+	// 1. get & register local instance of the subscription, but not yet received any event
+	v, err := b.dhost.SyncRead(rctx, b.shardID, chatlogwriter.Subscribe{Topic: topicName})
 	if err != nil {
 		return nil, 0, err
 	}
@@ -419,14 +440,23 @@ func (b *broker) getListener(ctx context.Context, name string) (notifier.Listene
 		return nil, 0, ctx.Err()
 	}
 
-	l, ok := v.(notifier.Listener)
+	topic, ok := v.(notifier.Topic)
 	if !ok {
 		return nil, 0, errors.New("not notifier")
 	}
 
-	// 2. start consuming data from the subscription
+	subscription, err := topic.Subscribe(ctx, csfn)
+	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			return nil, 0, err
+		}
+		log.Err(err).Msgf("LOH PAK BU")
+		return nil, 0, err
+	}
+
+	// 2. ask state-machine to start receiving data
 	data, err := json.Marshal(chatlogwriter.StartSubscriptionData{
-		SubscriptionID: l.ID(),
+		SubscriptionID: subscription.ID(),
 		ReplicaID:      b.replicaID,
 		Debug:          name,
 	})
@@ -447,7 +477,11 @@ func (b *broker) getListener(ctx context.Context, name string) (notifier.Listene
 		return nil, 0, err
 	}
 
-	return l, result.Value, nil
+	// receive the listener offset
+
+	startListenIdx := result.Value
+
+	return subscription, startListenIdx, nil
 }
 
 type Command struct {

@@ -32,7 +32,7 @@ type subscription struct {
 	listenChan  chan any
 }
 
-func NewSubscription(requestCtx, appCtx context.Context, id string, exitMessage any) *subscription {
+func NewSubscription(requestCtx, appCtx context.Context, id string, exitMessage any, filterOutFn func(any) bool) *subscription {
 	// add go routine to Close this subscription
 	// if it's not listened up immediately after certain time (eg. 2 seconds)
 	c := &subscription{
@@ -41,6 +41,12 @@ func NewSubscription(requestCtx, appCtx context.Context, id string, exitMessage 
 		exitMessage: exitMessage,
 		ch:          make(chan any),
 		listenChan:  make(chan any),
+	}
+
+	if filterOutFn == nil {
+		filterOutFn = func(a any) bool {
+			return false
+		}
 	}
 
 	log.Info().Msgf("subscription member: created %v", id)
@@ -71,6 +77,9 @@ func NewSubscription(requestCtx, appCtx context.Context, id string, exitMessage 
 				close(c.listenChan)
 				return
 			case msg := <-c.listenChan:
+				if filterOutFn(msg) {
+					continue
+				}
 				// published message
 				// definitely can queue up, to make sure no messages are lost. (and can join together by event ID)
 				wg.Add(1)

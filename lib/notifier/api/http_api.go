@@ -1,19 +1,22 @@
 package notifier
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
 
+	"github.com/desain-gratis/common/lib/notifier"
+	"github.com/desain-gratis/common/lib/notifier/impl"
 	"github.com/julienschmidt/httprouter"
 )
 
 type api struct {
-	n         Topic
+	n         notifier.Topic
 	transform func(v any) any
 }
 
-func NewDebugAPI(n Topic) *api {
+func NewDebugAPI(n notifier.Topic) *api {
 	return &api{n: n}
 }
 
@@ -31,7 +34,11 @@ func (c *api) ListenHandler(w http.ResponseWriter, r *http.Request, p httprouter
 		return
 	}
 
-	subs, err := c.n.Subscribe(r.Context())
+	var chatSubscription = func(ctx context.Context, key string) notifier.Subscription {
+		return impl.NewSubscription(ctx, r.Context(), key, "bye bye", nil)
+	}
+
+	subs, err := c.n.Subscribe(r.Context(), chatSubscription)
 	if err != nil {
 		http.Error(w, "failed to subscribe to topic", http.StatusInternalServerError)
 		return

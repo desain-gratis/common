@@ -18,15 +18,12 @@ var _ notifier.Topic = &topic{}
 type topic struct {
 	listener map[uint64]notifier.Subscription
 	lock     *sync.RWMutex
-	Csf      CreateSubscription
 }
 
 var (
 	ErrNotFound   = errors.New("not found")
 	ErrInvalidKey = errors.New("invalid key")
 )
-
-type CreateSubscription func(ctx context.Context, id string) notifier.Subscription
 
 var _ notifier.Topic = &topic{}
 
@@ -44,14 +41,14 @@ func getKey(uid uint64) string {
 }
 
 // TODO: maybe add appCtx as well
-func (s *topic) Subscribe(ctx context.Context) (notifier.Subscription, error) {
+func (s *topic) Subscribe(ctx context.Context, csf notifier.CreateSubscription) (notifier.Subscription, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
 
 	id := rand.Uint64() // change id impl to avoid conflict if needed
 
-	subs := s.Csf(ctx, getKey(id))
+	subs := csf(ctx, getKey(id))
 
 	log.Info().Msgf("topic: created new %v", id)
 
@@ -103,27 +100,14 @@ func (s *topic) RemoveSubscription(id string) error {
 }
 
 func (s *topic) Broadcast(ctx context.Context, message any) error {
-	delKey := make([]uint64, 0)
+	s.lock.RLock()
+	defer s.lock.RUnlock()
 
-	func() {
-		s.lock.RLock()
-		defer s.lock.RUnlock()
-		for key, listener := range s.listener {
-			err := listener.Publish(message)
-			// todo: refactor here
-			if err != nil && !errors.Is(err, ErrNotStarted) {
-				log.Err(err).Msgf("error during publish.. I delete: %v", key)
-				delKey = append(delKey, key)
-			}
+	for key, listener := range s.listener {
+		err := listener.Publish(message)
+		if err != nil && !errors.Is(err, ErrNotStarted) {
+			log.Err(err).Msgf("error during publish.. I delete: %v", key)
 		}
-	}()
-
-	s.lock.Lock()
-	defer s.lock.Unlock()
-
-	for _, key := range delKey {
-		log.Info().Msgf("deletion: %v", key)
-		delete(s.listener, key)
 	}
 
 	return nil

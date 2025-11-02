@@ -52,10 +52,10 @@ func (s *happySM) Lookup(ctx context.Context, query interface{}) (interface{}, e
 	}
 
 	switch q := query.(type) {
-	case SubscribeLog:
+	case Subscribe:
 		// subscribe to real time event for log update
 		log.Info().Msgf("I WANT TO SUBSCRIBE: %T %+v", q, q)
-		return s.getSubscription(q.Ctx)
+		return s.topic, nil
 	case QueryLog:
 		// query historical log
 		return s.queryLog(ctx, q)
@@ -275,19 +275,6 @@ func (s *happySM) startSubscription(ent sm.Entry, rawData json.RawMessage, start
 	})
 
 	return sm.Result{Value: ent.Index, Data: resp}, nil
-}
-
-func (s *happySM) getSubscription(ctx context.Context) (notifier.Subscription, error) {
-	subs, err := s.topic.Subscribe(ctx)
-	if err != nil {
-		if errors.Is(err, context.Canceled) {
-			return nil, err
-		}
-		log.Err(err).Msgf("LOH PAK BU")
-		return nil, err
-	}
-
-	return subs, nil
 }
 
 func (s *happySM) queryLog(ctx context.Context, q QueryLog) (chan Event, error) {
