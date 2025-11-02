@@ -9,10 +9,10 @@ import (
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
-	notifierapi "github.com/desain-gratis/common/example/message-broker/src/log-api"
-	"github.com/desain-gratis/common/example/message-broker/src/log-api/impl"
 	"github.com/desain-gratis/common/example/message-broker/src/log-api/impl/statemachine"
 	"github.com/desain-gratis/common/lib/logwriter"
+	"github.com/desain-gratis/common/lib/notifier"
+	"github.com/desain-gratis/common/lib/notifier/impl"
 	sm "github.com/lni/dragonboat/v4/statemachine"
 	"github.com/rs/zerolog/log"
 )
@@ -33,12 +33,12 @@ type happyState struct {
 type happySM struct {
 	conn      driver.Conn
 	state     *happyState
-	topic     notifierapi.Topic
+	topic     notifier.Topic
 	replicaID uint64
 	shardID   uint64
 }
 
-func NewHappy(topic notifierapi.Topic, shardID, replicaID uint64) *happySM {
+func NewHappy(topic notifier.Topic, shardID, replicaID uint64) *happySM {
 	return &happySM{
 		topic:     topic,
 		shardID:   shardID,
@@ -277,7 +277,7 @@ func (s *happySM) startSubscription(ent sm.Entry, rawData json.RawMessage, start
 	return sm.Result{Value: ent.Index, Data: resp}, nil
 }
 
-func (s *happySM) getSubscription(ctx context.Context) (notifierapi.Subscription, error) {
+func (s *happySM) getSubscription(ctx context.Context) (notifier.Subscription, error) {
 	subs, err := s.topic.Subscribe(ctx)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {

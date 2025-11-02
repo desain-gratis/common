@@ -1,4 +1,4 @@
-package logapi
+package notifier
 
 import (
 	"context"

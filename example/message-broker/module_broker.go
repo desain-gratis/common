@@ -13,8 +13,8 @@ import (
 
 	"github.com/Pallinder/go-randomdata"
 	"github.com/coder/websocket"
-	notifierapi "github.com/desain-gratis/common/example/message-broker/src/log-api"
 	chatlogwriter "github.com/desain-gratis/common/example/message-broker/src/log-api/impl/chat-log-writer"
+	"github.com/desain-gratis/common/lib/notifier"
 	"github.com/julienschmidt/httprouter"
 	"github.com/lni/dragonboat/v4"
 	"github.com/lni/dragonboat/v4/client"
@@ -120,7 +120,12 @@ type SubscriptionData struct {
 
 func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		OriginPatterns: []string{"http://localhost:*", "http://localhost", "https://chat.desain.gratis", "http://dxb-keenan.tailnet-ee99.ts.net", "https://dxb-keenan.tailnet-ee99.ts.net"},
+		OriginPatterns: []string{
+			"http://localhost:*", "http://localhost",
+			"https://chat.desain.gratis", "http://dxb-keenan.tailnet-ee99.ts.net",
+			"https://dxb-keenan.tailnet-ee99.ts.net",
+			"https://mb.desain.gratis",
+		},
 	})
 	if err != nil {
 		log.Error().Msgf("error accept %v", err)
@@ -399,7 +404,7 @@ func (b *broker) publishTextToWebsocket(ctx context.Context, wsconn *websocket.C
 	return nil
 }
 
-func (b *broker) getListener(ctx context.Context, name string) (notifierapi.Listener, uint64, error) {
+func (b *broker) getListener(ctx context.Context, name string) (notifier.Listener, uint64, error) {
 	rctx, c := context.WithTimeout(ctx, 5*time.Second)
 	defer c()
 
@@ -414,7 +419,7 @@ func (b *broker) getListener(ctx context.Context, name string) (notifierapi.List
 		return nil, 0, ctx.Err()
 	}
 
-	l, ok := v.(notifierapi.Listener)
+	l, ok := v.(notifier.Listener)
 	if !ok {
 		return nil, 0, errors.New("not notifier")
 	}

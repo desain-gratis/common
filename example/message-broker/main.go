@@ -10,10 +10,10 @@ import (
 	"sync"
 	"time"
 
-	logapi "github.com/desain-gratis/common/example/message-broker/src/log-api"
-	logapi_impl "github.com/desain-gratis/common/example/message-broker/src/log-api/impl"
 	chatlogwriter "github.com/desain-gratis/common/example/message-broker/src/log-api/impl/chat-log-writer"
 	"github.com/desain-gratis/common/example/message-broker/src/log-api/impl/statemachine"
+	"github.com/desain-gratis/common/lib/notifier"
+	notifier_impl "github.com/desain-gratis/common/lib/notifier/impl"
 	"github.com/desain-gratis/common/utility/replica"
 	"github.com/julienschmidt/httprouter"
 	"github.com/lni/dragonboat/v4/client"
@@ -45,9 +45,9 @@ func main() {
 	router := httprouter.New()
 
 	replica.ForEachType("happy", func(config replica.Config[chatlogwriter.LogConfig]) error {
-		topic := logapi_impl.NewTopic()
-		topic.Csf = func(ctx context.Context, key string) logapi.Subscription {
-			return logapi_impl.NewSubscription(ctx, appCtx, key, true, 0, config.AppConfig.ExitMessage, time.Duration(config.AppConfig.ListenTimeoutS)*time.Second, func() {
+		topic := notifier_impl.NewTopic()
+		topic.Csf = func(ctx context.Context, key string) notifier.Subscription {
+			return notifier_impl.NewSubscription(ctx, appCtx, key, true, 0, config.AppConfig.ExitMessage, time.Duration(config.AppConfig.ListenTimeoutS)*time.Second, func() {
 				topic.RemoveSubscription(key)
 			})
 		}

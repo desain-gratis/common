@@ -7,15 +7,15 @@ import (
 	"strconv"
 	"sync"
 
-	notifierapi "github.com/desain-gratis/common/example/message-broker/src/log-api"
+	"github.com/desain-gratis/common/lib/notifier"
 	"github.com/rs/zerolog/log"
 )
 
-var _ notifierapi.Topic = &topic{}
+var _ notifier.Topic = &topic{}
 
 // topic
 type topic struct {
-	listener map[uint64]notifierapi.Subscription
+	listener map[uint64]notifier.Subscription
 	lock     *sync.RWMutex
 	Csf      CreateSubscription
 }
@@ -25,14 +25,14 @@ var (
 	ErrInvalidKey = errors.New("invalid key")
 )
 
-type CreateSubscription func(ctx context.Context, id string) notifierapi.Subscription
+type CreateSubscription func(ctx context.Context, id string) notifier.Subscription
 
-var _ notifierapi.Topic = &topic{}
+var _ notifier.Topic = &topic{}
 
 // NewTopic create a new topic with create subscription function
 func NewTopic() *topic {
 	return &topic{
-		listener: make(map[uint64]notifierapi.Subscription),
+		listener: make(map[uint64]notifier.Subscription),
 		lock:     &sync.RWMutex{},
 	}
 }
@@ -43,7 +43,7 @@ func getKey(uid uint64) string {
 }
 
 // TODO: maybe add appCtx as well
-func (s *topic) Subscribe(ctx context.Context) (notifierapi.Subscription, error) {
+func (s *topic) Subscribe(ctx context.Context) (notifier.Subscription, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
@@ -70,7 +70,7 @@ func (s *topic) Subscribe(ctx context.Context) (notifierapi.Subscription, error)
 	return s.listener[id], nil
 }
 
-func (s *topic) GetSubscription(id string) (notifierapi.Subscription, error) {
+func (s *topic) GetSubscription(id string) (notifier.Subscription, error) {
 	iduint, err := strconv.ParseUint(id, 10, 64)
 	if err != nil {
 		return nil, ErrInvalidKey
