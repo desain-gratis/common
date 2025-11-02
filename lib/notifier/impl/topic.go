@@ -7,8 +7,9 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/desain-gratis/common/lib/notifier"
 	"github.com/rs/zerolog/log"
+
+	"github.com/desain-gratis/common/lib/notifier"
 )
 
 var _ notifier.Topic = &topic{}

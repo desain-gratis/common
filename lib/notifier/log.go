@@ -21,7 +21,7 @@ type Subscription interface {
 	Start()
 
 	// Publish to this single subscription
-	// intended to be called by Broker or for debugging purpose
+	// intended to be called by state machine / app or for debugging purpose
 	Publish(message any) error
 }
 
@@ -29,7 +29,5 @@ type Listener interface {
 	// ID is the listener ID for a given topic
 	ID() string
 
-	Listen(ctx context.Context) <-chan any
-
-	IsListening() bool
+	Listen() <-chan any
 }

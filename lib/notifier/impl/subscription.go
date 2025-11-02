@@ -5,13 +5,13 @@ import (
 	"errors"
 	"reflect"
 	"sync"
-	"time"
 
-	notifierapi "github.com/desain-gratis/common/example/message-broker/src/log-api"
 	"github.com/rs/zerolog/log"
+
+	"github.com/desain-gratis/common/lib/notifier"
 )
 
-var _ notifierapi.Subscription = &subscription{}
+var _ notifier.Subscription = &subscription{}
 
 var (
 	ErrListenerClosed = errors.New("closed")
@@ -27,24 +27,19 @@ type subscription struct {
 	closed      bool
 	ch          chan any
 	exitMessage any
-	async       bool
-	listen      bool
-	timeout     bool
-	stop        func()
 	ctx         context.Context
 	listenCtx   context.Context
 	listenChan  chan any
 }
 
-func NewSubscription(ctx, serverCtx context.Context, id string, async bool, bufferSize uint32, exitMessage any, listenTimeout time.Duration, stop func()) *subscription {
+func NewSubscription(requestCtx, appCtx context.Context, id string, exitMessage any) *subscription {
 	// add go routine to Close this subscription
 	// if it's not listened up immediately after certain time (eg. 2 seconds)
 	c := &subscription{
-		async:       async,
+		id:          id,
+		ctx:         requestCtx,
 		exitMessage: exitMessage,
 		ch:          make(chan any),
-		id:          id,
-		ctx:         ctx,
 		listenChan:  make(chan any),
 	}
 
@@ -59,8 +54,10 @@ func NewSubscription(ctx, serverCtx context.Context, id string, async bool, buff
 		}()
 		for {
 			select {
-			case <-serverCtx.Done(): // app close
+			case <-appCtx.Done(): // app close
 				log.Info().Msgf("subscription member: closing (server stop) %v", id)
+				c.closed = true
+				close(c.listenChan)
 				if !checkNilInterface(c.exitMessage) {
 					wg.Add(1)
 					go func() {
@@ -68,12 +65,13 @@ func NewSubscription(ctx, serverCtx context.Context, id string, async bool, buff
 						c.ch <- c.exitMessage
 					}()
 				}
-			case <-ctx.Done(): // client close
+			case <-requestCtx.Done(): // client close
 				log.Info().Msgf("subscription member: closing (stop listening for publish) %v", id)
 				c.closed = true
 				close(c.listenChan)
 				return
-			case msg := <-c.listenChan: // published message
+			case msg := <-c.listenChan:
+				// published message
 				// definitely can queue up, to make sure no messages are lost. (and can join together by event ID)
 				wg.Add(1)
 				go func() {
@@ -95,14 +93,7 @@ func (c *subscription) Start() {
 	c.started = true
 }
 
-func (c *subscription) IsListening() bool {
-	return c.listen
-}
-
-func (c *subscription) Listen(ctx context.Context) <-chan any {
-	c.listenCtx = ctx
-	c.listen = true
-
+func (c *subscription) Listen() <-chan any {
 	return c.ch
 }
 
@@ -113,10 +104,6 @@ func (c *subscription) Publish(msg any) error {
 
 	if !c.started {
 		return ErrNotStarted
-	}
-
-	if c.timeout && !c.listen {
-		return ErrListenTimedOut
 	}
 
 	c.listenChan <- msg

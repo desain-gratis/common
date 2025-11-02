@@ -77,7 +77,7 @@ func (b *broker) Tail(w http.ResponseWriter, r *http.Request, p httprouter.Param
 	w.Header().Add("Content-Type", "text/plain") // so that browser can render them properly
 
 	// can save state here (eg. store last received msg)
-	for msg := range notifier.Listen(r.Context()) {
+	for msg := range notifier.Listen() {
 		// client (FE) can do this:
 		// client can store G --> last applied
 		// if received tail, store the latest applied info as G
@@ -309,7 +309,7 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 		return
 	}
 
-	for anymsg := range notifier.Listen(lctx) {
+	for anymsg := range notifier.Listen() {
 		if pctx.Err() != nil {
 			break
 		}

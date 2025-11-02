@@ -37,7 +37,7 @@ func (c *api) ListenHandler(w http.ResponseWriter, r *http.Request, p httprouter
 		return
 	}
 
-	for msg := range subs.Listen(r.Context()) {
+	for msg := range subs.Listen() {
 		if c.transform != nil {
 			msg = c.transform(msg)
 		}
