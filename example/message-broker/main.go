@@ -68,6 +68,25 @@ func main() {
 		router.GET("/happy/"+config.ID+"/tail", brokerAPI.Tail)
 		router.GET("/happy/"+config.ID+"/ws", brokerAPI.Websocket)
 
+		// For realtime part:
+		// todo: brokerAPI.WebSocket(topic) Tail(topic)
+		// in other words, a default API (jsonl stream / websocket) for "notifier.Topic".
+		// able to filter by:
+		// 1. table_name / event_name
+		// 2. by other custom key value filter fn, (type assertion on Event's data)
+		// 3. or other capabilities... map/reduce / functional programming / DAGs/ UDFs etc..
+		// 4. can have default API for parsing simple DAGs to combine more than 1 real time topic
+		//. and any other custom implementations...s
+
+		// For the non realtime/snapshot / key-value part:
+		// and then later, can have key value storage or any derivatives of the event
+		// there is default for desain.gratis.. but user can create custom filter / DAGs / UDFslater
+		// router.GET("/happy/"+config.ID+"/table/active-users", ...)
+		// router.GET("/happy/"+config.ID+"/table/chat?room_id=...", ...)
+		// router.GET("/happy/"+config.ID+"/table/purchase?id=...", ...)
+
+		// lets implement that.. and desain.gratis will be unstoppable
+
 		return nil
 	})
 

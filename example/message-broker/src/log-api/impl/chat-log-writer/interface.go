@@ -6,9 +6,7 @@ import (
 	"time"
 )
 
-type Subscribe struct {
-	Topic string
-}
+type Subscribe struct{}
 
 type QueryLog struct {
 	Ctx context.Context

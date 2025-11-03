@@ -63,14 +63,12 @@ func (b *broker) Publish(w http.ResponseWriter, r *http.Request, p httprouter.Pa
 func (b *broker) Tail(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	// tail topic log
 
-	// TODO: wrapper on the impl itself
-	chatEventName := "chat_evt"
 	var chatSubscription = func(ctx context.Context, key string) notifier.Subscription {
 		// TODO: implement event filter here in the implementation
 		return impl.NewSubscription(ctx, r.Context(), key, b.exitMessage, nil)
 	}
 
-	notifier, _, err := b.getListener(r.Context(), chatEventName, chatSubscription, "csv")
+	notifier, _, err := b.getSubscription(r.Context(), chatSubscription, "csv")
 	if err != nil {
 		return
 	}
@@ -237,9 +235,7 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 		return
 	}
 
-	// TODO: wrapper on the impl itself
-	chatEventName := "chat_evt"
-	var chatSubscription = func(ctx context.Context, key string) notifier.Subscription {
+	var subscribeFn = func(ctx context.Context, key string) notifier.Subscription {
 		return impl.NewSubscription(ctx, lctx, key, b.exitMessage, nil)
 	}
 
@@ -247,7 +243,7 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 	// published by our happy state machine.
 	// in the future, state machine will have multiple output "events" that
 	// can be listened to
-	notifier, chatOffset, err := b.getListener(lctx, chatEventName, chatSubscription, name)
+	subscription, listenOffset, err := b.getSubscription(lctx, subscribeFn, name)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			return
@@ -275,7 +271,7 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 	msg = map[string]any{
 		"evt_name": "chat-offset",
 		"data": map[string]any{
-			"offset": chatOffset,
+			"offset": listenOffset,
 		},
 	}
 	err = b.publishTextToWebsocket(pctx, c, msg)
@@ -315,7 +311,7 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 	aDayBefore := time.Now().AddDate(0, 0, -1).Local().Truncate(time.Hour * 24)
 	log.Info().Msgf("a day before: %v", aDayBefore.Format(time.RFC3339))
 	err = b.queryLog(pctx, c, chatlogwriter.QueryLog{
-		ToOffset:     chatOffset,
+		ToOffset:     listenOffset,
 		FromDatetime: &aDayBefore,
 		Ctx:          pctx,
 	})
@@ -328,7 +324,7 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 		return
 	}
 
-	for anymsg := range notifier.Listen() {
+	for anymsg := range subscription.Listen() {
 		if pctx.Err() != nil {
 			break
 		}
@@ -423,14 +419,14 @@ func (b *broker) publishTextToWebsocket(ctx context.Context, wsconn *websocket.C
 	return nil
 }
 
-// getListener get subscription to a topic, and then start listening for publish
-func (b *broker) getListener(ctx context.Context, topicName string, csfn notifier.CreateSubscription, name string) (
+// getSubscription to the state machine topic, and then start listening for publish
+func (b *broker) getSubscription(ctx context.Context, csfn notifier.CreateSubscription, name string) (
 	notifier.Listener, uint64, error) {
 	rctx, c := context.WithTimeout(ctx, 5*time.Second)
 	defer c()
 
 	// 1. get & register local instance of the subscription, but not yet received any event
-	v, err := b.dhost.SyncRead(rctx, b.shardID, chatlogwriter.Subscribe{Topic: topicName})
+	v, err := b.dhost.SyncRead(rctx, b.shardID, chatlogwriter.Subscribe{})
 	if err != nil {
 		return nil, 0, err
 	}
