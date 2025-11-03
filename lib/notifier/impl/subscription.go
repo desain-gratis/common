@@ -14,38 +14,34 @@ import (
 )
 
 const (
-	listenTimeOut = 100 * time.Millisecond
+	listenTimeOut   = 100 * time.Millisecond
+	listenQueueSize = 24000
 )
 
 var _ notifier.Subscription = &subscription{}
 
 var (
-	ErrClosed         = errors.New("closed")
-	ErrListenerEmpty  = errors.New("no listener")
-	ErrNotStarted     = errors.New("not started")
-	ErrListenTimedOut = errors.New("listen timed out")
+	ErrClosed     = errors.New("closed")
+	ErrNotStarted = errors.New("not started")
 )
 
-// TODO: major refactor this
 type subscription struct {
-	id         string
-	started    atomic.Bool
-	closed     atomic.Bool
-	listened   atomic.Bool
-	ch         chan any
-	listenChan chan any
+	id        string
+	started   atomic.Bool
+	closed    atomic.Bool
+	listened  atomic.Bool
+	listenCh  chan any
+	receiveCh chan any
 
 	exitMessage any
 }
 
 func NewSubscription(requestCtx, appCtx context.Context, id string, exitMessage any, filterOutFn func(any) bool) *subscription {
-	// add go routine to Close this subscription
-	// if it's not listened up immediately after certain time (eg. 2 seconds)
 	c := &subscription{
 		id:          id,
+		listenCh:    make(chan any, listenQueueSize),
+		receiveCh:   make(chan any),
 		exitMessage: exitMessage,
-		ch:          make(chan any, 20000), // currently arbitrary
-		listenChan:  make(chan any),
 	}
 
 	if filterOutFn == nil {
@@ -61,7 +57,7 @@ func NewSubscription(requestCtx, appCtx context.Context, id string, exitMessage 
 		wg := sync.WaitGroup{}
 		defer func() {
 			wg.Wait()
-			close(c.ch)
+			close(c.listenCh)
 			log.Info().Msgf("subscription member: closed properly %v", id)
 		}()
 
@@ -71,13 +67,13 @@ func NewSubscription(requestCtx, appCtx context.Context, id string, exitMessage 
 				log.Info().Msgf("subscription member: closing (server stop) %v", id)
 
 				c.closed.Store(true)
-				close(c.listenChan)
+				close(c.receiveCh)
 
 				if !checkNilInterface(c.exitMessage) {
 					wg.Add(1)
 					go func() {
 						defer wg.Done()
-						c.ch <- c.exitMessage
+						c.listenCh <- c.exitMessage
 					}()
 				}
 				return
@@ -85,7 +81,7 @@ func NewSubscription(requestCtx, appCtx context.Context, id string, exitMessage 
 				log.Info().Msgf("subscription member: closing (client stop listening) %v", id)
 
 				c.closed.Store(true)
-				close(c.listenChan)
+				close(c.receiveCh)
 
 				return
 			case <-time.After(listenTimeOut):
@@ -96,14 +92,14 @@ func NewSubscription(requestCtx, appCtx context.Context, id string, exitMessage 
 				log.Info().Msgf("subscription member: listen timed out %v", id)
 
 				c.closed.Store(true)
-				close(c.listenChan)
+				close(c.receiveCh)
 
 				return
-			case msg := <-c.listenChan:
+			case msg := <-c.receiveCh:
 				if filterOutFn(msg) {
 					continue
 				}
-				c.ch <- msg
+				c.listenCh <- msg
 			}
 		}
 	}()
@@ -122,7 +118,7 @@ func (c *subscription) Start() {
 
 func (c *subscription) Listen() <-chan any {
 	c.listened.Store(true)
-	return c.ch
+	return c.listenCh
 }
 
 func (c *subscription) Publish(msg any) error {
@@ -139,7 +135,7 @@ func (c *subscription) Publish(msg any) error {
 
 	// maybe we can add statistics eg. number of publishhed messages..
 
-	c.listenChan <- msg
+	c.receiveCh <- msg
 
 	return nil
 }
