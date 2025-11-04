@@ -8,6 +8,7 @@ import (
 	"io"
 	"math/rand"
 	"net/http"
+	"reflect"
 	"sync"
 	"time"
 
@@ -15,7 +16,7 @@ import (
 	"github.com/coder/websocket"
 	chatlogwriter "github.com/desain-gratis/common/example/message-broker/src/log-api/impl/chat-log-writer"
 	"github.com/desain-gratis/common/lib/notifier"
-	"github.com/desain-gratis/common/lib/notifier/impl"
+	notifier_impl "github.com/desain-gratis/common/lib/notifier/impl"
 	"github.com/julienschmidt/httprouter"
 	"github.com/lni/dragonboat/v4"
 	"github.com/lni/dragonboat/v4/client"
@@ -63,12 +64,7 @@ func (b *broker) Publish(w http.ResponseWriter, r *http.Request, p httprouter.Pa
 func (b *broker) Tail(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	// tail topic log
 
-	var chatSubscription = func(ctx context.Context, key string) notifier.Subscription {
-		// TODO: implement event filter here in the implementation
-		return impl.NewSubscription(ctx, r.Context(), key, b.exitMessage, nil)
-	}
-
-	notifier, _, err := b.getSubscription(r.Context(), chatSubscription, "csv")
+	notifier, _, err := b.getSubscription(r.Context(), notifier_impl.NewStandardSubscriber(nil), "csv")
 	if err != nil {
 		return
 	}
@@ -159,7 +155,7 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 	}
 	// Reader goroutine, detect client connection close as well.
 	go func() {
-		// close listener & publisher ctx
+		// close both listener & publisher ctx if client is the one closing
 		defer lcancel()
 		defer pcancel()
 
@@ -235,15 +231,20 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 		return
 	}
 
-	var subscribeFn = func(ctx context.Context, key string) notifier.Subscription {
-		return impl.NewSubscription(ctx, lctx, key, b.exitMessage, nil)
-	}
+	// subscribe until server closed / client closed
+	subscribeCtx, cancelSubscribe := context.WithCancelCause(context.Background())
 
-	// subscribe to "chat_evt" (currently the value is ignored)
-	// published by our happy state machine.
-	// in the future, state machine will have multiple output "events" that
-	// can be listened to
-	subscription, listenOffset, err := b.getSubscription(lctx, subscribeFn, name)
+	// merge context
+	go func() {
+		select {
+		case <-lctx.Done():
+			cancelSubscribe(errors.New("server closed"))
+		case <-pctx.Done():
+			cancelSubscribe(errors.New("client closed"))
+		}
+	}()
+
+	subscription, listenOffset, err := b.getSubscription(subscribeCtx, notifier_impl.NewStandardSubscriber(nil), name)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			return
@@ -563,4 +564,18 @@ func (b *broker) queryLog(pctx context.Context, wsconn *websocket.Conn, qlog cha
 	}
 
 	return nil
+}
+
+// https://vitaneri.com/posts/check-for-nil-interface-in-go
+func checkNilInterface(i interface{}) bool {
+	iv := reflect.ValueOf(i)
+	if !iv.IsValid() {
+		return true
+	}
+	switch iv.Kind() {
+	case reflect.Ptr, reflect.Slice, reflect.Map, reflect.Func, reflect.Interface:
+		return iv.IsNil()
+	default:
+		return false
+	}
 }
