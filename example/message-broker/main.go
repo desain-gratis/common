@@ -12,6 +12,7 @@ import (
 
 	chatlogwriter "github.com/desain-gratis/common/example/message-broker/src/log-api/impl/chat-log-writer"
 	"github.com/desain-gratis/common/example/message-broker/src/log-api/impl/statemachine"
+	notifier_api "github.com/desain-gratis/common/lib/notifier/api"
 	notifier_impl "github.com/desain-gratis/common/lib/notifier/impl"
 	"github.com/desain-gratis/common/utility/replica"
 	"github.com/julienschmidt/httprouter"
@@ -63,9 +64,11 @@ func main() {
 			sess:      sess,
 		}
 
-		router.GET("/happy/"+config.ID, brokerAPI.GetTopic)
-		router.POST("/happy/"+config.ID, brokerAPI.Publish)
-		router.GET("/happy/"+config.ID+"/tail", brokerAPI.Tail)
+		topicAPI := notifier_api.NewTopicAPI(topic, nil)
+
+		router.GET("/happy/"+config.ID, topicAPI.Metrics)
+		router.POST("/happy/"+config.ID, topicAPI.Publish)
+		router.GET("/happy/"+config.ID+"/tail", topicAPI.Subscribe)
 		router.GET("/happy/"+config.ID+"/ws", brokerAPI.Websocket)
 
 		// For realtime part:

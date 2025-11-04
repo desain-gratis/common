@@ -153,6 +153,7 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 		ID:   id,
 		Name: name,
 	}
+
 	// Reader goroutine, detect client connection close as well.
 	go func() {
 		// close both listener & publisher ctx if client is the one closing

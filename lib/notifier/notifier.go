@@ -33,3 +33,7 @@ type Listener interface {
 
 	Listen() <-chan any
 }
+
+type Metric interface {
+	GetMetric() any
+}

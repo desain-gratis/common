@@ -1,44 +1,51 @@
-package notifier
+package api
 
 import (
-	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 
+	"github.com/julienschmidt/httprouter"
+
 	"github.com/desain-gratis/common/lib/notifier"
 	"github.com/desain-gratis/common/lib/notifier/impl"
-	"github.com/julienschmidt/httprouter"
 )
 
 type api struct {
-	n         notifier.Topic
+	topic     notifier.Topic
 	transform func(v any) any
 }
 
-func NewDebugAPI(n notifier.Topic) *api {
-	return &api{n: n}
+func NewTopicAPI(topic notifier.Topic, transform func(v any) any) *api {
+	return &api{topic: topic, transform: transform}
 }
 
-// todo; make it streaming DSL
-func (a *api) WithTransform(transform func(v any) any) *api {
-	a.transform = transform
-	return a
+func (c *api) Metrics(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+	stat, ok := c.topic.(notifier.Metric)
+	if !ok {
+		http.Error(w, "topic implementation does not support metric query", http.StatusInternalServerError)
+		return
+	}
+
+	payload, err := json.Marshal(stat.GetMetric())
+	if err != nil {
+		http.Error(w, "failed to parse metric", http.StatusInternalServerError)
+		return
+	}
+
+	w.Write(payload)
 }
 
 // http helper to listen notify event; all event will be listened
-func (c *api) ListenHandler(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+func (c *api) Subscribe(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "streaming not supported", http.StatusInternalServerError)
 		return
 	}
 
-	var chatSubscription = func(ctx context.Context, key string) notifier.Subscription {
-		return impl.NewSubscription(ctx, r.Context(), key, "bye bye", nil)
-	}
-
-	subs, err := c.n.Subscribe(r.Context(), chatSubscription)
+	subs, err := c.topic.Subscribe(r.Context(), impl.NewStandardSubscriber(nil))
 	if err != nil {
 		http.Error(w, "failed to subscribe to topic", http.StatusInternalServerError)
 		return
@@ -58,12 +65,12 @@ func (c *api) ListenHandler(w http.ResponseWriter, r *http.Request, p httprouter
 
 // http util helper to publish directly
 // for debugging only, only support consumer inside the same process
-func (c *api) PublishHandler(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+func (c *api) Publish(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	b, err := io.ReadAll(r.Body)
 	if err != nil {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 
-	c.n.Broadcast(r.Context(), b)
+	c.topic.Broadcast(r.Context(), b)
 }
