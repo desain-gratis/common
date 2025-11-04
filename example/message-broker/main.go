@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"flag"
 	"net"
 	"net/http"
@@ -27,15 +29,14 @@ func init() {
 }
 
 func main() {
-	ctx := context.Background()
-	appCtx, appCancel := context.WithCancel(ctx)
+	appCtx, appCancel := context.WithCancelCause(context.Background())
 
 	var c, address string
 	flag.StringVar(&c, "c", "config.json", "config path")
 	flag.StringVar(&address, "address", "0.0.0.0:9090", "api bind address")
 	flag.Parse()
 
-	initConfig(ctx, c)
+	initConfig(appCtx, c)
 
 	err := replica.Init()
 	if err != nil {
@@ -64,11 +65,20 @@ func main() {
 			sess:      sess,
 		}
 
-		topicAPI := notifier_api.NewTopicAPI(topic, nil)
+		topicAPI := notifier_api.NewTopicAPI(topic, func(v any) any {
+			switch t := v.(type) {
+			case []byte:
+				return string(t)
+			case chatlogwriter.Event:
+				d, _ := json.Marshal(v)
+				return string(d)
+			}
+			return v
+		})
 
 		router.GET("/happy/"+config.ID, topicAPI.Metrics)
 		router.POST("/happy/"+config.ID, topicAPI.Publish)
-		router.GET("/happy/"+config.ID+"/tail", topicAPI.Subscribe)
+		router.GET("/happy/"+config.ID+"/tail", topicAPI.Tail)
 		router.GET("/happy/"+config.ID+"/ws", brokerAPI.Websocket)
 
 		// For realtime part:
@@ -128,8 +138,7 @@ func main() {
 
 		BaseContext: func(l net.Listener) context.Context {
 			// inject with application context.
-			ctx := context.WithValue(ctx, "app-ctx", appCtx)
-			ctx = context.WithValue(ctx, "ws-wg", wsWg)
+			ctx := context.WithValue(appCtx, "ws-wg", wsWg)
 			return ctx
 		},
 	}
@@ -146,19 +155,22 @@ func main() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
+		appCancel(errors.New("server is shutting down"))
+
 		log.Info().Msgf("Shutting down HTTP server..")
 		if err := server.Shutdown(ctx); err != nil {
 			// Error from closing listeners, or context timeout:
 			log.Err(err).Msgf("HTTP server Shutdown")
 		}
 
-		// websocket ws (todo: better naming)
-		appCancel()
 		log.Info().Msgf("Waiting for websocket connection to close..")
 		wsWg.Wait()
 
 		close(idleConnsClosed)
 	}()
+
+	// TODO: maybe can use this for more graceful handling
+	// server.RegisterOnShutdown()
 
 	log.Info().Msgf("Serving at %v..\n", address)
 	if err := server.ListenAndServe(); err != http.ErrServerClosed {

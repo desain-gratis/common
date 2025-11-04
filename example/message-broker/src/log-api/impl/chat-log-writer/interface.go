@@ -39,11 +39,11 @@ type AddSubscriptionResponse struct {
 // Event represent serializable events emanating from the state machine
 // published in the topic
 type Event struct {
-	EvtID           uint64    `json:"evt_id"` // offset
-	EvtName         EventName `json:"evt_name"`
-	EvtTable        string    `json:"evt_table"`
-	Data            []byte    `json:"data"`
-	ServerTimestamp time.Time `json:"server_timestamp"`
+	EvtID           uint64          `json:"evt_id"` // offset
+	EvtName         EventName       `json:"evt_name"`
+	EvtTable        string          `json:"evt_table"`
+	Data            json.RawMessage `json:"data"`
+	ServerTimestamp time.Time       `json:"server_timestamp"`
 }
 
 type EventStartListener struct {

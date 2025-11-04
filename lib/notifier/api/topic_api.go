@@ -38,7 +38,11 @@ func (c *api) Metrics(w http.ResponseWriter, r *http.Request, p httprouter.Param
 }
 
 // http helper to listen notify event; all event will be listened
-func (c *api) Subscribe(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+// NOTE: interesting that Google chrome:
+// 1. if we not yet press enter, already started the connection.
+// 2. if we open multiple, they do not create new (it seems reusing the old connection?)
+// .   WORKAROUND: add random values to the URL param
+func (c *api) Tail(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "streaming not supported", http.StatusInternalServerError)
@@ -50,6 +54,8 @@ func (c *api) Subscribe(w http.ResponseWriter, r *http.Request, p httprouter.Par
 		http.Error(w, "failed to subscribe to topic", http.StatusInternalServerError)
 		return
 	}
+
+	subs.Start()
 
 	for msg := range subs.Listen() {
 		if c.transform != nil {

@@ -13,6 +13,7 @@ import (
 )
 
 var _ notifier.Topic = &standardTopic{}
+var _ notifier.Metric = &standardTopic{}
 
 // topic
 type standardTopic struct {
@@ -112,7 +113,7 @@ func (s *standardTopic) Broadcast(ctx context.Context, message any) error {
 }
 
 // Metric to support metrics query
-func (s *standardTopic) Metric() any {
+func (s *standardTopic) GetMetric() any {
 	var subscriberCount int
 	func() {
 		s.lock.RLock()

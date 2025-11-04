@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"io"
 	"math/rand"
 	"net/http"
 	"reflect"
@@ -32,97 +30,13 @@ type broker struct {
 	sess        *client.Session
 }
 
-func (b *broker) GetTopic(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	// print list of topic
-	w.WriteHeader(http.StatusOK)
-	fmt.Fprintf(w, "success %v", p.ByName("topic"))
-}
-
-func (b *broker) Publish(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	// post message to topic
-	payload, _ := io.ReadAll(r.Body)
-
-	// since we can publish with Tail / connection, and are not web socket, we can use JWT for determining identity..
-	// TODO: validate JWT to obtain sender identity (that are created during Tail [TODO] as well
-	// parse jwt, and then modify the payload.
-	// since we can publish outside the stream connection... / from anywhere.
-
-	ctx, c := context.WithTimeout(context.Background(), 5*time.Second)
-	defer c()
-
-	v, err := b.dhost.SyncPropose(ctx, b.sess, payload)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprintf(w, "error cuk: %v", err)
-		return
-	}
-
-	w.WriteHeader(http.StatusAccepted)
-	fmt.Fprintf(w, "success: %v (value: %v)", string(v.Data), v.Value)
-}
-
-func (b *broker) Tail(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	// tail topic log
-
-	notifier, _, err := b.getSubscription(r.Context(), notifier_impl.NewStandardSubscriber(nil), "csv")
-	if err != nil {
-		return
-	}
-
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		http.Error(w, "streaming not supported", http.StatusInternalServerError)
-		return
-	}
-
-	log.Info().Msgf("LISTENING...")
-
-	w.WriteHeader(http.StatusAccepted)
-	w.Header().Add("Content-Type", "text/plain") // so that browser can render them properly
-
-	// can save state here (eg. store last received msg)
-	for msg := range notifier.Listen() {
-		// client (FE) can do this:
-		// client can store G --> last applied
-		// if received tail, store the latest applied info as G
-		// if received hello, check if we already have G, if yes ignore.
-		// if no, we not yet receive tail.. we latest applied info as G.
-		// G is used to query logs before the tail;
-		// or if we were to use a Key-Value storage snapshot, G is used to
-		// query the message between latest applied snapshot to G inclusive.
-		msg, ok := msg.(chatlogwriter.Event)
-		if !ok {
-			log.Error().Msgf("its not an event 😔")
-			continue
-		}
-		data, err := json.Marshal(map[string]any{
-			"evt_name":         msg.EvtName,
-			"table":            msg.EvtTable,
-			"evt_id":           msg.EvtID,
-			"server_timestamp": msg.ServerTimestamp,
-			"data":             json.RawMessage(msg.Data),
-		})
-		if err != nil {
-			log.Err(err).Msgf("marshal feel %v", msg)
-			continue
-		}
-
-		_, err = fmt.Fprintf(w, "%v\n", string(data))
-		if err != nil {
-			log.Err(err).Msgf("cannot write uhuy")
-			return
-		}
-
-		flusher.Flush() // can use ticker to flush every x millis...
-	}
-}
-
 type SubscriptionData struct {
 	IDToken string
 	Name    string
 }
 
 func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+	ctx := r.Context()
 	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{
 		OriginPatterns: []string{
 			"http://localhost:*", "http://localhost",
@@ -141,7 +55,7 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 	wsWg.Add(1)
 	defer wsWg.Done()
 
-	lctx, lcancel := context.WithCancel(r.Context().Value("app-ctx").(context.Context))
+	lctx, lcancel := context.WithCancel(ctx)
 	pctx, pcancel := context.WithCancel(context.Background())
 
 	id := rand.Int()
