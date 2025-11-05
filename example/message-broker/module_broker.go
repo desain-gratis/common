@@ -12,7 +12,7 @@ import (
 
 	"github.com/Pallinder/go-randomdata"
 	"github.com/coder/websocket"
-	chatlogwriter "github.com/desain-gratis/common/example/message-broker/src/log-api/impl/chat-log-writer"
+	raftchat "github.com/desain-gratis/common/example/message-broker/src/log-api/impl/raft-chat"
 	"github.com/desain-gratis/common/lib/notifier"
 	notifier_impl "github.com/desain-gratis/common/lib/notifier/impl"
 	"github.com/julienschmidt/httprouter"
@@ -22,12 +22,12 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// An integration layer that can interacts with specified replica app
 type broker struct {
-	shardID     uint64
-	replicaID   uint64
-	exitMessage string
-	dhost       *dragonboat.NodeHost
-	sess        *client.Session
+	shardID   uint64
+	replicaID uint64
+	dhost     *dragonboat.NodeHost
+	sess      *client.Session
 }
 
 type SubscriptionData struct {
@@ -226,7 +226,7 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 
 	aDayBefore := time.Now().AddDate(0, 0, -1).Local().Truncate(time.Hour * 24)
 	log.Info().Msgf("a day before: %v", aDayBefore.Format(time.RFC3339))
-	err = b.queryLog(pctx, c, chatlogwriter.QueryLog{
+	err = b.queryLog(pctx, c, raftchat.QueryLog{
 		ToOffset:     listenOffset,
 		FromDatetime: &aDayBefore,
 		Ctx:          pctx,
@@ -245,7 +245,7 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 			break
 		}
 
-		msg, ok := anymsg.(chatlogwriter.Event)
+		msg, ok := anymsg.(raftchat.Event)
 		if !ok {
 			log.Error().Msgf("its not an event 😔 %T %+v", msg, msg)
 			continue
@@ -342,7 +342,7 @@ func (b *broker) getSubscription(ctx context.Context, csfn notifier.CreateSubscr
 	defer c()
 
 	// 1. get & register local instance of the subscription, but not yet received any event
-	v, err := b.dhost.SyncRead(rctx, b.shardID, chatlogwriter.Subscribe{})
+	v, err := b.dhost.SyncRead(rctx, b.shardID, raftchat.Subscribe{})
 	if err != nil {
 		return nil, 0, err
 	}
@@ -367,7 +367,7 @@ func (b *broker) getSubscription(ctx context.Context, csfn notifier.CreateSubscr
 	}
 
 	// 2. ask state-machine to start receiving data
-	data, err := json.Marshal(chatlogwriter.StartSubscriptionData{
+	data, err := json.Marshal(raftchat.StartSubscriptionData{
 		SubscriptionID: subscription.ID(),
 		ReplicaID:      b.replicaID,
 		Debug:          name,
@@ -376,8 +376,8 @@ func (b *broker) getSubscription(ctx context.Context, csfn notifier.CreateSubscr
 		return nil, 0, err
 	}
 
-	payload, _ := json.Marshal(chatlogwriter.UpdateRequest{
-		CmdName: chatlogwriter.Command_StartSubscription,
+	payload, _ := json.Marshal(raftchat.UpdateRequest{
+		CmdName: raftchat.Command_StartSubscription,
 		Data:    data,
 	})
 
@@ -414,7 +414,7 @@ func (b *broker) parseMessage(pctx context.Context, wsconn *websocket.Conn, raft
 
 	switch cmd.Type {
 	case "query-log":
-		var qlog chatlogwriter.QueryLog
+		var qlog raftchat.QueryLog
 		if err := json.Unmarshal(cmd.Data, &qlog); err != nil {
 			return err
 		}
@@ -443,7 +443,7 @@ func (b *broker) parseMessage(pctx context.Context, wsconn *websocket.Conn, raft
 	return nil
 }
 
-func (b *broker) queryLog(pctx context.Context, wsconn *websocket.Conn, qlog chatlogwriter.QueryLog) error {
+func (b *broker) queryLog(pctx context.Context, wsconn *websocket.Conn, qlog raftchat.QueryLog) error {
 	ctx, c := context.WithTimeout(pctx, 5*time.Second)
 	defer c()
 
@@ -451,7 +451,7 @@ func (b *broker) queryLog(pctx context.Context, wsconn *websocket.Conn, qlog cha
 	if err != nil {
 		return err
 	}
-	logstream, ok := q.(chan chatlogwriter.Event)
+	logstream, ok := q.(chan raftchat.Event)
 	if !ok {
 		return errors.New("it's not an event")
 	}

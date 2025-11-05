@@ -1,4 +1,4 @@
-package logwriter
+package raft
 
 import (
 	"context"
@@ -8,7 +8,8 @@ import (
 
 type OnAfterApply func() (sm.Result, error)
 
-type Happy interface {
+// Application represents a dragonboat state machine application
+type Application interface {
 	// Init
 	Init(ctx context.Context) error
 

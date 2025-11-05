@@ -1,4 +1,4 @@
-package chatlogwriter
+package raftchat
 
 import (
 	"context"
@@ -75,7 +75,7 @@ type StartSubscriptionData struct {
 	Debug          string `json:"debug"`
 }
 
-type LogConfig struct {
+type Config struct {
 	ExitMessage    *string `json:"exit_message,omitempty"`
 	Async          bool    `json:"async"`
 	BufferSize     uint64  `json:"buffer_size"`

@@ -1,4 +1,4 @@
-package chatlogwriter
+package raftchat
 
 const (
 	chatTableKey ContextKey = "chat-table"

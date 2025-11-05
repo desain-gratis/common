@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	chatlogwriter "github.com/desain-gratis/common/example/message-broker/src/log-api/impl/chat-log-writer"
+	raftchat "github.com/desain-gratis/common/example/message-broker/src/log-api/impl/raft-chat"
 	"github.com/desain-gratis/common/example/message-broker/src/log-api/impl/statemachine"
 	notifier_api "github.com/desain-gratis/common/lib/notifier/api"
 	notifier_impl "github.com/desain-gratis/common/lib/notifier/impl"
@@ -45,12 +45,13 @@ func main() {
 
 	router := httprouter.New()
 
-	replica.ForEachType("happy", func(config replica.Config[chatlogwriter.LogConfig]) error {
-		topic := notifier_impl.NewTopic()
-		happy := chatlogwriter.NewHappy(topic, config.ShardID, config.ReplicaID)
-		sm := statemachine.NewWithHappy(config.AppConfig.ClickhouseAddr, happy)
+	replica.ForEachType("happy", func(config replica.Config[raftchat.Config]) error {
+		chatTopic := notifier_impl.NewStandardTopic()
+		chatApp := raftchat.New(chatTopic, config.ShardID, config.ReplicaID)
 
-		err := config.StartOnDiskReplica(sm)
+		replicatedChatApp := statemachine.NewClickhouseBased(config.AppConfig.ClickhouseAddr, config.ID, chatApp)
+
+		err := config.StartOnDiskReplica(replicatedChatApp)
 		if err != nil {
 			return err
 		}
@@ -65,11 +66,11 @@ func main() {
 			sess:      sess,
 		}
 
-		topicAPI := notifier_api.NewTopicAPI(topic, func(v any) any {
+		topicAPI := notifier_api.NewTopicAPI(chatTopic, func(v any) any {
 			switch t := v.(type) {
 			case []byte:
 				return string(t)
-			case chatlogwriter.Event:
+			case raftchat.Event:
 				d, _ := json.Marshal(v)
 				return string(d)
 			}

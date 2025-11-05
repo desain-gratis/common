@@ -27,7 +27,7 @@ var (
 )
 
 // NewTopic create a new topic with create subscription function
-func NewTopic() *standardTopic {
+func NewStandardTopic() *standardTopic {
 	return &standardTopic{
 		listener: make(map[uint64]notifier.Subscription),
 		lock:     &sync.RWMutex{},

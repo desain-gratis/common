@@ -8,7 +8,7 @@ import (
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/desain-gratis/common/example/message-broker/src/log-api/conn/clickhouse"
-	"github.com/desain-gratis/common/lib/logwriter"
+	"github.com/desain-gratis/common/lib/raft"
 	"github.com/rs/zerolog/log"
 
 	sm "github.com/lni/dragonboat/v4/statemachine"
@@ -20,19 +20,19 @@ type baseDiskSM struct {
 	closed         bool
 	smMetadata     *Metadata
 	initialApplied uint64
-	happy          logwriter.Happy
+	app            raft.Application
 	database       string
 	clickhouseAddr string
 }
 
-func NewWithHappy(clickhouseAddr string, happy logwriter.Happy) func(shardID uint64, replicaID uint64) sm.IOnDiskStateMachine {
+func NewClickhouseBased(clickhouseAddr, appName string, baseApp raft.Application) func(shardID uint64, replicaID uint64) sm.IOnDiskStateMachine {
 	return func(shardID uint64, replicaID uint64) sm.IOnDiskStateMachine {
-		database := fmt.Sprintf("%v_%v_%v", "chat_app", shardID, replicaID)
+		database := fmt.Sprintf("%v_%v_%v", appName, shardID, replicaID)
 		clickhouse.CreateDB(clickhouseAddr, database)
 		return &baseDiskSM{
 			database:       database,
 			clickhouseAddr: clickhouseAddr,
-			happy:          happy,
+			app:            baseApp,
 		}
 	}
 }
@@ -60,9 +60,9 @@ func (d *baseDiskSM) Open(stopc <-chan struct{}) (uint64, error) {
 	d.initialApplied = *metadata.AppliedIndex
 	d.lastApplied = *metadata.AppliedIndex
 
-	err = d.happy.Init(ctx)
+	err = d.app.Init(ctx)
 	if err != nil {
-		log.Fatal().Msgf("failed to init happy err: %v", err)
+		log.Fatal().Msgf("failed to init app err: %v", err)
 	}
 
 	return d.lastApplied, nil
@@ -73,7 +73,7 @@ func (d *baseDiskSM) Lookup(key interface{}) (interface{}, error) {
 	// Inject with context
 	ctx := context.WithValue(context.Background(), chConnKey, d.conn)
 
-	return d.happy.Lookup(ctx, key)
+	return d.app.Lookup(ctx, key)
 }
 
 func (d *baseDiskSM) Update(ents []sm.Entry) ([]sm.Entry, error) {
@@ -88,22 +88,22 @@ func (d *baseDiskSM) Update(ents []sm.Entry) ([]sm.Entry, error) {
 
 	ctx = context.WithValue(ctx, metadataBatchKey, metadataBatch)
 
-	ctx, err = d.happy.PrepareUpdate(ctx)
+	ctx, err = d.app.PrepareUpdate(ctx)
 	if err != nil {
 		log.Panic().Msgf("failed to prepare for update: %v", err)
 	}
 
 	// Process message one-by-one
-	afterApplys := make([]logwriter.OnAfterApply, len(ents))
+	afterApplys := make([]raft.OnAfterApply, len(ents))
 	for idx := range ents {
 		if ents[idx].Index <= d.initialApplied {
 			log.Panic().Msgf("oh no initial")
 		}
-		afterApplys[idx] = d.happy.OnUpdate(ctx, ents[idx])
+		afterApplys[idx] = d.app.OnUpdate(ctx, ents[idx])
 	}
 
 	// Apply update to disk
-	err = d.happy.Apply(ctx)
+	err = d.app.Apply(ctx)
 	if err != nil {
 		log.Panic().Msgf("failed to apply")
 	}

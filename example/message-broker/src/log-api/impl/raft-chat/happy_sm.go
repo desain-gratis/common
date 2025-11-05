@@ -1,4 +1,4 @@
-package chatlogwriter
+package raftchat
 
 import (
 	"context"
@@ -10,9 +10,9 @@ import (
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/desain-gratis/common/example/message-broker/src/log-api/impl/statemachine"
-	"github.com/desain-gratis/common/lib/logwriter"
 	"github.com/desain-gratis/common/lib/notifier"
 	"github.com/desain-gratis/common/lib/notifier/impl"
+	"github.com/desain-gratis/common/lib/raft"
 	sm "github.com/lni/dragonboat/v4/statemachine"
 	"github.com/rs/zerolog/log"
 )
@@ -21,32 +21,28 @@ const (
 	appName = "chat_app"
 )
 
-var _ logwriter.Happy = &happySM{}
-
-type happyState struct {
-	ChatIndex *uint64 `json:"chat_index"`
-}
+var _ raft.Application = &chatWriterApp{}
 
 // happySM to isolate all business logic from the state machine technicality
 // because this is an OLAP usecase,  writing to DB, choosing the appropriate DB & indexes are tightly coupled.
 // will not try to abstract away
-type happySM struct {
+type chatWriterApp struct {
 	conn      driver.Conn
-	state     *happyState
+	state     *state
 	topic     notifier.Topic
 	replicaID uint64
 	shardID   uint64
 }
 
-func NewHappy(topic notifier.Topic, shardID, replicaID uint64) *happySM {
-	return &happySM{
+func New(topic notifier.Topic, shardID, replicaID uint64) *chatWriterApp {
+	return &chatWriterApp{
 		topic:     topic,
 		shardID:   shardID,
 		replicaID: replicaID,
 	}
 }
 
-func (s *happySM) Lookup(ctx context.Context, query interface{}) (interface{}, error) {
+func (s *chatWriterApp) Lookup(ctx context.Context, query interface{}) (interface{}, error) {
 	if query == nil {
 		return nil, fmt.Errorf("empty query")
 	}
@@ -64,14 +60,7 @@ func (s *happySM) Lookup(ctx context.Context, query interface{}) (interface{}, e
 	return nil, errors.New("unsupported query")
 }
 
-type Log struct {
-	TableID         string    `json:"table_id"`
-	EventID         uint64    `json:"event_id"`
-	ServerTimestamp time.Time `json:"server_timestamp"`
-	Data            []byte    `json:"data"`
-}
-
-func (s *happySM) Init(ctx context.Context) error {
+func (s *chatWriterApp) Init(ctx context.Context) error {
 	conn := statemachine.GetClickhouseConnection(ctx)
 
 	// prepare chat log table
@@ -88,7 +77,7 @@ func (s *happySM) Init(ctx context.Context) error {
 	_ = json.Unmarshal(meta, s.state)
 
 	if s.state == nil {
-		s.state = &happyState{}
+		s.state = &state{}
 	}
 
 	if s.state.ChatIndex == nil {
@@ -102,7 +91,7 @@ func (s *happySM) Init(ctx context.Context) error {
 }
 
 // PrepareUpdate prepare the resources for upcoming message
-func (s *happySM) PrepareUpdate(ctx context.Context) (context.Context, error) {
+func (s *chatWriterApp) PrepareUpdate(ctx context.Context) (context.Context, error) {
 	// conn := statemachine.GetClickhouseConnection(ctx)
 
 	// batch, err := conn.PrepareBatch(ctx, DMLWriteChat)
@@ -115,7 +104,7 @@ func (s *happySM) PrepareUpdate(ctx context.Context) (context.Context, error) {
 }
 
 // OnUpdate updates the object using the specified committed raft entry.
-func (s *happySM) OnUpdate(ctx context.Context, e sm.Entry) logwriter.OnAfterApply {
+func (s *chatWriterApp) OnUpdate(ctx context.Context, e sm.Entry) raft.OnAfterApply {
 	var cmd UpdateRequest
 	err := json.Unmarshal(e.Cmd, &cmd)
 	if err != nil {
@@ -210,7 +199,7 @@ func (s *happySM) OnUpdate(ctx context.Context, e sm.Entry) logwriter.OnAfterApp
 }
 
 // Apply or "Sync". The core of dragonboat's state machine "Update" function.
-func (s *happySM) Apply(ctx context.Context) error {
+func (s *chatWriterApp) Apply(ctx context.Context) error {
 	// chatBatch, ok := ctx.Value(chatTableKey).(driver.Batch)
 	// if !ok {
 	// 	log.Panic().Msgf("tidak semestinya")
@@ -236,7 +225,7 @@ func (s *happySM) Apply(ctx context.Context) error {
 	return nil
 }
 
-func (s *happySM) startSubscription(ent sm.Entry, rawData json.RawMessage, startIdx uint64) (sm.Result, error) {
+func (s *chatWriterApp) startSubscription(ent sm.Entry, rawData json.RawMessage, startIdx uint64) (sm.Result, error) {
 	var data StartSubscriptionData
 	err := json.Unmarshal(rawData, &data)
 	if err != nil {
@@ -277,7 +266,7 @@ func (s *happySM) startSubscription(ent sm.Entry, rawData json.RawMessage, start
 	return sm.Result{Value: ent.Index, Data: resp}, nil
 }
 
-func (s *happySM) queryLog(ctx context.Context, q QueryLog) (chan Event, error) {
+func (s *chatWriterApp) queryLog(ctx context.Context, q QueryLog) (chan Event, error) {
 	var rows driver.Rows
 	var err error
 

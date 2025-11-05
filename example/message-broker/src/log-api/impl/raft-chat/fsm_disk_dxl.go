@@ -1,4 +1,4 @@
-package chatlogwriter
+package raftchat
 
 const (
 	// DDLChatLog to create the chat table
