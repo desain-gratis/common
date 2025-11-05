@@ -9,13 +9,13 @@ import (
 	"os/signal"
 	"time"
 
-	notifierapi "github.com/desain-gratis/common/delivery/log-api"
-	notifierapi_impl "github.com/desain-gratis/common/delivery/log-api/impl"
 	mycontentapi "github.com/desain-gratis/common/delivery/mycontent-api"
 	mycontent_base "github.com/desain-gratis/common/delivery/mycontent-api/mycontent/base"
 	blob_s3 "github.com/desain-gratis/common/delivery/mycontent-api/storage/blob/s3"
 	content_postgres "github.com/desain-gratis/common/delivery/mycontent-api/storage/content/postgres"
 	"github.com/desain-gratis/common/example/user-profile/entity"
+	notifier_api "github.com/desain-gratis/common/lib/notifier/api"
+	notifier_impl "github.com/desain-gratis/common/lib/notifier/impl"
 	"github.com/julienschmidt/httprouter"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -111,11 +111,7 @@ func enableApplicationAPI(
 	)
 
 	// extend user profile with notifier capability
-	exitMessage := "server said bye bye 👋🏼"
-	f := func(id string) notifierapi.Subscription {
-		return notifierapi_impl.NewSubscription(id, true, 0, &exitMessage, 2*time.Second)
-	}
-	broker := notifierapi_impl.NewTopic(f)
+	broker := notifier_impl.NewStandardTopic()
 
 	userProfileExtended := &withNotifier[*entity.UserProfile]{
 		Handler:  mycontent_base.New[*entity.UserProfile](userProfileRepo, 1),
@@ -154,12 +150,11 @@ func enableApplicationAPI(
 	router.DELETE("/org/user", userProfileHandler.Delete)
 
 	// TODO: since the usage is common, we can just ship it to default mycontentapi
-	router.GET("/org/user/tail", notifierapi.
-		NewDebugAPI(broker).
-		WithTransform(func(v any) any {
-			data, _ := json.Marshal(v)
-			return string(data)
-		}).ListenHandler)
+	topicapi := notifier_api.NewTopicAPI(broker, func(v any) any {
+		data, _ := json.Marshal(v)
+		return string(data)
+	})
+	router.GET("/org/user/tail", topicapi.Tail)
 
 	// User thumbnail
 	router.OPTIONS("/org/user/thumbnail", Empty)
