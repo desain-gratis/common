@@ -23,7 +23,7 @@ import (
 )
 
 // An integration layer that can interacts with specified replica app
-type broker struct {
+type chatAppIntegration struct {
 	shardID   uint64
 	replicaID uint64
 	dhost     *dragonboat.NodeHost
@@ -35,7 +35,7 @@ type SubscriptionData struct {
 	Name    string
 }
 
-func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+func (b *chatAppIntegration) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	ctx := r.Context()
 	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{
 		OriginPatterns: []string{
@@ -87,7 +87,7 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 					"id":   id,
 				},
 			}
-			_, err := b.publishToRaft(pctx, b.sess, msg)
+			_, err := b.publishToRaft(pctx, msg)
 			if err != nil {
 				return
 			}
@@ -110,7 +110,7 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 				continue
 			}
 
-			err = b.parseMessage(pctx, c, b.sess, sessID, payload)
+			err = b.parseMessage(pctx, c, sessID, payload)
 			if err != nil {
 				if errors.Is(err, context.Canceled) {
 					return
@@ -176,13 +176,6 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 		return
 	}
 
-	// todo: defer query unsubscribe to avoid nyangkut
-	// investigate nyangkut case when add (but it's not gotten to subscriber in Topic)
-	// bisa ngirim, tetapi gak dapet message jadinya..
-
-	// todo:
-	// ada juga kasus connected, but disconnected (when starting up)
-
 	// notify my identity (local)
 	msg = map[string]any{
 		"evt_name": "chat-offset",
@@ -209,7 +202,7 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 			"id":   id,
 		},
 	}
-	_, err = b.publishToRaft(pctx, b.sess, msg)
+	_, err = b.publishToRaft(pctx, msg)
 	if err != nil {
 		if errors.Is(err, context.Canceled) || pctx.Err() != nil || lctx.Err() != nil {
 			return
@@ -297,7 +290,7 @@ func (b *broker) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.
 	log.Info().Msgf("websocket connection closed")
 }
 
-func (b *broker) publishToRaft(ctx context.Context, sess *client.Session, msg any) ([]byte, error) {
+func (b *chatAppIntegration) publishToRaft(ctx context.Context, msg any) ([]byte, error) {
 	data, err := json.Marshal(msg)
 	if err != nil {
 		return nil, err
@@ -318,7 +311,7 @@ func (b *broker) publishToRaft(ctx context.Context, sess *client.Session, msg an
 	return res.Data, nil
 }
 
-func (b *broker) publishTextToWebsocket(ctx context.Context, wsconn *websocket.Conn, msg any) error {
+func (b *chatAppIntegration) publishTextToWebsocket(ctx context.Context, wsconn *websocket.Conn, msg any) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
@@ -336,7 +329,7 @@ func (b *broker) publishTextToWebsocket(ctx context.Context, wsconn *websocket.C
 }
 
 // getSubscription to the state machine topic, and then start listening for publish
-func (b *broker) getSubscription(ctx context.Context, csfn notifier.CreateSubscription, name string) (
+func (b *chatAppIntegration) getSubscription(ctx context.Context, csfn notifier.CreateSubscription, name string) (
 	notifier.Listener, uint64, error) {
 	rctx, c := context.WithTimeout(ctx, 5*time.Second)
 	defer c()
@@ -406,7 +399,7 @@ type SessID struct {
 	Name string
 }
 
-func (b *broker) parseMessage(pctx context.Context, wsconn *websocket.Conn, raftSess *client.Session, sessID *SessID, payload []byte) error {
+func (b *chatAppIntegration) parseMessage(pctx context.Context, wsconn *websocket.Conn, sessID *SessID, payload []byte) error {
 	var cmd Command
 	if err := json.Unmarshal(payload, &cmd); err != nil {
 		// ignore
@@ -435,7 +428,7 @@ func (b *broker) parseMessage(pctx context.Context, wsconn *websocket.Conn, raft
 		},
 	}
 
-	_, err := b.publishToRaft(pctx, raftSess, msg)
+	_, err := b.publishToRaft(pctx, msg)
 	if err != nil {
 		log.Error().Msgf("error propose %v", err)
 		return err
@@ -443,7 +436,7 @@ func (b *broker) parseMessage(pctx context.Context, wsconn *websocket.Conn, raft
 	return nil
 }
 
-func (b *broker) queryLog(pctx context.Context, wsconn *websocket.Conn, qlog raftchat.QueryLog) error {
+func (b *chatAppIntegration) queryLog(pctx context.Context, wsconn *websocket.Conn, qlog raftchat.QueryLog) error {
 	ctx, c := context.WithTimeout(pctx, 5*time.Second)
 	defer c()
 

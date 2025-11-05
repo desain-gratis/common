@@ -50,20 +50,9 @@ func main() {
 		chatApp := raftchat.New(chatTopic, config.ShardID, config.ReplicaID)
 
 		replicatedChatApp := statemachine.NewClickhouseBased(config.AppConfig.ClickhouseAddr, config.ID, chatApp)
-
 		err := config.StartOnDiskReplica(replicatedChatApp)
 		if err != nil {
 			return err
-		}
-
-		// Create HTTP API handler to interact with the replica
-		sess := client.NewNoOPSession(config.ShardID, random.NewLockedRand())
-
-		brokerAPI := broker{
-			dhost:     config.Host,
-			shardID:   config.ShardID,
-			replicaID: config.ReplicaID,
-			sess:      sess,
 		}
 
 		topicAPI := notifier_api.NewTopicAPI(chatTopic, func(v any) any {
@@ -77,10 +66,20 @@ func main() {
 			return v
 		})
 
+		// integrate the chat app with outside world / "delivery"
+		// in this case, a chat application that we've built.
+		chatIntegration := chatAppIntegration{
+			dhost:     config.Host,
+			shardID:   config.ShardID,
+			replicaID: config.ReplicaID,
+			sess:      client.NewNoOPSession(config.ShardID, random.NewLockedRand()),
+		}
+
 		router.GET("/happy/"+config.ID, topicAPI.Metrics)
 		router.POST("/happy/"+config.ID, topicAPI.Publish)
 		router.GET("/happy/"+config.ID+"/tail", topicAPI.Tail)
-		router.GET("/happy/"+config.ID+"/ws", brokerAPI.Websocket)
+
+		router.GET("/happy/"+config.ID+"/ws", chatIntegration.Websocket)
 
 		// For realtime part:
 		// todo: brokerAPI.WebSocket(topic) Tail(topic)
