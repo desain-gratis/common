@@ -12,7 +12,7 @@ import (
 	"github.com/desain-gratis/common/lib/notifier"
 	"github.com/desain-gratis/common/lib/notifier/impl"
 	"github.com/desain-gratis/common/lib/raft"
-	"github.com/desain-gratis/common/lib/raft/statemachine"
+	raft_runner "github.com/desain-gratis/common/lib/raft/runner"
 	sm "github.com/lni/dragonboat/v4/statemachine"
 	"github.com/rs/zerolog/log"
 )
@@ -61,7 +61,7 @@ func (s *chatWriterApp) Lookup(ctx context.Context, query interface{}) (interfac
 }
 
 func (s *chatWriterApp) Init(ctx context.Context) error {
-	conn := statemachine.GetClickhouseConnection(ctx)
+	conn := raft_runner.GetClickhouseConnection(ctx)
 
 	// prepare chat log table
 	if err := conn.Exec(ctx, DDLChatLog); err != nil {
@@ -69,7 +69,7 @@ func (s *chatWriterApp) Init(ctx context.Context) error {
 	}
 
 	// get metadata
-	meta, err := statemachine.GetMetadata(ctx, appName)
+	meta, err := raft_runner.GetMetadata(ctx, appName)
 	if err != nil {
 		return err
 	}
@@ -168,7 +168,7 @@ func (s *chatWriterApp) OnUpdate(ctx context.Context, e sm.Entry) raft.OnAfterAp
 		// chatBatch.Append("default", chatIdx, serverTimestamp, string(cmd.Data))
 
 		// try to use async insert instead of batch
-		conn := statemachine.GetClickhouseConnection(ctx)
+		conn := raft_runner.GetClickhouseConnection(ctx)
 		err = conn.AsyncInsert(ctx, DMLWriteChat, true, "default", chatIdx, serverTimestamp, string(cmd.Data))
 		if err != nil {
 			log.Panic().Msgf("err async insert: %v", err)
@@ -217,7 +217,7 @@ func (s *chatWriterApp) Apply(ctx context.Context) error {
 
 	// save metadata
 	payload, _ := json.Marshal(s.state)
-	err := statemachine.SetMetadata(ctx, appName, payload)
+	err := raft_runner.SetMetadata(ctx, appName, payload)
 	if err != nil {
 		return err
 	}

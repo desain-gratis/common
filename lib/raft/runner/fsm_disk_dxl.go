@@ -1,4 +1,4 @@
-package statemachine
+package runner
 
 const (
 	// DDLRaftMetadata used to store raft metadata such as last applied index

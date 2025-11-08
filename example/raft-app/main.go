@@ -16,8 +16,8 @@ import (
 	raftchat_delivery "github.com/desain-gratis/common/example/raft-app/src/app/raft-chat/delivery"
 	notifier_api "github.com/desain-gratis/common/lib/notifier/api"
 	notifier_impl "github.com/desain-gratis/common/lib/notifier/impl"
-	"github.com/desain-gratis/common/lib/raft/statemachine"
-	"github.com/desain-gratis/common/utility/replica"
+	raft_replica "github.com/desain-gratis/common/lib/raft/replica"
+	raft_runner "github.com/desain-gratis/common/lib/raft/runner"
 	"github.com/julienschmidt/httprouter"
 	"github.com/lni/dragonboat/v4/client"
 	"github.com/lni/goutils/random"
@@ -39,18 +39,18 @@ func main() {
 
 	initConfig(appCtx, c)
 
-	err := replica.Init()
+	err := raft_replica.Init()
 	if err != nil {
 		log.Panic().Msgf("panic init replica: %v", err)
 	}
 
 	router := httprouter.New()
 
-	replica.ForEachType("happy", func(config replica.Config[raftchat.Config]) error {
+	raft_replica.ForEachType("happy", func(config raft_replica.Config[raftchat.Config]) error {
 		chatTopic := notifier_impl.NewStandardTopic()
 		chatApp := raftchat.New(chatTopic, config.ShardID, config.ReplicaID)
 
-		replicatedChatApp := statemachine.NewClickhouseBased(config.AppConfig.ClickhouseAddr, config.ID, chatApp)
+		replicatedChatApp := raft_runner.NewClickhouseBased(config.AppConfig.ClickhouseAddr, config.ID, chatApp)
 		err := config.StartOnDiskReplica(replicatedChatApp)
 		if err != nil {
 			return err
