@@ -1,4 +1,4 @@
-package main
+package delivery
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 
 	"github.com/Pallinder/go-randomdata"
 	"github.com/coder/websocket"
-	raftchat "github.com/desain-gratis/common/example/raft-app/src/app/impl/raft-chat"
+	raftchat "github.com/desain-gratis/common/example/raft-app/src/app/raft-chat"
 	"github.com/desain-gratis/common/lib/notifier"
 	notifier_impl "github.com/desain-gratis/common/lib/notifier/impl"
 	"github.com/julienschmidt/httprouter"
@@ -23,11 +23,11 @@ import (
 )
 
 // An integration layer that can interacts with specified replica app
-type chatAppIntegration struct {
-	shardID   uint64
-	replicaID uint64
-	dhost     *dragonboat.NodeHost
-	sess      *client.Session
+type ChatAppIntegration struct {
+	ShardID   uint64
+	ReplicaID uint64
+	Dhost     *dragonboat.NodeHost
+	Sess      *client.Session
 }
 
 type SubscriptionData struct {
@@ -35,7 +35,7 @@ type SubscriptionData struct {
 	Name    string
 }
 
-func (b *chatAppIntegration) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+func (b *ChatAppIntegration) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	ctx := r.Context()
 	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{
 		OriginPatterns: []string{
@@ -290,7 +290,7 @@ func (b *chatAppIntegration) Websocket(w http.ResponseWriter, r *http.Request, p
 	log.Info().Msgf("websocket connection closed")
 }
 
-func (b *chatAppIntegration) publishToRaft(ctx context.Context, msg any) ([]byte, error) {
+func (b *ChatAppIntegration) publishToRaft(ctx context.Context, msg any) ([]byte, error) {
 	data, err := json.Marshal(msg)
 	if err != nil {
 		return nil, err
@@ -299,7 +299,7 @@ func (b *chatAppIntegration) publishToRaft(ctx context.Context, msg any) ([]byte
 	var res statemachine.Result
 	for range 3 {
 		ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		res, err = b.dhost.SyncPropose(ctx, b.sess, data)
+		res, err = b.Dhost.SyncPropose(ctx, b.Sess, data)
 		if err == nil {
 			cancel()
 			break
@@ -311,7 +311,7 @@ func (b *chatAppIntegration) publishToRaft(ctx context.Context, msg any) ([]byte
 	return res.Data, nil
 }
 
-func (b *chatAppIntegration) publishTextToWebsocket(ctx context.Context, wsconn *websocket.Conn, msg any) error {
+func (b *ChatAppIntegration) publishTextToWebsocket(ctx context.Context, wsconn *websocket.Conn, msg any) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
@@ -329,13 +329,13 @@ func (b *chatAppIntegration) publishTextToWebsocket(ctx context.Context, wsconn 
 }
 
 // getSubscription to the state machine topic, and then start listening for publish
-func (b *chatAppIntegration) getSubscription(ctx context.Context, csfn notifier.CreateSubscription, name string) (
+func (b *ChatAppIntegration) getSubscription(ctx context.Context, csfn notifier.CreateSubscription, name string) (
 	notifier.Listener, uint64, error) {
 	rctx, c := context.WithTimeout(ctx, 5*time.Second)
 	defer c()
 
 	// 1. get & register local instance of the subscription, but not yet received any event
-	v, err := b.dhost.SyncRead(rctx, b.shardID, raftchat.Subscribe{})
+	v, err := b.Dhost.SyncRead(rctx, b.ShardID, raftchat.Subscribe{})
 	if err != nil {
 		return nil, 0, err
 	}
@@ -362,7 +362,7 @@ func (b *chatAppIntegration) getSubscription(ctx context.Context, csfn notifier.
 	// 2. ask state-machine to start receiving data
 	data, err := json.Marshal(raftchat.StartSubscriptionData{
 		SubscriptionID: subscription.ID(),
-		ReplicaID:      b.replicaID,
+		ReplicaID:      b.ReplicaID,
 		Debug:          name,
 	})
 	if err != nil {
@@ -377,7 +377,7 @@ func (b *chatAppIntegration) getSubscription(ctx context.Context, csfn notifier.
 	ctx2, c2 := context.WithTimeout(ctx, 5*time.Second)
 	defer c2()
 
-	result, err := b.dhost.SyncPropose(ctx2, b.sess, payload)
+	result, err := b.Dhost.SyncPropose(ctx2, b.Sess, payload)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -399,7 +399,7 @@ type SessID struct {
 	Name string
 }
 
-func (b *chatAppIntegration) parseMessage(pctx context.Context, wsconn *websocket.Conn, sessID *SessID, payload []byte) error {
+func (b *ChatAppIntegration) parseMessage(pctx context.Context, wsconn *websocket.Conn, sessID *SessID, payload []byte) error {
 	var cmd Command
 	if err := json.Unmarshal(payload, &cmd); err != nil {
 		// ignore
@@ -436,11 +436,11 @@ func (b *chatAppIntegration) parseMessage(pctx context.Context, wsconn *websocke
 	return nil
 }
 
-func (b *chatAppIntegration) queryLog(pctx context.Context, wsconn *websocket.Conn, qlog raftchat.QueryLog) error {
+func (b *ChatAppIntegration) queryLog(pctx context.Context, wsconn *websocket.Conn, qlog raftchat.QueryLog) error {
 	ctx, c := context.WithTimeout(pctx, 5*time.Second)
 	defer c()
 
-	q, err := b.dhost.SyncRead(ctx, b.shardID, qlog)
+	q, err := b.Dhost.SyncRead(ctx, b.ShardID, qlog)
 	if err != nil {
 		return err
 	}

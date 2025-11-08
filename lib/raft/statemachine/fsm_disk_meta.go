@@ -2,16 +2,11 @@ package statemachine
 
 import (
 	"encoding/json"
-
-	"github.com/rs/zerolog/log"
 )
 
 type Metadata struct {
 	// AppliedIndex is the raft applied index
 	AppliedIndex *uint64 `json:"applied_index,omitempty"`
-
-	// ChatLog_EvtIndex_Counter serial counter
-	ChatLog_EvtIndex_Counter *uint64 `json:"chat_log__evt_index__counter,omitempty"`
 }
 
 func deserializeMetadata(payload []byte) (*Metadata, error) {
@@ -30,13 +25,6 @@ func deserializeMetadata(payload []byte) (*Metadata, error) {
 		var appliedIndex uint64
 		metadata.AppliedIndex = &appliedIndex
 	}
-
-	if metadata.ChatLog_EvtIndex_Counter == nil {
-		var counter uint64
-		metadata.ChatLog_EvtIndex_Counter = &counter
-	}
-
-	log.Info().Msgf("METADATA %+v", *metadata.AppliedIndex)
 
 	return &metadata, nil
 }

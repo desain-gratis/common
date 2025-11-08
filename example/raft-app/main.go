@@ -12,10 +12,11 @@ import (
 	"sync"
 	"time"
 
-	raftchat "github.com/desain-gratis/common/example/raft-app/src/app/impl/raft-chat"
-	"github.com/desain-gratis/common/example/raft-app/src/app/impl/statemachine"
+	raftchat "github.com/desain-gratis/common/example/raft-app/src/app/raft-chat"
+	raftchat_delivery "github.com/desain-gratis/common/example/raft-app/src/app/raft-chat/delivery"
 	notifier_api "github.com/desain-gratis/common/lib/notifier/api"
 	notifier_impl "github.com/desain-gratis/common/lib/notifier/impl"
+	"github.com/desain-gratis/common/lib/raft/statemachine"
 	"github.com/desain-gratis/common/utility/replica"
 	"github.com/julienschmidt/httprouter"
 	"github.com/lni/dragonboat/v4/client"
@@ -68,17 +69,16 @@ func main() {
 
 		// integrate the chat app with outside world / "delivery"
 		// in this case, a chat application that we've built.
-		chatIntegration := chatAppIntegration{
-			dhost:     config.Host,
-			shardID:   config.ShardID,
-			replicaID: config.ReplicaID,
-			sess:      client.NewNoOPSession(config.ShardID, random.NewLockedRand()),
+		chatIntegration := raftchat_delivery.ChatAppIntegration{
+			Dhost:     config.Host,
+			ShardID:   config.ShardID,
+			ReplicaID: config.ReplicaID,
+			Sess:      client.NewNoOPSession(config.ShardID, random.NewLockedRand()),
 		}
 
 		router.GET("/happy/"+config.ID, topicAPI.Metrics)
 		router.POST("/happy/"+config.ID, topicAPI.Publish)
 		router.GET("/happy/"+config.ID+"/tail", topicAPI.Tail)
-
 		router.GET("/happy/"+config.ID+"/ws", chatIntegration.Websocket)
 
 		// For realtime part:
