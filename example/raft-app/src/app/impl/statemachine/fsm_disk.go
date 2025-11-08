@@ -7,7 +7,7 @@ import (
 	"io"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
-	"github.com/desain-gratis/common/example/message-broker/src/log-api/conn/clickhouse"
+	"github.com/desain-gratis/common/example/raft-app/src/conn/clickhouse"
 	"github.com/desain-gratis/common/lib/raft"
 	"github.com/rs/zerolog/log"
 

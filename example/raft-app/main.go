@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
-	raftchat "github.com/desain-gratis/common/example/message-broker/src/log-api/impl/raft-chat"
-	"github.com/desain-gratis/common/example/message-broker/src/log-api/impl/statemachine"
+	raftchat "github.com/desain-gratis/common/example/raft-app/src/app/impl/raft-chat"
+	"github.com/desain-gratis/common/example/raft-app/src/app/impl/statemachine"
 	notifier_api "github.com/desain-gratis/common/lib/notifier/api"
 	notifier_impl "github.com/desain-gratis/common/lib/notifier/impl"
 	"github.com/desain-gratis/common/utility/replica"

@@ -12,7 +12,7 @@ import (
 
 	"github.com/Pallinder/go-randomdata"
 	"github.com/coder/websocket"
-	raftchat "github.com/desain-gratis/common/example/message-broker/src/log-api/impl/raft-chat"
+	raftchat "github.com/desain-gratis/common/example/raft-app/src/app/impl/raft-chat"
 	"github.com/desain-gratis/common/lib/notifier"
 	notifier_impl "github.com/desain-gratis/common/lib/notifier/impl"
 	"github.com/julienschmidt/httprouter"

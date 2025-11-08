@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
-	"github.com/desain-gratis/common/example/message-broker/src/log-api/impl/statemachine"
+	"github.com/desain-gratis/common/example/raft-app/src/app/impl/statemachine"
 	"github.com/desain-gratis/common/lib/notifier"
 	"github.com/desain-gratis/common/lib/notifier/impl"
 	"github.com/desain-gratis/common/lib/raft"

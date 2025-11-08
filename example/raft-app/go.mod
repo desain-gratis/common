@@ -1,4 +1,4 @@
-module github.com/desain-gratis/common/example/message-broker
+module github.com/desain-gratis/common/example/raft-app
 
 go 1.24.0
 
