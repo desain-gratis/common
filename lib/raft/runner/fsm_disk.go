@@ -60,6 +60,8 @@ func (d *baseDiskSM) Open(stopc <-chan struct{}) (uint64, error) {
 	d.initialApplied = *metadata.AppliedIndex
 	d.lastApplied = *metadata.AppliedIndex
 
+	log.Info().Msgf("APPLIED INDEX  %v", *metadata.AppliedIndex)
+
 	err = d.app.Init(ctx)
 	if err != nil {
 		log.Fatal().Msgf("failed to init app err: %v", err)

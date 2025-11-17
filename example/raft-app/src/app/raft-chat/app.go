@@ -29,7 +29,6 @@ var _ raft.Application = &chatWriterApp{}
 // because this is an OLAP usecase,  writing to DB, choosing the appropriate DB & indexes are tightly coupled.
 // will not try to abstract away
 type chatWriterApp struct {
-	conn      driver.Conn
 	state     *state
 	topicReg  notifierhelper.TopicRegistry
 	replicaID uint64
@@ -79,18 +78,19 @@ func (s *chatWriterApp) Init(ctx context.Context) error {
 		return err
 	}
 
-	_ = json.Unmarshal(meta, s.state)
+	s.state = &state{}
 
-	if s.state == nil {
-		s.state = &state{}
+	if len(meta) > 0 {
+		err = json.Unmarshal(meta, s.state)
+		if err != nil {
+			return err
+		}
 	}
 
 	if s.state.ChatIndex == nil {
 		var idx uint64
 		s.state.ChatIndex = &idx
 	}
-
-	s.conn = conn
 
 	return nil
 }
@@ -256,10 +256,12 @@ func (s *chatWriterApp) queryLog(ctx context.Context, q QueryLog) (chan Event, e
 	var rows driver.Rows
 	var err error
 
+	conn := raft_runner.GetClickhouseConnection(ctx)
+
 	if q.FromDatetime != nil {
-		rows, err = s.conn.Query(q.Ctx, DQLReadAll, q.ToOffset, *q.FromDatetime)
+		rows, err = conn.Query(q.Ctx, DQLReadAll, q.ToOffset, *q.FromDatetime)
 	} else {
-		rows, err = s.conn.Query(q.Ctx, DQLReadAll, q.ToOffset)
+		rows, err = conn.Query(q.Ctx, DQLReadAll, q.ToOffset)
 	}
 
 	if err != nil {

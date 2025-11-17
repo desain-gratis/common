@@ -38,6 +38,9 @@ type SubscriptionData struct {
 
 func (b *ChatAppIntegration) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	ctx := r.Context()
+
+	t0 := time.Now()
+
 	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{
 		OriginPatterns: []string{
 			"http://localhost:*", "http://localhost",
@@ -123,6 +126,8 @@ func (b *ChatAppIntegration) Websocket(w http.ResponseWriter, r *http.Request, p
 		}
 	}()
 
+	t1 := time.Now()
+
 	// notify my identity (local)
 	msg := map[string]any{
 		"evt_name": "identity",
@@ -140,6 +145,8 @@ func (b *ChatAppIntegration) Websocket(w http.ResponseWriter, r *http.Request, p
 		// log.Error().Msgf("error publish notify-online message %v", err)
 		return
 	}
+
+	t2 := time.Now()
 
 	// simple protection (to state machine) against quick open-close connection
 	time.Sleep(100 * time.Millisecond)
@@ -160,6 +167,8 @@ func (b *ChatAppIntegration) Websocket(w http.ResponseWriter, r *http.Request, p
 		}
 	}()
 
+	t3 := time.Now()
+
 	subscription, listenOffset, err := b.getSubscription(subscribeCtx, notifier_impl.NewStandardSubscriber(nil), name)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
@@ -177,6 +186,8 @@ func (b *ChatAppIntegration) Websocket(w http.ResponseWriter, r *http.Request, p
 		return
 	}
 
+	t4 := time.Now()
+
 	// notify my identity (local)
 	msg = map[string]any{
 		"evt_name": "chat-offset",
@@ -193,6 +204,8 @@ func (b *ChatAppIntegration) Websocket(w http.ResponseWriter, r *http.Request, p
 		// log.Error().Msgf("error publish notify-online message %v", err)
 		return
 	}
+
+	t5 := time.Now()
 
 	// notify i'm online to raft
 	msg = map[string]any{
@@ -218,6 +231,8 @@ func (b *ChatAppIntegration) Websocket(w http.ResponseWriter, r *http.Request, p
 
 	// Loading last 1 days data..
 
+	t6 := time.Now()
+
 	aDayBefore := time.Now().AddDate(0, 0, -1).Local().Truncate(time.Hour * 24)
 	log.Info().Msgf("a day before: %v", aDayBefore.Format(time.RFC3339))
 	err = b.queryLog(pctx, c, raftchat.QueryLog{
@@ -233,6 +248,21 @@ func (b *ChatAppIntegration) Websocket(w http.ResponseWriter, r *http.Request, p
 		log.Error().Msgf("error querying last log %v", err)
 		return
 	}
+	t7 := time.Now()
+
+	log.Debug().Msgf(`
+		ws accept: %v ms t1-t0
+		ws identity: %v ms t2-t1
+		raft subscription: %v ms (t4-43)		
+		ws chat offset: %v ms (t5-t4)
+		raft notify online: %v ms (t6-t5) 
+		query log: %v ms (t7-t6)
+	`, t1.Sub(t0).Milliseconds(),
+		t2.Sub(t1).Milliseconds(),
+		t4.Sub(t3).Milliseconds(),
+		t5.Sub(t4).Milliseconds(),
+		t6.Sub(t5).Milliseconds(),
+		t7.Sub(t6).Milliseconds())
 
 	for anymsg := range subscription.Listen() {
 		if pctx.Err() != nil {
