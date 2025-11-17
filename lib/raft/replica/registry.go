@@ -18,10 +18,15 @@ type Config[T any] struct {
 	ShardID   uint64
 	ReplicaID uint64
 
-	ID        string
-	Alias     string
-	Type      string
-	AppConfig T
+	ID               string
+	Alias            string
+	Type             string
+	ClickHouseConfig ClickHouseConfig
+	AppConfig        T
+}
+
+type ClickHouseConfig struct {
+	Address string `yaml:"address"`
 }
 
 func (c *Config[T]) StartOnDiskReplica(fn statemachine.CreateOnDiskStateMachineFunc) error {
@@ -129,13 +134,14 @@ func ForEachType[T any](appType string, f func(config Config[T]) error) {
 		listener.ShardListener[shardID] = notifyLeader(dhost, shardID, cfg.Host.ReplicaID)
 
 		c := Config[T]{
-			internal:  sc,
-			Host:      dhost,
-			ShardID:   sc.shardID,
-			ReplicaID: cfg.Host.ReplicaID,
-			ID:        sc.ID,
-			Alias:     sc.Alias,
-			Type:      sc.Type,
+			internal:         sc,
+			Host:             dhost,
+			ShardID:          sc.shardID,
+			ReplicaID:        cfg.Host.ReplicaID,
+			ID:               sc.ID,
+			Alias:            sc.Alias,
+			Type:             sc.Type,
+			ClickHouseConfig: cfg.Host.ClickHouse,
 		}
 
 		var t T

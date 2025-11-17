@@ -10,8 +10,8 @@ import (
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/desain-gratis/common/lib/notifier"
-	"github.com/desain-gratis/common/lib/notifier/impl"
 	"github.com/desain-gratis/common/lib/raft"
+	notifierhelper "github.com/desain-gratis/common/lib/raft/notifier-helper"
 	raft_runner "github.com/desain-gratis/common/lib/raft/runner"
 	sm "github.com/lni/dragonboat/v4/statemachine"
 	"github.com/rs/zerolog/log"
@@ -19,6 +19,8 @@ import (
 
 const (
 	appName = "chat_app"
+
+	TopicChatLog = "chat_log"
 )
 
 var _ raft.Application = &chatWriterApp{}
@@ -29,14 +31,17 @@ var _ raft.Application = &chatWriterApp{}
 type chatWriterApp struct {
 	conn      driver.Conn
 	state     *state
-	topic     notifier.Topic
+	topicReg  notifierhelper.TopicRegistry
 	replicaID uint64
 	shardID   uint64
 }
 
 func New(topic notifier.Topic, shardID, replicaID uint64) *chatWriterApp {
+	nh := notifierhelper.NewTopicRegistry(map[string]notifier.Topic{
+		TopicChatLog: topic,
+	})
 	return &chatWriterApp{
-		topic:     topic,
+		topicReg:  nh,
 		shardID:   shardID,
 		replicaID: replicaID,
 	}
@@ -51,7 +56,7 @@ func (s *chatWriterApp) Lookup(ctx context.Context, query interface{}) (interfac
 	case Subscribe:
 		// subscribe to real time event for log update
 		log.Info().Msgf("I WANT TO SUBSCRIBE: %T %+v", q, q)
-		return s.topic, nil
+		return s.topicReg[q.Topic], nil
 	case QueryLog:
 		// query historical log
 		return s.queryLog(ctx, q)
@@ -128,11 +133,22 @@ func (s *chatWriterApp) OnUpdate(ctx context.Context, e sm.Entry) raft.OnAfterAp
 		}
 	case Command_StartSubscription:
 		return func() (sm.Result, error) {
-			return s.startSubscription(e, cmd.Data, chatIdx)
+			err := s.startSubscription(e, cmd.Data, chatIdx)
+			if err != nil {
+				resp, _ := json.Marshal(StartSubscriptionResponse{
+					Error: err,
+				})
+				return sm.Result{Value: uint64(0), Data: resp}, nil
+			}
+			resp, _ := json.Marshal(UpdateResponse{
+				Message: strconv.FormatUint(chatIdx, 10),
+			})
+
+			return sm.Result{Value: chatIdx, Data: resp}, nil
 		}
 	case Command_NotifyOnline, Command_NotifyOffline:
 		return func() (sm.Result, error) {
-			err := s.topic.Broadcast(context.Background(), Event{
+			err := s.topicReg[TopicChatLog].Broadcast(context.Background(), Event{
 				EvtName: EventName(cmd.CmdName),
 				EvtID:   chatIdx, // latest chat index;
 				Data:    cmd.Data,
@@ -147,7 +163,7 @@ func (s *chatWriterApp) OnUpdate(ctx context.Context, e sm.Entry) raft.OnAfterAp
 		// what we store is what we publish
 		serverTimestamp := time.Now()
 		chat := Event{
-			EvtTable:        "chat_log",
+			EvtTable:        TopicChatLog,
 			EvtName:         EventName_Echo,
 			EvtID:           chatIdx,
 			ServerTimestamp: serverTimestamp,
@@ -179,7 +195,7 @@ func (s *chatWriterApp) OnUpdate(ctx context.Context, e sm.Entry) raft.OnAfterAp
 
 		return func() (sm.Result, error) {
 			// we publish wrapped data
-			err := s.topic.Broadcast(context.Background(), chat)
+			err := s.topicReg[TopicChatLog].Broadcast(context.Background(), chat)
 			if err != nil {
 				log.Err(err).Msgf("error kirim data %T", chat)
 			}
@@ -225,45 +241,15 @@ func (s *chatWriterApp) Apply(ctx context.Context) error {
 	return nil
 }
 
-func (s *chatWriterApp) startSubscription(ent sm.Entry, rawData json.RawMessage, startIdx uint64) (sm.Result, error) {
-	var data StartSubscriptionData
-	err := json.Unmarshal(rawData, &data)
+func (s *chatWriterApp) startSubscription(ent sm.Entry, rawData json.RawMessage, startIdx uint64) error {
+	var data notifierhelper.StartSubscriptionRequest
+	_ = json.Unmarshal(rawData, &data)
+	err := s.topicReg.StartSubscription(s.replicaID, startIdx, data)
 	if err != nil {
-		log.Err(err).Msgf("err while start subscription unmarshal %v", err)
-		resp, _ := json.Marshal(AddSubscriptionResponse{
-			Error: err,
-		})
-		return sm.Result{Value: uint64(0), Data: resp}, nil
+		return err
 	}
 
-	if data.ReplicaID != s.replicaID {
-		resp, _ := json.Marshal(UpdateResponse{
-			Message: "should not happen on different replica",
-		})
-
-		// listener only created on the requested replica.
-		return sm.Result{Value: uint64(0), Data: resp}, nil
-	}
-
-	subs, err := s.topic.GetSubscription(data.SubscriptionID)
-	if err != nil {
-		if !errors.Is(err, impl.ErrNotFound) {
-			log.Err(err).Msgf("err get subs %v: %v %v", err, data.SubscriptionID, string(rawData))
-		}
-		resp, _ := json.Marshal(UpdateResponse{
-			Message: "skip (no listener)",
-		})
-		return sm.Result{Value: uint64(0), Data: resp}, nil
-	}
-
-	log.Info().Msgf("starting local subscriber: %v %v", subs.ID(), string(rawData))
-	subs.Start()
-
-	resp, _ := json.Marshal(UpdateResponse{
-		Message: strconv.FormatUint(startIdx, 10),
-	})
-
-	return sm.Result{Value: ent.Index, Data: resp}, nil
+	return nil
 }
 
 func (s *chatWriterApp) queryLog(ctx context.Context, q QueryLog) (chan Event, error) {
@@ -299,7 +285,7 @@ func (s *chatWriterApp) queryLog(ctx context.Context, q QueryLog) (chan Event, e
 
 			var evt Event
 
-			evt.EvtTable = "chat_log"
+			evt.EvtTable = TopicChatLog
 			evt.EvtName = EventName_Echo // todo: maybe move it somewher
 
 			var namespace string

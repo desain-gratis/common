@@ -15,7 +15,7 @@ ORDER BY namespace;
 const (
 	// DQLReadRaftMetadata is used to query the raft metadata
 	DQLReadRaftMetadata = `
-SELECT data FROM metadata WHERE namespace=?;
+SELECT data FROM metadata FINAL WHERE namespace=?;
 	`
 )
 

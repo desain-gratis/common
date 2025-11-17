@@ -6,7 +6,9 @@ import (
 	"time"
 )
 
-type Subscribe struct{}
+type Subscribe struct {
+	Topic string `json:"topic"`
+}
 
 type QueryLog struct {
 	Ctx context.Context
@@ -31,7 +33,7 @@ type UpdateResponse struct {
 	Message string `json:"message"`
 }
 
-type AddSubscriptionResponse struct {
+type StartSubscriptionResponse struct {
 	Error          error  `json:"error,omitempty"`
 	SubscriptionID uint64 `json:"subscription_id"`
 }
@@ -68,12 +70,6 @@ const (
 	EventName_NotifyOnline  EventName = "notify-online"
 	EventName_NotifyOffline EventName = "notify-offline"
 )
-
-type StartSubscriptionData struct {
-	SubscriptionID string `json:"subscription_id"`
-	ReplicaID      uint64 `json:"replica_id"`
-	Debug          string `json:"debug"`
-}
 
 type Config struct {
 	ExitMessage    *string `json:"exit_message,omitempty"`

@@ -3,6 +3,7 @@ package impl
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math/rand/v2"
 	"strconv"
 	"sync"
@@ -70,7 +71,7 @@ func (s *standardTopic) Subscribe(ctx context.Context, csf notifier.CreateSubscr
 func (s *standardTopic) GetSubscription(id string) (notifier.Subscription, error) {
 	iduint, err := strconv.ParseUint(id, 10, 64)
 	if err != nil {
-		return nil, ErrInvalidKey
+		return nil, fmt.Errorf("%w: currently only support uint64 for subscription key", ErrInvalidKey)
 	}
 
 	s.lock.RLock()

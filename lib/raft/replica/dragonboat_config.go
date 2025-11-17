@@ -19,13 +19,14 @@ type DragonboatConfig struct {
 }
 
 type shardConfig struct {
-	ShardID   uint64          `json:"shard_id"`
-	ReplicaID uint64          `json:"replica_id"`
-	Alias     string          `json:"alias"`
-	Name      string          `json:"name"`
-	Type      string          `json:"type"`
-	Config    json.RawMessage `json:"config"`
-	Bootstrap map[int]string  `json:"bootstrap"`
+	ShardID    uint64           `json:"shard_id"`
+	ReplicaID  uint64           `json:"replica_id"`
+	Alias      string           `json:"alias"`
+	Name       string           `json:"name"`
+	Type       string           `json:"type"`
+	Config     json.RawMessage  `json:"config"`
+	ClickHouse ClickHouseConfig `json:"clickhouse"`
+	Bootstrap  map[int]string   `json:"bootstrap"`
 }
 
 func initDragonboatConfig(_ context.Context) (cfg config2, err error) {
@@ -64,12 +65,13 @@ type config2 struct {
 }
 
 type HostConfig struct {
-	ReplicaID    uint64         `mapstructure:"replica_id"`
-	RaftAddress  string         `mapstructure:"raft_address"`
-	WALDir       string         `mapstructure:"wal_dir"`
-	NodehostDir  string         `mapstructure:"nodehost_dir"`
-	DeploymentID uint64         `mapstructure:"deployment_id"`
-	Peer         map[int]string `mapstructure:"peer"`
+	ReplicaID    uint64           `mapstructure:"replica_id"`
+	RaftAddress  string           `mapstructure:"raft_address"`
+	WALDir       string           `mapstructure:"wal_dir"`
+	NodehostDir  string           `mapstructure:"nodehost_dir"`
+	DeploymentID uint64           `mapstructure:"deployment_id"`
+	ClickHouse   ClickHouseConfig `mapstructure:"clickhouse"`
+	Peer         map[int]string   `mapstructure:"peer"`
 }
 
 type ReplicaConfig struct {

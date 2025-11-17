@@ -8,6 +8,8 @@ host:
         1: "mb1:21511"
         2: "mb2:21512"
         3: "mb3:21513"
+    clickhouse:
+        address: "clickhouse-mb3:9000"
 replica:
     1:
         bootstrap: false
@@ -28,3 +30,10 @@ replica:
                 "exit_message": "server 3, is closed. 🔋",
                 "clickhouse_addr": "clickhouse-mb3:9000"
             }
+    3:
+        bootstrap: false
+        id: "lease"
+        alias: "lease"
+        type: "lease"
+        config: |
+            {}

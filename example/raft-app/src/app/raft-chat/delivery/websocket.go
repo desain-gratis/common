@@ -15,6 +15,7 @@ import (
 	raftchat "github.com/desain-gratis/common/example/raft-app/src/app/raft-chat"
 	"github.com/desain-gratis/common/lib/notifier"
 	notifier_impl "github.com/desain-gratis/common/lib/notifier/impl"
+	notifierhelper "github.com/desain-gratis/common/lib/raft/notifier-helper"
 	"github.com/julienschmidt/httprouter"
 	"github.com/lni/dragonboat/v4"
 	"github.com/lni/dragonboat/v4/client"
@@ -335,7 +336,7 @@ func (b *ChatAppIntegration) getSubscription(ctx context.Context, csfn notifier.
 	defer c()
 
 	// 1. get & register local instance of the subscription, but not yet received any event
-	v, err := b.Dhost.SyncRead(rctx, b.ShardID, raftchat.Subscribe{})
+	v, err := b.Dhost.SyncRead(rctx, b.ShardID, raftchat.Subscribe{Topic: raftchat.TopicChatLog})
 	if err != nil {
 		return nil, 0, err
 	}
@@ -360,10 +361,11 @@ func (b *ChatAppIntegration) getSubscription(ctx context.Context, csfn notifier.
 	}
 
 	// 2. ask state-machine to start receiving data
-	data, err := json.Marshal(raftchat.StartSubscriptionData{
+	data, err := json.Marshal(notifierhelper.StartSubscriptionRequest{
 		SubscriptionID: subscription.ID(),
 		ReplicaID:      b.ReplicaID,
 		Debug:          name,
+		Topic:          raftchat.TopicChatLog,
 	})
 	if err != nil {
 		return nil, 0, err

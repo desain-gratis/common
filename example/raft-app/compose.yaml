@@ -51,6 +51,7 @@ services:
   clickhouse-mb1:
     image: clickhouse/clickhouse-server:latest
     container_name: clickhouse-mb1
+    restart: on-failure
     environment:
       CLICKHOUSE_USER: default
       CLICKHOUSE_PASSWORD: default
@@ -70,6 +71,7 @@ services:
   clickhouse-mb2:
     image: clickhouse/clickhouse-server:latest
     container_name: clickhouse-mb2
+    restart: on-failure
     environment:
       CLICKHOUSE_USER: default
       CLICKHOUSE_PASSWORD: default
@@ -89,6 +91,7 @@ services:
   clickhouse-mb3:
     image: clickhouse/clickhouse-server:latest
     container_name: clickhouse-mb3
+    restart: on-failure
     environment:
       CLICKHOUSE_USER: default
       CLICKHOUSE_PASSWORD: default
