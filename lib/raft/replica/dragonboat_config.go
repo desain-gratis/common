@@ -44,7 +44,7 @@ func initDragonboatConfig(_ context.Context) (cfg config2, err error) {
 	viper.SetConfigType("yaml")
 	err = viper.ReadConfig(f)
 	if err != nil {
-		log.Panic().Msgf("failed to read config %v %v", cfgFile, err)
+		log.Panic().Msgf("failed to read dragonboat config %v %v", cfgFile, err)
 	}
 
 	log.Info().Msgf("reading config: %v", cfgFile)

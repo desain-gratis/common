@@ -13,7 +13,6 @@ import (
 	"github.com/desain-gratis/common/lib/raft"
 	notifierhelper "github.com/desain-gratis/common/lib/raft/notifier-helper"
 	raft_runner "github.com/desain-gratis/common/lib/raft/runner"
-	sm "github.com/lni/dragonboat/v4/statemachine"
 	"github.com/rs/zerolog/log"
 )
 
@@ -96,7 +95,7 @@ func (s *chatWriterApp) Init(ctx context.Context) error {
 }
 
 // PrepareUpdate prepare the resources for upcoming message
-func (s *chatWriterApp) PrepareUpdate(ctx context.Context) (context.Context, error) {
+func (s *chatWriterApp) PrepareUpdate(ctx context.Context) (context.Context, context.CancelFunc, error) {
 	// conn := statemachine.GetClickhouseConnection(ctx)
 
 	// batch, err := conn.PrepareBatch(ctx, DMLWriteChat)
@@ -105,19 +104,19 @@ func (s *chatWriterApp) PrepareUpdate(ctx context.Context) (context.Context, err
 	// }
 
 	// return context.WithValue(ctx, chatTableKey, batch), nil
-	return ctx, nil
+	return ctx, func() {}, nil
 }
 
 // OnUpdate updates the object using the specified committed raft entry.
-func (s *chatWriterApp) OnUpdate(ctx context.Context, e sm.Entry) raft.OnAfterApply {
+func (s *chatWriterApp) OnUpdate(ctx context.Context, e raft.Entry) raft.OnAfterApply {
 	var cmd UpdateRequest
 	err := json.Unmarshal(e.Cmd, &cmd)
 	if err != nil {
 		resp, _ := json.Marshal(UpdateResponse{
 			Error: fmt.Errorf("failed to parse request: %v", err),
 		})
-		return func() (sm.Result, error) {
-			return sm.Result{Data: resp}, nil
+		return func() (raft.Result, error) {
+			return raft.Result{Data: resp}, nil
 		}
 	}
 
@@ -125,29 +124,29 @@ func (s *chatWriterApp) OnUpdate(ctx context.Context, e sm.Entry) raft.OnAfterAp
 
 	switch cmd.CmdName {
 	case Command_UpdateLeader:
-		return func() (sm.Result, error) {
-			return sm.Result{
+		return func() (raft.Result, error) {
+			return raft.Result{
 				Value: uint64(len(e.Cmd)),
 				Data:  []byte("yes"),
 			}, nil
 		}
 	case Command_StartSubscription:
-		return func() (sm.Result, error) {
+		return func() (raft.Result, error) {
 			err := s.startSubscription(e, cmd.Data, chatIdx)
 			if err != nil {
 				resp, _ := json.Marshal(StartSubscriptionResponse{
 					Error: err,
 				})
-				return sm.Result{Value: uint64(0), Data: resp}, nil
+				return raft.Result{Value: uint64(0), Data: resp}, nil
 			}
 			resp, _ := json.Marshal(UpdateResponse{
 				Message: strconv.FormatUint(chatIdx, 10),
 			})
 
-			return sm.Result{Value: chatIdx, Data: resp}, nil
+			return raft.Result{Value: chatIdx, Data: resp}, nil
 		}
 	case Command_NotifyOnline, Command_NotifyOffline:
-		return func() (sm.Result, error) {
+		return func() (raft.Result, error) {
 			err := s.topicReg[TopicChatLog].Broadcast(context.Background(), Event{
 				EvtName: EventName(cmd.CmdName),
 				EvtID:   chatIdx, // latest chat index;
@@ -157,7 +156,7 @@ func (s *chatWriterApp) OnUpdate(ctx context.Context, e sm.Entry) raft.OnAfterAp
 				log.Err(err).Msgf("error brodkest: %v", cmd.CmdName)
 			}
 
-			return sm.Result{Value: chatIdx, Data: []byte("success!")}, nil
+			return raft.Result{Value: chatIdx, Data: []byte("success!")}, nil
 		}
 	case Command_PublishMessage:
 		// what we store is what we publish
@@ -175,8 +174,8 @@ func (s *chatWriterApp) OnUpdate(ctx context.Context, e sm.Entry) raft.OnAfterAp
 		// persist in batch
 		// chatBatch, ok := ctx.Value(chatTableKey).(driver.Batch)
 		// if !ok {
-		// 	return func() (sm.Result, error) {
-		// 		return sm.Result{Data: []byte("error")}, nil
+		// 	return func() (raft.Result, error) {
+		// 		return raft.Result{Data: []byte("error")}, nil
 		// 	}
 		// }
 
@@ -193,14 +192,14 @@ func (s *chatWriterApp) OnUpdate(ctx context.Context, e sm.Entry) raft.OnAfterAp
 		// increment our index
 		*s.state.ChatIndex++
 
-		return func() (sm.Result, error) {
+		return func() (raft.Result, error) {
 			// we publish wrapped data
 			err := s.topicReg[TopicChatLog].Broadcast(context.Background(), chat)
 			if err != nil {
 				log.Err(err).Msgf("error kirim data %T", chat)
 			}
 
-			return sm.Result{Value: chat.EvtID, Data: []byte("success!")}, nil
+			return raft.Result{Value: chat.EvtID, Data: []byte("success!")}, nil
 		}
 	}
 
@@ -209,8 +208,8 @@ func (s *chatWriterApp) OnUpdate(ctx context.Context, e sm.Entry) raft.OnAfterAp
 		Error: fmt.Errorf("unknown command: %v", cmd.CmdName),
 	})
 
-	return func() (sm.Result, error) {
-		return sm.Result{Data: resp}, nil
+	return func() (raft.Result, error) {
+		return raft.Result{Data: resp}, nil
 	}
 }
 
@@ -241,7 +240,7 @@ func (s *chatWriterApp) Apply(ctx context.Context) error {
 	return nil
 }
 
-func (s *chatWriterApp) startSubscription(ent sm.Entry, rawData json.RawMessage, startIdx uint64) error {
+func (s *chatWriterApp) startSubscription(_ raft.Entry, rawData json.RawMessage, startIdx uint64) error {
 	var data notifierhelper.StartSubscriptionRequest
 	_ = json.Unmarshal(rawData, &data)
 	err := s.topicReg.StartSubscription(s.replicaID, startIdx, data)

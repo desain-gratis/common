@@ -147,8 +147,7 @@ func ForEachType[T any](appType string, f func(config Config[T]) error) {
 		var t T
 		err := json.Unmarshal([]byte(sc.Config), &t)
 		if err != nil {
-			log.Error().Msgf("failed to read config")
-			continue
+			log.Warn().Msgf("failed to marshal config")
 		}
 
 		c.AppConfig = t

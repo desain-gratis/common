@@ -81,19 +81,18 @@ func (d *baseDiskSM) Lookup(key interface{}) (interface{}, error) {
 func (d *baseDiskSM) Update(ents []sm.Entry) ([]sm.Entry, error) {
 	ctx := context.WithValue(context.Background(), chConnKey, d.conn)
 
-	log.Info().Msgf("entry size: %v", len(ents))
-
 	metadataBatch, err := d.conn.PrepareBatch(ctx, `INSERT INTO metadata (namespace, data)`)
 	if err != nil {
-		log.Panic().Msgf("failed to apply")
+		log.Panic().Msgf("failed to apply metadata batch: %v", err)
 	}
 
 	ctx = context.WithValue(ctx, metadataBatchKey, metadataBatch)
 
-	ctx, err = d.app.PrepareUpdate(ctx)
+	ctx, cleanup, err := d.app.PrepareUpdate(ctx)
 	if err != nil {
 		log.Panic().Msgf("failed to prepare for update: %v", err)
 	}
+	defer cleanup()
 
 	// Process message one-by-one
 	afterApplys := make([]raft.OnAfterApply, len(ents))
@@ -101,13 +100,13 @@ func (d *baseDiskSM) Update(ents []sm.Entry) ([]sm.Entry, error) {
 		if ents[idx].Index <= d.initialApplied {
 			log.Panic().Msgf("oh no initial")
 		}
-		afterApplys[idx] = d.app.OnUpdate(ctx, ents[idx])
+		afterApplys[idx] = d.app.OnUpdate(ctx, raft.Entry(ents[idx]))
 	}
 
 	// Apply update to disk
 	err = d.app.Apply(ctx)
 	if err != nil {
-		log.Panic().Msgf("failed to apply")
+		log.Panic().Msgf("failed to apply: %v", err)
 	}
 
 	*d.smMetadata.AppliedIndex = ents[len(ents)-1].Index
@@ -133,7 +132,7 @@ func (d *baseDiskSM) Update(ents []sm.Entry) ([]sm.Entry, error) {
 		if err != nil {
 			continue
 		}
-		ents[idx].Result = res
+		ents[idx].Result = sm.Result(res)
 	}
 
 	return ents, nil
