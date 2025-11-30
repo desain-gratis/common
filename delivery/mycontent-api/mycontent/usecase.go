@@ -20,6 +20,9 @@ type Usecase[T any] interface {
 	// Get all of your resource for your user ID here
 	Get(ctx context.Context, namespace string, refIDs []string, ID string) ([]T, *types.CommonError)
 
+	// Stream response
+	Stream(ctx context.Context, namespace string, refIDs []string, ID string) (<-chan T, *types.CommonError)
+
 	// Delete your resource here
 	// the implementation can check whether there are linked resource or not
 	Delete(ctx context.Context, namespace string, refIDs []string, ID string) (T, *types.CommonError)

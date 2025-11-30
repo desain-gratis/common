@@ -197,6 +197,17 @@ func (c *Handler[T]) Get(ctx context.Context, namespace string, refIDs []string,
 	return result, nil
 }
 
+func (c *Handler[T]) Stream(ctx context.Context, namespace string, refIDs []string, ID string) (<-chan T, *types.CommonError) {
+	return nil, &types.CommonError{
+		Errors: []types.Error{
+			{
+				HTTPCode: 500,
+				Code:     "NOT_IMPLEMENTED",
+			},
+		},
+	}
+}
+
 // Delete your resource here
 // the implementation can check whether there are linked resource or not
 func (c *Handler[T]) Delete(ctx context.Context, namespace string, refIDs []string, ID string) (t T, err *types.CommonError) {
