@@ -32,6 +32,9 @@ func (c *CommonError) Err() error {
 
 func (c *CommonError) Error() string {
 	var result []string
+	if c == nil {
+		return ""
+	}
 	for _, err := range c.Errors {
 		result = append(result, "("+err.Code+") "+err.Message)
 	}
@@ -51,9 +54,13 @@ func (e *Error) Error() string {
 	return e.Message
 }
 
-func SerializeError(err *CommonError) []byte {
+func SerializeError(err error) []byte {
 	d, errMarshal := json.Marshal(&CommonResponse{
-		Error: err,
+		Error: &CommonError{
+			Errors: []Error{
+				{Message: err.Error()},
+			},
+		},
 	})
 	if errMarshal != nil {
 		log.Err(errMarshal).Msgf("Failed to parse err")

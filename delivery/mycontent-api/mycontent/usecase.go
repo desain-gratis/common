@@ -2,38 +2,47 @@ package mycontent
 
 import (
 	"context"
+	"errors"
 	"io"
 	"time"
+)
 
-	types "github.com/desain-gratis/common/types/http"
+var (
+	// ErrValidation used to communicate input error to user
+	ErrValidation = errors.New("validation")
+
+	// ErrStorage is error in the underlying storage
+	ErrStorage = errors.New("storage")
+
+	// ErrNotFound when content is not found during Post, Delete, and Get (by ID)
+	ErrNotFound = errors.New("not found")
 )
 
 type UsecaseAttachment[T any] interface {
 	Usecase[T]
 	Attachable[T]
 }
-
 type Usecase[T any] interface {
 	// Post (create new or overwrite) resource here
-	Post(ctx context.Context, data T, meta any) (T, *types.CommonError)
+	Post(ctx context.Context, data T, meta any) (T, error)
 
 	// Get all of your resource for your user ID here
-	Get(ctx context.Context, namespace string, refIDs []string, ID string) ([]T, *types.CommonError)
+	Get(ctx context.Context, namespace string, refIDs []string, ID string) ([]T, error)
 
 	// Stream response
-	Stream(ctx context.Context, namespace string, refIDs []string, ID string) (<-chan T, *types.CommonError)
+	Stream(ctx context.Context, namespace string, refIDs []string, ID string) (<-chan T, error)
 
 	// Delete your resource here
 	// the implementation can check whether there are linked resource or not
-	Delete(ctx context.Context, namespace string, refIDs []string, ID string) (T, *types.CommonError)
+	Delete(ctx context.Context, namespace string, refIDs []string, ID string) (T, error)
 }
 
 type Attachable[T any] interface {
 	// Attach generic binary to path
 	// Path is internal address
-	Attach(ctx context.Context, meta T, payload io.Reader) (T, *types.CommonError)
+	Attach(ctx context.Context, meta T, payload io.Reader) (T, error)
 
-	GetAttachment(ctx context.Context, userID string, refIDs []string, ID string) (payload io.ReadCloser, meta T, err *types.CommonError)
+	GetAttachment(ctx context.Context, userID string, refIDs []string, ID string) (payload io.ReadCloser, meta T, err error)
 }
 
 // Data is the main data structure used in the my content usecase
@@ -74,7 +83,7 @@ type RefIDs interface {
 }
 
 type Validator interface {
-	Validate() *types.CommonError
+	Validate() error
 }
 
 // Todo serializable

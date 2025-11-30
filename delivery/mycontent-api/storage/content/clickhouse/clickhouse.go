@@ -3,14 +3,13 @@ package clickhouse
 import (
 	"bytes"
 	"context"
-	"errors"
-	"net/http"
+	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/desain-gratis/common/delivery/mycontent-api/storage/content"
-	types "github.com/desain-gratis/common/types/http"
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
 	"github.com/rs/zerolog/log"
@@ -19,111 +18,75 @@ import (
 var _ content.Repository = &handler{}
 
 type handler struct {
-	db          driver.Conn
-	tableName   string
-	refSize     int
-	addressCols []string
+	db        driver.Conn
+	tableName string
+	refSize   int
+	keyCols   []string
 }
 
 func New(db driver.Conn, tableName string, refSize int) *handler {
-	refsTemplate := make([]string, refSize+2)
-	for i := range refsTemplate {
-		refsTemplate[i] = "?"
-	}
+	keySize := 1 + refSize + 1
 
-	addressCols := make([]string, 1+refSize+1)
-	addressCols[0] = "namespace"
-	for i := 1; i < len(addressCols)-1; i++ {
-		addressCols[i] = "ref_id_" + strconv.Itoa(i)
+	keyCols := make([]string, keySize)
+	keyCols[0] = `namespace`
+	for i := 1; i < len(keyCols)-1; i++ {
+		keyCols[i] = `ref_id_` + strconv.Itoa(i)
 	}
-	addressCols[len(addressCols)-1] = "id"
+	keyCols[len(keyCols)-1] = `id`
 
 	dq := getDdl(tableName, refSize)
 
 	err := db.Exec(context.Background(), dq)
 	if err != nil {
-		log.Err(err).Msgf("ggwp")
-		log.Panic().Msgf("ggwp! %v", err)
+		panic(fmt.Sprintf("failed to execute DDL for table name: %v %v", tableName, err))
 	}
 
 	return &handler{
-		db:          db,
-		tableName:   tableName,
-		refSize:     refSize,
-		addressCols: addressCols,
+		db:        db,
+		tableName: tableName,
+		refSize:   refSize,
+		keyCols:   keyCols,
 	}
 }
-func getDdl(tableName string, refSize int) string {
-	buf := bytes.NewBuffer(make([]byte, 0, 100))
 
-	buf.WriteString(`CREATE TABLE IF NOT EXISTS ` + tableName + ` (
-		namespace String,
-`)
-
-	key := make([]string, 0, refSize)
-	key = append(key, "namespace")
-
-	for i := 0; i < refSize; i++ {
-		refID := "ref_id_" + strconv.Itoa(i+1)
-		buf.WriteString(refID + " String, \n")
-		key = append(key, refID)
+func (h *handler) Get(ctx context.Context, namespace string, refIDs []string, ID string) (resp []content.Data, err error) {
+	q, args, err := h.prepareGet(namespace, refIDs, ID)
+	if err != nil {
+		return nil, err
 	}
 
-	key = append(key, "id")
+	rows, err := h.db.Query(ctx, q, args...)
+	if err != nil {
+		slog.Error(
+			"failed to do query", slog.String("err", err.Error()),
+			slog.String("components", "mycontent.storage.clickhouse.get"))
+		return nil, err
+	}
 
-	buf.WriteString(`
-		id String,
-		data String,
-		meta String,
-)
-ENGINE = ReplacingMergeTree
-ORDER BY (` + strings.Join(key, ",") + `) ;
-
-	`)
-	return buf.String()
-}
-
-func (h *handler) Get(ctx context.Context, namespace string, refIDs []string, ID string) (resp []content.Data, err *types.CommonError) {
-	q, args, cerr := h.prepareGet(namespace, refIDs, ID)
-	if cerr != nil {
-		err = &types.CommonError{
-			Errors: []types.Error{
-				{
-					HTTPCode: http.StatusInternalServerError,
-					Code:     "INTERNAL_SERVER_ERROR",
-					Message:  "Failed get query: " + q,
-				},
-			},
+	defer func() {
+		err := rows.Close()
+		if err != nil {
+			slog.Error(
+				"failed to close rows", slog.String("err", err.Error()),
+				slog.String("components", "mycontent.storage.clickhouse.get"))
 		}
-		return
-	}
-
-	rows, cerr := h.db.Query(ctx, q, args...)
-	if cerr != nil {
-		log.Err(cerr).Msgf("ada apa dengan query `%v` | `%v`", q, args)
-		err = &types.CommonError{
-			Errors: []types.Error{
-				{
-					HTTPCode: http.StatusInternalServerError,
-					Code:     "INTERNAL_SERVER_ERROR",
-					Message:  "Failed gettt query: " + q + " " + cerr.Error(),
-				},
-			},
-		}
-		return
-	}
-
-	defer rows.Close()
+	}()
 
 	for rows.Next() {
-		result := make([]string, 1+h.refSize+1+2) // data and meta
+		keyAndContentSize := 1 + h.refSize + 1 + 2 // key + data and meta
+		result := make([]string, keyAndContentSize)
 		resultany := make([]any, len(result))
+
 		for i := range result {
 			resultany[i] = &result[i]
 		}
-		errScan := rows.Scan(resultany...)
-		if errScan != nil {
-			log.Err(errScan).Msgf("Failed scan row")
+
+		err := rows.Scan(resultany...)
+		if err != nil {
+			log.Err(err).Msgf("Failed scan row")
+			slog.Error(
+				"failed to scan row", slog.String("err", err.Error()),
+				slog.String("components", "mycontent.storage.clickhouse.get"))
 			continue
 		}
 
@@ -134,20 +97,14 @@ func (h *handler) Get(ctx context.Context, namespace string, refIDs []string, ID
 		rowData := h.convertGetData(result)
 		resp = append(resp, *rowData)
 	}
-	return
+
+	return resp, nil
 }
 
-func (h *handler) Post(ctx context.Context, namespace string, refIDs []string, ID string, input content.Data) (out content.Data, err *types.CommonError) {
-	if len(refIDs) != h.refSize {
-		return input, &types.CommonError{
-			Errors: []types.Error{
-				{
-					HTTPCode: http.StatusInternalServerError,
-					Code:     "INTERNAL_SERVER_ERROR",
-					Message:  "Please specify complete reference",
-				},
-			},
-		}
+func (h *handler) Post(ctx context.Context, namespace string, refIDs []string, ID string, input content.Data) (out content.Data, err error) {
+	// TODO: move to dedicated valdiation func
+	if len(refIDs) != h.refSize || ID == "" || namespace == "" || namespace == "*" {
+		return content.Data{}, fmt.Errorf("%w: incomplete reference", content.ErrInvalidKey)
 	}
 
 	if input.Meta == nil {
@@ -160,17 +117,9 @@ func (h *handler) Post(ctx context.Context, namespace string, refIDs []string, I
 	VALUES (` + strings.Join(tmplt, ",") + `);
 	`
 
-	cerr := h.db.Exec(ctx, q, args...)
-	if cerr != nil {
-		return input, &types.CommonError{
-			Errors: []types.Error{
-				{
-					HTTPCode: http.StatusInternalServerError,
-					Code:     "INTERNAL_SERVER_ERROR",
-					Message:  "Err insert",
-				},
-			},
-		}
+	err = h.db.Exec(ctx, q, args...)
+	if err != nil {
+		return content.Data{}, err
 	}
 
 	input.ID = id
@@ -178,129 +127,69 @@ func (h *handler) Post(ctx context.Context, namespace string, refIDs []string, I
 	return input, nil
 }
 
-func (h *handler) Delete(ctx context.Context, namespace string, refIDs []string, ID string) (out content.Data, err *types.CommonError) {
+func (h *handler) Delete(ctx context.Context, namespace string, refIDs []string, ID string) (out content.Data, err error) {
+	// TODO: move to dedicated valdiation func
 	if len(refIDs) != h.refSize || ID == "" || namespace == "" || namespace == "*" {
-		return content.Data{}, &types.CommonError{
-			Errors: []types.Error{
-				{
-					HTTPCode: http.StatusInternalServerError,
-					Code:     "INTERNAL_SERVER_ERROR",
-					Message:  "Please specify complete reference",
-				},
-			},
-		}
+		return content.Data{}, fmt.Errorf("%w: incomplete reference", content.ErrInvalidKey)
 	}
 
-	q, args, cerr := h.prepareGet(namespace, refIDs, ID)
-	if cerr != nil {
-		log.Err(cerr).Msgf("Q: %v ARGS: %v", q, args)
-		err = &types.CommonError{
-			Errors: []types.Error{
-				{
-					HTTPCode: http.StatusInternalServerError,
-					Code:     "INTERNAL_SERVER_ERROR",
-					Message:  "Prepare get fail: " + q,
-				},
-			},
-		}
-		return
+	q, args, err := h.prepareGet(namespace, refIDs, ID)
+	if err != nil {
+		return content.Data{}, err
 	}
-	row, errQuery := h.db.Query(ctx, q, args...)
-	if errQuery != nil {
-		log.Err(errQuery).Msgf("err when query Q: %v ARGS: %v", q, args)
-		err = &types.CommonError{
-			Errors: []types.Error{
-				{
-					HTTPCode: http.StatusInternalServerError,
-					Code:     "INTERNAL_SERVER_ERROR",
-					Message:  "Delete Query: " + q,
-				},
-			},
-		}
+
+	row, err := h.db.Query(ctx, q, args...)
+	if err != nil {
+		return content.Data{}, err
 	}
-	defer row.Close()
+
+	defer func() {
+		err := row.Close()
+		if err != nil {
+			slog.Error(
+				"failed to close row", slog.String("err", err.Error()),
+				slog.String("components", "mycontent.storage.clickhouse.delete"))
+		}
+	}()
 
 	var data *content.Data
 	for row.Next() {
 		result, dest := h.allocateResultDst(true, true)
-		errScan := row.Scan(dest...)
-		if errScan != nil {
-			log.Err(errScan).Msgf("Q: %v ARGS: %v", q, args)
-			err = &types.CommonError{
-				Errors: []types.Error{
-					{
-						HTTPCode: http.StatusInternalServerError,
-						Code:     "INTERNAL_SERVER_ERROR",
-						Message:  "Failed Scan: " + q,
-					},
-				},
-			}
-			return
+		err := row.Scan(dest...)
+		if err != nil {
+			slog.Warn(
+				"failed to scan row. skipping", slog.String("err", err.Error()),
+				slog.String("components", "mycontent.storage.clickhouse.get"))
+			continue
 		}
 		data = h.convertGetData(result)
 	}
-	errRow := row.Err()
-	if errRow != nil {
-		log.Err(errRow).Msgf("Q: %v ARGS: %v", q, args)
-		err = &types.CommonError{
-			Errors: []types.Error{
-				{
-					HTTPCode: http.StatusInternalServerError,
-					Code:     "INTERNAL_SERVER_ERROR",
-					Message:  "Failed erRRow: " + q,
-				},
-			},
-		}
-		return
+
+	err = row.Err()
+	if err != nil {
+		return content.Data{}, err
 	}
 
 	if data == nil {
-		err = &types.CommonError{
-			Errors: []types.Error{
-				{
-					HTTPCode: http.StatusInternalServerError,
-					Code:     "BAD_REQUEST",
-					Message:  "no data" + q,
-				},
-			},
-		}
-		return
+		return content.Data{}, fmt.Errorf("%w: content not found for namespace=%v refIDs=%v and ID=%v",
+			content.ErrNotFound, namespace, refIDs, ID)
 	}
 
-	whereQ, whereArgs, errWhere := h.prepareWhereQuery(namespace, refIDs, ID)
-	if errWhere != nil {
-		err = &types.CommonError{
-			Errors: []types.Error{
-				{
-					HTTPCode: http.StatusInternalServerError,
-					Code:     "BAD_REQUEST",
-					Message:  "no data" + q,
-				},
-			},
-		}
-		return
+	whereQ, whereArgs, err := h.prepareWhereQuery(namespace, refIDs, ID)
+	if err != nil {
+		return content.Data{}, err
 	}
 
 	qDel := `DELETE FROM ` + h.tableName + ` ` + whereQ
-	errDel := h.db.Exec(ctx, qDel, whereArgs...)
-	if errDel != nil {
-		log.Err(errDel).Msgf("q: %v. params: %v", qDel, whereArgs)
-		err = &types.CommonError{
-			Errors: []types.Error{
-				{
-					HTTPCode: http.StatusInternalServerError,
-					Code:     "DELETE ERR",
-					Message:  "delete err " + errDel.Error(),
-				},
-			},
-		}
-		return
+	err = h.db.Exec(ctx, qDel, whereArgs...)
+	if err != nil {
+		return content.Data{}, err
 	}
 
 	return *data, nil
 }
 
-func (h *handler) Stream(ctx context.Context, namespace string, refIDs []string, ID string) (<-chan content.Data, *types.CommonError) {
+func (h *handler) Stream(ctx context.Context, namespace string, refIDs []string, ID string) (data <-chan content.Data, err error) {
 	return nil, nil
 }
 
@@ -312,24 +201,29 @@ func (h *handler) allocateResultDst(withData, withMeta bool) ([]string, []any) {
 	if withMeta {
 		c++
 	}
-	dst := make([]string, len(h.addressCols)+c)
+
+	dst := make([]string, len(h.keyCols)+c)
 	wrapped := make([]any, len(dst))
 	for i := range len(dst) {
 		wrapped[i] = &dst[i]
 	}
+
 	return dst, wrapped
 }
 
 func (h *handler) preparePost(namespace string, refIDs []string, ID string, data string, meta string) (string, []string, []any, []string) {
-	columns := make([]string, 0, 1+h.refSize+1+2)
+	// key columns + data & meta column
+	keyAndContentSize := 1 + h.refSize + 1 + 2
+
+	columns := make([]string, 0, keyAndContentSize)
 	tmplt := make([]string, 0, len(columns))
 	args := make([]any, 0, len(columns))
 
-	columns = append(columns, "namespace")
+	columns = append(columns, `namespace`)
 	args = append(args, namespace)
 
 	for i := 0; i < h.refSize; i++ {
-		columns = append(columns, "ref_id_"+strconv.Itoa(i+1))
+		columns = append(columns, `ref_id_`+strconv.Itoa(i+1))
 		args = append(args, refIDs[i])
 	}
 
@@ -337,14 +231,15 @@ func (h *handler) preparePost(namespace string, refIDs []string, ID string, data
 	if id == "" {
 		id = uuid.NewString()
 	}
-	columns = append(columns, "id")
+
+	columns = append(columns, `id`)
 	args = append(args, id)
 
-	columns = append(columns, "data", "meta")
+	columns = append(columns, `data`, `meta`)
 	args = append(args, data, meta)
 
 	for range len(columns) {
-		tmplt = append(tmplt, "?")
+		tmplt = append(tmplt, `?`)
 	}
 
 	return id, columns, args, tmplt
@@ -352,47 +247,80 @@ func (h *handler) preparePost(namespace string, refIDs []string, ID string, data
 
 func (h *handler) prepareGet(namespace string, refIDs []string, ID string) (string, []any, error) {
 	if len(refIDs) > h.refSize {
-		return "", nil, errors.New("invalid ref size")
+		return "", nil, fmt.Errorf(
+			"%w: ref size is greater than expected (got %v, expected %v)", content.ErrInvalidKey, len(refIDs), h.refSize)
 	}
 
 	buf := bytes.NewBuffer(make([]byte, 0, 100))
 
-	// TODO: handle namespace = "*"
-
-	buf.WriteString(`SELECT ` + strings.Join(append(h.addressCols, "data", "meta"), ",") + ` FROM "` + h.tableName + `" FINAL `)
+	_, err := buf.WriteString(`SELECT ` + strings.Join(append(h.keyCols, "data", "meta"), ",") + ` FROM "` + h.tableName + `" FINAL `)
+	if err != nil {
+		return "", nil, err
+	}
 
 	whereQ, whereArgs, err := h.prepareWhereQuery(namespace, refIDs, ID)
 	if err != nil {
 		return "", nil, err
 	}
-	buf.WriteString(whereQ)
+
+	_, err = buf.WriteString(whereQ)
+	if err != nil {
+		return "", nil, err
+	}
 
 	return buf.String(), whereArgs, nil
 }
 
 func (h *handler) prepareWhereQuery(namespace string, refIDs []string, ID string) (string, []any, error) {
-	args := make([]any, 0, len(refIDs)+2)
+	// keys consist of (namespace, ...refIDs, ID)
+	keySize := len(refIDs) + 2
+
+	args := make([]any, 0, keySize)
 	buf := bytes.NewBuffer(make([]byte, 0, 100))
 
+	// query all data
 	if namespace == "*" {
 		return "", args, nil
 	}
+
+	// if not querying all data, namespace must be specified
 	if namespace == "" {
-		return "", args, errors.New("namespace must be specified")
+		return "", args, fmt.Errorf("%w: namespace must be specified", content.ErrInvalidKey)
 	}
 
-	buf.WriteString(" WHERE namespace = ?")
+	_, err := buf.WriteString(` WHERE namespace = ?`)
+	if err != nil {
+		return "", nil, err
+	}
 	args = append(args, namespace)
 
 	for idx, refID := range refIDs {
-		buf.WriteString(" AND ")
-		buf.WriteString(" ref_id_" +
-			strconv.Itoa(idx+1) + " = ?",
+		_, err := buf.WriteString(` AND `)
+		if err != nil {
+			return "", nil, err
+		}
+
+		_, err = buf.WriteString(` ref_id_` +
+			strconv.Itoa(idx+1) + ` = ?`,
 		)
+		if err != nil {
+			return "", nil, err
+		}
+
 		args = append(args, refID)
 	}
+
+	// check if it's not looking for ID
+	if len(refIDs) < h.refSize {
+		if ID != "" {
+			return "", nil, fmt.Errorf(
+				"%w: id provided without complete parent references", content.ErrInvalidKey)
+		}
+		return buf.String(), args, nil
+	}
+
 	if ID != "" {
-		buf.WriteString(" AND id = ?")
+		buf.WriteString(` AND id = ?`)
 		args = append(args, ID)
 	}
 
@@ -412,4 +340,31 @@ func (h *handler) convertGetData(result []string) *content.Data {
 		Data:      []byte(result[len(result)-2]),
 		Meta:      []byte(result[len(result)-1]),
 	}
+}
+
+func getDdl(tableName string, refSize int) string {
+	buf := bytes.NewBuffer(make([]byte, 0, 100))
+
+	buf.WriteString(`CREATE TABLE IF NOT EXISTS ` + tableName + ` (
+		namespace String,
+`)
+
+	key := make([]string, 0, refSize)
+	key = append(key, `namespace`)
+
+	for i := 0; i < refSize; i++ {
+		refID := `ref_id_` + strconv.Itoa(i+1)
+		buf.WriteString(refID + ` String, ` + "\n")
+		key = append(key, refID)
+	}
+
+	key = append(key, `id`)
+
+	buf.WriteString(`
+		id String,
+		data String,
+		meta String,
+) ENGINE = ReplacingMergeTree ORDER BY (` + strings.Join(key, ", ") + `) ;`)
+
+	return buf.String()
 }

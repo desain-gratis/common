@@ -2,8 +2,9 @@ package base
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
-	"net/http"
 	"strconv"
 	"time"
 
@@ -14,7 +15,6 @@ import (
 	"github.com/desain-gratis/common/delivery/mycontent-api/storage/blob"
 	"github.com/desain-gratis/common/delivery/mycontent-api/storage/content"
 	"github.com/desain-gratis/common/types/entity"
-	types "github.com/desain-gratis/common/types/http"
 )
 
 var _ mycontent.Usecase[*entity.Attachment] = &HandlerWithAttachment{}
@@ -46,7 +46,7 @@ func NewAttachment(
 }
 
 // Overwrite for censoring
-func (c *HandlerWithAttachment) Get(ctx context.Context, userID string, refIDs []string, ID string) ([]*entity.Attachment, *types.CommonError) {
+func (c *HandlerWithAttachment) Get(ctx context.Context, userID string, refIDs []string, ID string) ([]*entity.Attachment, error) {
 	result, err := c.Handler.Get(ctx, userID, refIDs, ID)
 	if err != nil {
 		return nil, err
@@ -61,17 +61,13 @@ func (c *HandlerWithAttachment) Get(ctx context.Context, userID string, refIDs [
 }
 
 // BETA
-func (c *HandlerWithAttachment) GetAttachment(ctx context.Context, userID string, refIDs []string, ID string) (payload io.ReadCloser, meta *entity.Attachment, err *types.CommonError) {
+func (c *HandlerWithAttachment) GetAttachment(ctx context.Context, userID string, refIDs []string, ID string) (payload io.ReadCloser, meta *entity.Attachment, err error) {
 	result, err := c.Handler.Get(ctx, userID, refIDs, ID)
 	if err != nil {
 		return nil, nil, err
 	}
 	if len(result) != 1 {
-		return nil, nil, &types.CommonError{
-			Errors: []types.Error{
-				{HTTPCode: http.StatusNotFound, Code: "NOT_FOUND", Message: "File not found"},
-			},
-		}
+		return nil, nil, fmt.Errorf("%w: file not found", mycontent.ErrNotFound)
 	}
 
 	reader, _, err := c.blobRepo.Get(ctx, result[0].Path)
@@ -86,26 +82,18 @@ func (c *HandlerWithAttachment) GetAttachment(ctx context.Context, userID string
 
 // Put
 // disables the default put behaviour
-func (c *HandlerWithAttachment) Put(ctx context.Context, content *entity.Attachment) (*entity.Attachment, *types.CommonError) {
-	return nil, &types.CommonError{
-		Errors: []types.Error{
-			{
-				HTTPCode: http.StatusMethodNotAllowed,
-				Code:     "NOT_SUPPORTED",
-				Message:  "Put failed. Put are disabled for attachment API. Please use 'Upload' instead",
-			},
-		},
-	}
+func (c *HandlerWithAttachment) Put(ctx context.Context, content *entity.Attachment) (*entity.Attachment, error) {
+	return nil, errors.New("not supported")
 }
 
-func (c *HandlerWithAttachment) Attach(ctx context.Context, meta *entity.Attachment, payload io.Reader) (*entity.Attachment, *types.CommonError) {
+func (c *HandlerWithAttachment) Attach(ctx context.Context, meta *entity.Attachment, payload io.Reader) (*entity.Attachment, error) {
 	// TODO: Get all existing data based on user ID, calculate the total size to do validation
 
 	// Check existing, if exist with the same ID, then use existing
-	existing, errUC := c.Handler.Get(ctx, meta.Namespace(), meta.RefIds, meta.Id)
-	if errUC != nil {
-		if errUC.Errors[0].HTTPCode != http.StatusNotFound {
-			return nil, errUC
+	existing, err := c.Handler.Get(ctx, meta.Namespace(), meta.RefIds, meta.Id)
+	if err != nil {
+		if errors.Is(err, content.ErrNotFound) {
+			return nil, err
 		}
 	}
 
@@ -122,15 +110,7 @@ func (c *HandlerWithAttachment) Attach(ctx context.Context, meta *entity.Attachm
 	}
 
 	if meta.CreatedAt == "" {
-		return nil, &types.CommonError{
-			Errors: []types.Error{
-				{
-					HTTPCode: http.StatusBadRequest,
-					Code:     "UPLOAD_FAILED",
-					Message:  "Empty CreatedAt time",
-				},
-			},
-		}
+		return nil, fmt.Errorf("%w: created at empty", mycontent.ErrValidation)
 	}
 
 	if result != nil {
@@ -145,11 +125,11 @@ func (c *HandlerWithAttachment) Attach(ctx context.Context, meta *entity.Attachm
 	}
 
 	// The rest can be modified
-	result, errUC = c.Handler.Post(ctx, meta, map[string]string{
+	result, err = c.Handler.Post(ctx, meta, map[string]string{
 		"created_at": time.Now().Format(time.RFC3339),
 	})
-	if errUC != nil {
-		return nil, errUC
+	if err != nil {
+		return nil, err
 	}
 
 	// If it's a new object, generate random ID
@@ -157,35 +137,16 @@ func (c *HandlerWithAttachment) Attach(ctx context.Context, meta *entity.Attachm
 		// make random name
 		uid, err := uuid.NewRandom()
 		if err != nil {
-			log.Err(err).Msgf("Error generating UUID for photo uploaded")
-			return nil, &types.CommonError{
-				Errors: []types.Error{
-					{
-						HTTPCode: http.StatusInternalServerError,
-						Code:     "UPLOAD_FAILED",
-						Message:  "Server error when generating image id storage",
-					},
-				},
-			}
+			return nil, fmt.Errorf("%w: failed to generate uuid", err)
 		}
 
 		// overwrite name with random (so cannot be guessed)
 		result.Name = uid.String()
 		t, err := time.Parse(time.RFC3339, result.CreatedAt)
 		if err != nil {
-			if err != nil {
-				log.Err(err).Msgf("Error generating UUID for photo uploaded")
-				return nil, &types.CommonError{
-					Errors: []types.Error{
-						{
-							HTTPCode: http.StatusBadRequest,
-							Code:     "UPLOAD_FAILED",
-							Message:  "Invalid CreatedAt value. Must be RFC339 encoded time",
-						},
-					},
-				}
-			}
+			return nil, fmt.Errorf("%w: invalid created at value, must be RFC3339", err)
 		}
+
 		result.Path = strconv.Itoa(t.Year()) + "/" + strconv.Itoa(int(t.Month())) + "/" + uid.String()
 		if c.namespace != "" {
 			result.Path = c.namespace + "/" + result.Path
@@ -213,7 +174,7 @@ func (c *HandlerWithAttachment) Attach(ctx context.Context, meta *entity.Attachm
 }
 
 // DeleteAttachment generic binary at path
-func (c *HandlerWithAttachment) Delete(ctx context.Context, namespace string, refIDs []string, ID string) (*entity.Attachment, *types.CommonError) {
+func (c *HandlerWithAttachment) Delete(ctx context.Context, namespace string, refIDs []string, ID string) (*entity.Attachment, error) {
 	result, err := c.Handler.Get(ctx, namespace, refIDs, ID)
 	if err != nil {
 		return nil, err

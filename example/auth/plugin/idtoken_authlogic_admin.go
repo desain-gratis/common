@@ -28,7 +28,7 @@ func AdminAuthLogic(adminEmail map[string]struct{}, expiryMinutes int) *adminAut
 	}
 }
 
-func (a *adminAuth) BuildToken(r *http.Request, authMethod string, auth *idtoken.Payload) (tokenData proto.Message, apiData any, expiry time.Time, err *types.CommonError) {
+func (a *adminAuth) BuildToken(r *http.Request, authMethod string, auth *idtoken.Payload) (tokenData proto.Message, apiData any, expiry time.Time, err error) {
 	claim := authapi.GetOIDCClaims(auth.Claims)
 
 	if _, ok := a.adminEmail[claim.Email]; !ok {

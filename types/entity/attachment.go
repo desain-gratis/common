@@ -4,7 +4,6 @@ import (
 	"time"
 
 	"github.com/desain-gratis/common/delivery/mycontent-api/mycontent"
-	types "github.com/desain-gratis/common/types/http"
 )
 
 type Attachment struct {
@@ -65,7 +64,7 @@ func (c *Attachment) RefIDs() []string {
 	return c.RefIds
 }
 
-func (c *Attachment) Validate() *types.CommonError {
+func (c *Attachment) Validate() error {
 	return nil
 }
 

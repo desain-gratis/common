@@ -4,7 +4,6 @@ import (
 	"time"
 
 	"github.com/desain-gratis/common/delivery/mycontent-api/mycontent"
-	types "github.com/desain-gratis/common/types/http"
 )
 
 type (
@@ -98,6 +97,6 @@ func (c *Payload) RefIDs() []string {
 	return nil
 }
 
-func (c *Payload) Validate() *types.CommonError {
+func (c *Payload) Validate() error {
 	return nil
 }

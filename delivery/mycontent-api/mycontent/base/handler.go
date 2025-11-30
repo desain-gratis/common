@@ -3,13 +3,12 @@ package base
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"net/http"
 	"time"
 
 	"github.com/desain-gratis/common/delivery/mycontent-api/mycontent"
 	"github.com/desain-gratis/common/delivery/mycontent-api/storage/content"
-	types "github.com/desain-gratis/common/types/http"
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 )
@@ -32,28 +31,19 @@ func New[T mycontent.Data](
 }
 
 // Post (create new or overwrite) resource here
-func (c *Handler[T]) Post(ctx context.Context, data T, meta any) (T, *types.CommonError) {
+func (c *Handler[T]) Post(ctx context.Context, data T, meta any) (T, error) {
 	var t T
 	err := data.Validate()
 	if err != nil {
 		return t, err
 	}
 
-	// TODO: !!!! ALL VALIDATION TO MOVE TO DELIVERY..
 	if data.Namespace() == "" {
-		return t, &types.CommonError{
-			Errors: []types.Error{
-				{HTTPCode: http.StatusBadRequest, Code: "MISSING_NAMESPACE_IN_DATA", Message: "Please specify content owner ID"},
-			},
-		}
+		return t, fmt.Errorf("%w: namespace cannot be empty", mycontent.ErrValidation)
 	}
 
 	if !isValid(data.RefIDs()) && len(filterEmpty(data.RefIDs())) != c.expectedRefSize {
-		return t, &types.CommonError{
-			Errors: []types.Error{
-				{HTTPCode: http.StatusBadRequest, Code: "INVALID_REF", Message: "Make sure all params are specified"},
-			},
-		}
+		return t, fmt.Errorf("%w: complete reference must be provided during post", mycontent.ErrValidation)
 	}
 
 	// delivery --- up to here -----
@@ -68,28 +58,20 @@ func (c *Handler[T]) Post(ctx context.Context, data T, meta any) (T, *types.Comm
 
 	// created that empty, assign new created date
 	date := data.CreatedTime()
-	if date == (time.Time{}) {
+	if date.Equal(time.Time{}) {
 		data.WithCreatedTime(time.Now())
 	}
 
 	payload, errMarshal := json.Marshal(data)
 	if errMarshal != nil {
-		return t, &types.CommonError{
-			Errors: []types.Error{
-				{HTTPCode: http.StatusBadRequest, Code: "JSON_ENCODE_FAILED", Message: "Failed marshal"},
-			},
-		}
+		return t, err
 	}
 
 	var metaPayload []byte
 	if meta != nil {
 		metaPayload, errMarshal = json.Marshal(meta)
 		if errMarshal != nil {
-			return t, &types.CommonError{
-				Errors: []types.Error{
-					{HTTPCode: http.StatusBadRequest, Code: "JSON_ENCODE_FAILED", Message: "Failed marshal meta"},
-				},
-			}
+			return t, err
 		}
 	}
 
@@ -98,7 +80,7 @@ func (c *Handler[T]) Post(ctx context.Context, data T, meta any) (T, *types.Comm
 		Meta: metaPayload,
 	})
 	if err != nil {
-		return t, err
+		return t, fmt.Errorf("%w: %w during data storage", mycontent.ErrStorage, err)
 	}
 
 	parsedResult, err := Parse[T](result.Data)
@@ -111,22 +93,13 @@ func (c *Handler[T]) Post(ctx context.Context, data T, meta any) (T, *types.Comm
 
 // Get all of your resource for your user ID here
 // Simple wrapper for repository
-func (c *Handler[T]) Get(ctx context.Context, namespace string, refIDs []string, ID string) ([]T, *types.CommonError) {
+func (c *Handler[T]) Get(ctx context.Context, namespace string, refIDs []string, ID string) ([]T, error) {
 	// 1. check if there is ID
 	if ID != "" {
 		if !isValid(refIDs) || len(filterEmpty(refIDs)) != c.expectedRefSize {
 			result := make([]T, 0, 1)
-			return result, &types.CommonError{
-				Errors: []types.Error{
-					{
-						Code:     "NOT_FOUND",
-						HTTPCode: http.StatusNotFound,
-						Message: fmt.Sprintf(
-							"You specify item ID, but some refs are missing: expected ref size %v got: %v id: %v",
-							c.expectedRefSize, refIDs, ID),
-					},
-				},
-			}
+			return result, fmt.Errorf(
+				"%w: when ID is specified, all reference must be specified", mycontent.ErrValidation)
 		}
 
 		result := make([]T, 0, 1)
@@ -137,15 +110,8 @@ func (c *Handler[T]) Get(ctx context.Context, namespace string, refIDs []string,
 		}
 
 		if len(d) == 0 {
-			return result, &types.CommonError{
-				Errors: []types.Error{
-					{
-						Code:     "NOT_FOUND",
-						HTTPCode: http.StatusNotFound,
-						Message:  "You specify item ID, but the specified ID is not found.",
-					},
-				},
-			}
+			return result, fmt.Errorf(
+				"%w: id specified, but content not found", mycontent.ErrNotFound)
 		}
 
 		parsedResult, err := Parse[T](d[0].Data)
@@ -197,30 +163,15 @@ func (c *Handler[T]) Get(ctx context.Context, namespace string, refIDs []string,
 	return result, nil
 }
 
-func (c *Handler[T]) Stream(ctx context.Context, namespace string, refIDs []string, ID string) (<-chan T, *types.CommonError) {
-	return nil, &types.CommonError{
-		Errors: []types.Error{
-			{
-				HTTPCode: 500,
-				Code:     "NOT_IMPLEMENTED",
-			},
-		},
-	}
+func (c *Handler[T]) Stream(ctx context.Context, namespace string, refIDs []string, ID string) (<-chan T, error) {
+	return nil, errors.New("not implemented")
 }
 
 // Delete your resource here
 // the implementation can check whether there are linked resource or not
-func (c *Handler[T]) Delete(ctx context.Context, namespace string, refIDs []string, ID string) (t T, err *types.CommonError) {
+func (c *Handler[T]) Delete(ctx context.Context, namespace string, refIDs []string, ID string) (t T, err error) {
 	if !isValid(refIDs) && len(filterEmpty(refIDs)) != c.expectedRefSize {
-		return t, &types.CommonError{
-			Errors: []types.Error{
-				{
-					Code:     "NOT_FOUND",
-					HTTPCode: http.StatusNotFound,
-					Message:  "You specify item ID, but some refs are missing",
-				},
-			},
-		}
+		return t, fmt.Errorf("%w: complete reference must be provided during delete", mycontent.ErrValidation)
 	}
 
 	// TODO user ID validation
@@ -238,16 +189,11 @@ func (c *Handler[T]) Delete(ctx context.Context, namespace string, refIDs []stri
 	return parsedResult, nil
 }
 
-func Parse[T any](in []byte) (T, *types.CommonError) {
+func Parse[T any](in []byte) (T, error) {
 	var t T
 	err := json.Unmarshal(in, &t)
 	if err != nil {
-		log.Err(err).Msgf("err Parse: '%v'", string(in))
-		return t, &types.CommonError{
-			Errors: []types.Error{
-				{HTTPCode: http.StatusBadRequest, Code: "JSON_DECODE_FAILED", Message: "Failed unmarshal" + err.Error()},
-			},
-		}
+		return t, err
 	}
 	return t, nil
 }

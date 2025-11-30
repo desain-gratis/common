@@ -3,6 +3,8 @@ package mycontentapi
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"mime"
 	"net/http"
@@ -10,9 +12,9 @@ import (
 	"strings"
 
 	"github.com/julienschmidt/httprouter"
-	"github.com/rs/zerolog/log"
 
 	"github.com/desain-gratis/common/delivery/mycontent-api/mycontent"
+	"github.com/desain-gratis/common/delivery/mycontent-api/storage/content"
 	entity "github.com/desain-gratis/common/types/entity"
 	types "github.com/desain-gratis/common/types/http"
 )
@@ -117,11 +119,9 @@ func (i *uploadService) Get(w http.ResponseWriter, r *http.Request, p httprouter
 		return
 	}
 
-	payload, meta, errUC := i.uc.GetAttachment(r.Context(), namespace, refIDs, ID)
-	if errUC != nil {
-		errMessage := serializeError(errUC)
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write(errMessage)
+	payload, meta, err := i.uc.GetAttachment(r.Context(), namespace, refIDs, ID)
+	if err != nil {
+		handleGetError(w, err)
 		return
 	}
 	defer payload.Close()
@@ -134,12 +134,13 @@ func (i *uploadService) Get(w http.ResponseWriter, r *http.Request, p httprouter
 	w.WriteHeader(http.StatusOK)
 
 	var x int64
-	_, err := io.Copy(w, payload)
+	_, err = io.Copy(w, payload)
 	if err == io.EOF {
 		return
 	}
 	if err != nil {
-		log.Err(err).Msgf("Error when transfering file. %v/%v out of bytes read", x, meta.ContentSize)
+		err = fmt.Errorf("%w: error when transfering file%v/%v content transfer", err, x, meta.ContentSize)
+		handleError(w, "SERVER_ERROR", "server error", http.StatusInternalServerError, err)
 		return
 	}
 }
@@ -150,112 +151,61 @@ func (i *uploadService) Upload(w http.ResponseWriter, r *http.Request, p httprou
 
 	reader, err := r.MultipartReader()
 	if err != nil {
-		errMessage := serializeError(&types.CommonError{
-			Errors: []types.Error{
-				{HTTPCode: http.StatusBadRequest, Message: "Failed to read as multipart/form-data", Code: "BAD_REQUEST"},
-			},
-		},
-		)
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write(errMessage)
+		handleError(w, "BAD_REQUEST", "failed to read as multipart/form-data", http.StatusBadRequest, nil)
 		return
 	}
 
 	part, err := reader.NextPart()
 	if err != nil {
-		errMessage := serializeError(&types.CommonError{
-			Errors: []types.Error{
-				{HTTPCode: http.StatusBadRequest, Message: "Expecting data with form name 'document'", Code: "BAD_REQUEST"},
-			},
-		})
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write(errMessage)
+		handleError(w, "BAD_REQUEST", "expecting data with form name 'document'", http.StatusBadRequest, nil)
 		return
 	}
 	if part.FormName() != "document" {
-		errMessage := serializeError(&types.CommonError{
-			Errors: []types.Error{
-				{HTTPCode: http.StatusBadRequest, Message: "Need to specify 'document' field in the first part of requeset", Code: "BAD_REQUEST"},
-			},
-		})
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write(errMessage)
+		handleError(w, "BAD_REQUEST", "need to specify 'document' field in the first part of request", http.StatusBadRequest, nil)
 		return
 	}
 	_doc, err := io.ReadAll(io.LimitReader(part, 200<<10)) // 200 Kb docs
 	if err != nil {
-		log.Err(err).Msgf("Some error happened when reading data")
-		errMessage := serializeError(&types.CommonError{
-			Errors: []types.Error{
-				{Message: "Failed to read all body", Code: "SERVER_ERROR"},
-			},
-		},
-		)
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write(errMessage)
+		handleError(w, "SERVER_ERROR", "error while reading data", http.StatusInternalServerError, err)
 		return
 	}
 
 	attachmentData := &entity.Attachment{}
 	err = json.Unmarshal(_doc, attachmentData)
 	if err != nil {
-		errMessage := serializeError(&types.CommonError{
-			Errors: []types.Error{
-				{Message: "Failed to parse body (attachment API). Make sure file size does not exceed 200 Kb: " + err.Error(), Code: "BAD_REQUEST"},
-			},
-		},
-		)
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write(errMessage)
+		handleError(
+			w, "BAD_REQUEST", "failed to parse body. Make sure file size does not exceed 200Kb",
+			http.StatusBadRequest, nil)
 		return
 	}
 
 	if attachmentData.Namespace() == "" {
-		d := serializeError(&types.CommonError{
-			Errors: []types.Error{
-				{HTTPCode: http.StatusBadRequest, Code: "EMPTY_NAMESPACE", Message: "Please specify 'Namespace'"},
-			},
-		})
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write(d)
+		handleError(
+			w, "BAD_REQUEST", "attachment data namespace cannot be empty header is empty",
+			http.StatusBadRequest, nil)
 		return
 	}
 
 	part, err = reader.NextPart()
 	if err != nil {
-		errMessage := serializeError(&types.CommonError{
-			Errors: []types.Error{
-				{HTTPCode: http.StatusBadRequest, Message: "Expecting data with form name 'attachment'", Code: "BAD_REQUEST"},
-			},
-		},
-		)
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write(errMessage)
+		handleError(
+			w, "BAD_REQUEST", "expecting data next part with form name 'attachment'",
+			http.StatusBadRequest, nil)
 		return
 	}
 
 	if part.FormName() != "attachment" {
-		errMessage := serializeError(&types.CommonError{
-			Errors: []types.Error{
-				{HTTPCode: http.StatusBadRequest, Message: "Expecting data with form name 'attachment'", Code: "BAD_REQUEST"},
-			},
-		},
-		)
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write(errMessage)
+		handleError(
+			w, "BAD_REQUEST", "expecting data with form name 'attachment'",
+			http.StatusBadRequest, nil)
 		return
 	}
 
 	contentType, _, err := mime.ParseMediaType(part.Header.Get("Content-Type"))
 	if err != nil {
-		errMessage := serializeError(&types.CommonError{
-			Errors: []types.Error{
-				{HTTPCode: http.StatusInternalServerError, Message: "Failed to parse content type", Code: "BAD_REQUEST"},
-			},
-		},
-		)
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write(errMessage)
+		handleError(
+			w, "BAD_REQUEST", "invalid content type",
+			http.StatusBadRequest, nil)
 		return
 	}
 
@@ -266,15 +216,9 @@ func (i *uploadService) Upload(w http.ResponseWriter, r *http.Request, p httprou
 	header := make([]byte, 512)
 	_, err = teeReader.Read(header)
 	if err != nil && err != io.EOF {
-		log.Err(err).Str("namespace", attachmentData.Namespace()).Msgf("Failed to read. Declared ct %v. Header %v", contentType, string(header))
-		errMessage := serializeError(&types.CommonError{
-			Errors: []types.Error{
-				{HTTPCode: http.StatusInternalServerError, Message: "Failed to parse media type", Code: "SERVER_ERROR"},
-			},
-		},
-		)
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write(errMessage)
+		handleError(
+			w, "BAD_REQUEST", "failed to parse media type",
+			http.StatusBadRequest, err)
 		return
 	}
 
@@ -294,11 +238,9 @@ func (i *uploadService) Upload(w http.ResponseWriter, r *http.Request, p httprou
 
 	multi := io.MultiReader(headerRead, part)
 
-	result, errUC := i.uc.Attach(r.Context(), attachmentData, multi)
-	if errUC != nil {
-		d := serializeError(errUC)
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write(d)
+	result, err := i.uc.Attach(r.Context(), attachmentData, multi)
+	if err != nil {
+		handleAttachError(w, err)
 		return
 	}
 
@@ -306,16 +248,19 @@ func (i *uploadService) Upload(w http.ResponseWriter, r *http.Request, p httprou
 		Success: &result,
 	})
 	if err != nil {
-		log.Err(err).Msgf("Failed to parse payload")
-		errMessage := serializeError(&types.CommonError{
-			Errors: []types.Error{
-				{Message: "Failed to parse response", Code: "SERVER_ERROR"},
-			},
-		})
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write(errMessage)
-		return
+		handleError(
+			w, "SERVER_ERROR", "server encounter an error",
+			http.StatusInternalServerError, err)
 	}
+
 	w.WriteHeader(http.StatusOK)
 	w.Write(payload)
+}
+func handleAttachError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, content.ErrInvalidKey):
+		handleError(w, "BAD_REQUEST", err.Error(), http.StatusBadRequest, nil)
+	default:
+		handleError(w, "SERVER_ERROR", "server error", http.StatusInternalServerError, err)
+	}
 }

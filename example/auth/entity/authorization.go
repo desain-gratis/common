@@ -5,7 +5,6 @@ import (
 
 	"github.com/desain-gratis/common/delivery/mycontent-api/mycontent"
 	"github.com/desain-gratis/common/types/entity"
-	types "github.com/desain-gratis/common/types/http"
 )
 
 type (
@@ -82,6 +81,6 @@ func (c *UserAuthorization) RefIDs() []string {
 	return nil
 }
 
-func (c *UserAuthorization) Validate() *types.CommonError {
+func (c *UserAuthorization) Validate() error {
 	return nil
 }

@@ -22,10 +22,10 @@ const (
 )
 
 type AuthParser string
-type AuthLogic func(req *http.Request, authMethod string, payload *idtoken.Payload) (tokenData proto.Message, apiData any, expiry time.Time, err *types.CommonError)
+type AuthLogic func(req *http.Request, authMethod string, payload *idtoken.Payload) (tokenData proto.Message, apiData any, expiry time.Time, err error)
 
 type TokenBuilder interface {
-	BuildToken(req *http.Request, authMethod string, payload *idtoken.Payload) (tokenData proto.Message, apiData any, expiry time.Time, err *types.CommonError)
+	BuildToken(req *http.Request, authMethod string, payload *idtoken.Payload) (tokenData proto.Message, apiData any, expiry time.Time, err error)
 }
 
 func GetToken(tokenBuilder TokenBuilder, tokenSigner TokenSigner) httprouter.Handle {
@@ -58,7 +58,7 @@ func GetToken(tokenBuilder TokenBuilder, tokenSigner TokenSigner) httprouter.Han
 		if errUC != nil {
 			errMessage := types.SerializeError(&types.CommonError{
 				Errors: []types.Error{
-					{Message: "Failed to get user auth: " + errUC.Err().Error(), Code: "SERVER_ERROR"},
+					{Message: "Failed to get user auth: " + errUC.Error(), Code: "SERVER_ERROR"},
 				}})
 			w.WriteHeader(http.StatusInternalServerError)
 			w.Write(errMessage)
@@ -80,8 +80,8 @@ func GetToken(tokenBuilder TokenBuilder, tokenSigner TokenSigner) httprouter.Han
 		}
 
 		// 4. Sign the proto token
-		newToken, errUC := tokenSigner.Sign(r.Context(), payload, expiry)
-		if errUC != nil {
+		newToken, err := tokenSigner.Sign(r.Context(), payload, expiry)
+		if err != nil {
 			if r.Context().Err() != nil {
 				return
 			}

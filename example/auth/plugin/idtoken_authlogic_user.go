@@ -35,7 +35,7 @@ func NewUserAuthLogic(authUser mycontent.Usecase[*entity.UserAuthorization], exp
 	}
 }
 
-func (a *userAuth) BuildToken(r *http.Request, authMethod string, auth *idtoken.Payload) (tokenData proto.Message, apiData any, expiry time.Time, err *types.CommonError) {
+func (a *userAuth) BuildToken(r *http.Request, authMethod string, auth *idtoken.Payload) (tokenData proto.Message, apiData any, expiry time.Time, err error) {
 	claim := authapi.GetOIDCClaims(auth.Claims)
 
 	// Locale
@@ -47,15 +47,15 @@ func (a *userAuth) BuildToken(r *http.Request, authMethod string, auth *idtoken.
 
 	// notice that "root" is hardcoded
 	// also, we get the authentication based on claim.Email.
-	authData, errUserUC := a.authUser.Get(r.Context(), "root", []string{}, claim.Email)
-	if errUserUC != nil {
-		return nil, nil, expiry, errUserUC
+	authData, err := a.authUser.Get(r.Context(), "root", []string{}, claim.Email)
+	if err != nil {
+		return nil, nil, expiry, err
 	}
 
 	if len(authData) != 1 {
 		uerrUserUC := &types.CommonError{
 			Errors: []types.Error{
-				{Message: "Failed to get user auth: " + errUserUC.Err().Error(), Code: "NOT_FOUND"},
+				{Message: "Failed to get user auth: " + err.Error(), Code: "NOT_FOUND"},
 			}}
 
 		return nil, nil, expiry, uerrUserUC

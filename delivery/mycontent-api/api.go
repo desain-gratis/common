@@ -2,7 +2,9 @@ package mycontentapi
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -12,6 +14,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/desain-gratis/common/delivery/mycontent-api/mycontent"
+	"github.com/desain-gratis/common/delivery/mycontent-api/storage/content"
 	types "github.com/desain-gratis/common/types/http"
 )
 
@@ -53,52 +56,31 @@ func (i *service[T]) Post(w http.ResponseWriter, r *http.Request, p httprouter.P
 	// Read body parse entity and extract metadata
 
 	if len(r.URL.Query()) > 0 {
-		errMessage := serializeError(&types.CommonError{
-			Errors: []types.Error{
-				{Message: "Please do not enter URL parameter in Post request", Code: "BAD_REQUEST", HTTPCode: http.StatusBadRequest},
-			},
-		},
-		)
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write(errMessage)
+		handleError(w, "BAD_REQUEST", "URL Parameter should not be specified", http.StatusBadRequest, nil)
 		return
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, maximumRequestLength)
 	payload, err := io.ReadAll(r.Body)
 	if err != nil {
-		errMessage := serializeError(&types.CommonError{
-			Errors: []types.Error{
-				{Message: "Failed to read all body", Code: "SERVER_ERROR"},
-			},
-		},
-		)
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write(errMessage)
+		handleError(w, "SERVER_ERROR", "failed to read payload", http.StatusInternalServerError, err)
 		return
 	}
 
 	var resource T
 	err = json.Unmarshal(payload, &resource)
 	if err != nil {
-		errMessage := serializeError(&types.CommonError{
-			Errors: []types.Error{
-				{Message: "Failed to parse body (content API). Make sure file size does not exceed 200 Kb: " + err.Error(), Code: "BAD_REQUEST"},
-			},
-		},
-		)
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write(errMessage)
+		handleError(
+			w, "BAD_REQUEST", "failed to parse body. Make sure file size does not exceed 200Kb",
+			http.StatusBadRequest, nil)
 		return
 	}
 
-	result, errUC := i.uc.Post(r.Context(), resource, map[string]string{
+	result, err := i.uc.Post(r.Context(), resource, map[string]string{
 		"created_at": time.Now().Format(time.RFC3339),
 	})
-	if errUC != nil {
-		d := serializeError(errUC)
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write(d)
+	if err != nil {
+		handlePostError(w, err)
 		return
 	}
 
@@ -117,16 +99,12 @@ func (i *service[T]) Post(w http.ResponseWriter, r *http.Request, p httprouter.P
 		Success: &result,
 	})
 	if err != nil {
-		log.Err(err).Msgf("Failed to parse payload")
-		errMessage := serializeError(&types.CommonError{
-			Errors: []types.Error{
-				{Message: "Failed to parse response", Code: "SERVER_ERROR"},
-			},
-		})
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write(errMessage)
+		handleError(
+			w, "SERVER_ERROR", "server encounter an error",
+			http.StatusInternalServerError, err)
 		return
 	}
+
 	w.WriteHeader(http.StatusOK)
 	w.Write(payload)
 }
@@ -134,25 +112,17 @@ func (i *service[T]) Post(w http.ResponseWriter, r *http.Request, p httprouter.P
 func (i *service[T]) Get(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	namespace := r.Header.Get("X-Namespace")
 	if namespace == "" {
-		d := serializeError(&types.CommonError{
-			Errors: []types.Error{
-				{HTTPCode: http.StatusBadRequest, Code: "EMPTY_NAMESPACE", Message: "Please specify header 'X-Namespace'"},
-			},
-		})
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write(d)
+		handleError(
+			w, "BAD_REQUEST", "'X-Namespace' header is empty",
+			http.StatusBadRequest, nil)
 		return
 	}
 
 	invalidParams := validateParams(i.whitelistParams, r.URL.Query())
 	if len(invalidParams) > 0 {
-		d := serializeError(&types.CommonError{
-			Errors: []types.Error{
-				{HTTPCode: http.StatusBadRequest, Code: "INVALID_PARAMS", Message: "Invalid parameter(s):" + strings.Join(invalidParams, ",")},
-			},
-		})
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write(d)
+		handleError(
+			w, "BAD_REQUEST", "invalid parameter(s): "+strings.Join(invalidParams, ","),
+			http.StatusBadRequest, nil)
 		return
 	}
 
@@ -163,11 +133,9 @@ func (i *service[T]) Get(w http.ResponseWriter, r *http.Request, p httprouter.Pa
 	}
 
 	// Actually get the data
-	result, errUC := i.uc.Get(r.Context(), namespace, refIDs, ID)
-	if errUC != nil {
-		errMessage := serializeError(errUC)
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write(errMessage)
+	result, err := i.uc.Get(r.Context(), namespace, refIDs, ID)
+	if err != nil {
+		handleGetError(w, err)
 		return
 	}
 
@@ -182,15 +150,9 @@ func (i *service[T]) Get(w http.ResponseWriter, r *http.Request, p httprouter.Pa
 	})
 
 	if err != nil {
-		log.Err(err).Msgf("Failed to parse payload")
-		errMessage := serializeError(&types.CommonError{
-			Errors: []types.Error{
-				{Message: "Failed to parse response", Code: "SERVER_ERROR"},
-			},
-		})
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write(errMessage)
-		return
+		handleError(
+			w, "SERVER_ERROR", "server encounter an error",
+			http.StatusInternalServerError, err)
 	}
 	w.WriteHeader(http.StatusOK)
 	w.Write(payload)
@@ -199,25 +161,17 @@ func (i *service[T]) Get(w http.ResponseWriter, r *http.Request, p httprouter.Pa
 func (i *service[T]) Delete(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	namespace := r.Header.Get("X-Namespace")
 	if namespace == "" {
-		d := serializeError(&types.CommonError{
-			Errors: []types.Error{
-				{HTTPCode: http.StatusBadRequest, Code: "EMPTY_NAMESPACE", Message: "Please specify header 'X-Namespace'"},
-			},
-		})
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write(d)
+		handleError(
+			w, "BAD_REQUEST", "'X-Namespace' header is empty",
+			http.StatusBadRequest, nil)
 		return
 	}
 
 	invalidParams := validateParams(i.whitelistParams, r.URL.Query())
 	if len(invalidParams) > 0 {
-		d := serializeError(&types.CommonError{
-			Errors: []types.Error{
-				{HTTPCode: http.StatusBadRequest, Code: "INVALID_PARAMS", Message: "Invalid parameter(s):" + strings.Join(invalidParams, ",")},
-			},
-		})
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write(d)
+		handleError(
+			w, "BAD_REQUEST", "invalid parameter(s): "+strings.Join(invalidParams, ","),
+			http.StatusBadRequest, nil)
 		return
 	}
 
@@ -228,28 +182,21 @@ func (i *service[T]) Delete(w http.ResponseWriter, r *http.Request, p httprouter
 	}
 
 	// Get the data first.
-	getBeforeDeleteResult, errUC := i.uc.Get(r.Context(), namespace, refIDs, ID)
-	if errUC != nil {
-		errMessage := serializeError(errUC)
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write(errMessage)
+	getBeforeDeleteResult, err := i.uc.Get(r.Context(), namespace, refIDs, ID)
+	if err != nil {
+		handleGetError(w, err)
 		return
 	}
 
 	if len(getBeforeDeleteResult) != 1 {
-		errMessage := serializeError(errUC)
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write(errMessage)
-		log.Error().Msgf("Should not happen")
+		handleError(w, "BAD_REQUEST", "not found", http.StatusNotFound, nil)
 		return
 	}
 
 	// Do the actual deletion
-	result, errUC := i.uc.Delete(r.Context(), namespace, refIDs, ID)
-	if errUC != nil {
-		errMessage := serializeError(errUC)
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write(errMessage)
+	result, err := i.uc.Delete(r.Context(), namespace, refIDs, ID)
+	if err != nil {
+		handleDeleteError(w, err)
 		return
 	}
 
@@ -291,4 +238,64 @@ func validateParams(whitelisted map[string]struct{}, params url.Values) (invalid
 		}
 	}
 	return invalidParams
+}
+
+func handlePostError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, mycontent.ErrValidation):
+		handleError(w, "BAD_REQUEST", err.Error(), http.StatusBadRequest, nil)
+	case errors.Is(err, mycontent.ErrNotFound):
+		handleError(w, "NOT_FOUND", err.Error(), http.StatusNotFound, nil)
+	case errors.Is(err, content.ErrInvalidKey):
+		handleError(w, "BAD_REQUEST", err.Error(), http.StatusBadRequest, nil)
+	case errors.Is(err, content.ErrNotFound):
+		handleError(w, "NOT_FOUND", err.Error(), http.StatusNotFound, nil)
+	default:
+		handleError(w, "SERVER_ERROR", "server error", http.StatusInternalServerError, err)
+	}
+}
+
+func handleGetError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, mycontent.ErrValidation):
+		handleError(w, "BAD_REQUEST", err.Error(), http.StatusBadRequest, nil)
+	case errors.Is(err, mycontent.ErrNotFound):
+		handleError(w, "NOT_FOUND", err.Error(), http.StatusNotFound, nil)
+	case errors.Is(err, content.ErrInvalidKey):
+		handleError(w, "BAD_REQUEST", err.Error(), http.StatusBadRequest, nil)
+	case errors.Is(err, content.ErrNotFound):
+		handleError(w, "NOT_FOUND", err.Error(), http.StatusNotFound, nil)
+	default:
+		handleError(w, "SERVER_ERROR", "server error", http.StatusInternalServerError, err)
+	}
+}
+
+func handleDeleteError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, mycontent.ErrValidation):
+		handleError(w, "BAD_REQUEST", err.Error(), http.StatusBadRequest, nil)
+	case errors.Is(err, mycontent.ErrNotFound):
+		handleError(w, "NOT_FOUND", err.Error(), http.StatusNotFound, nil)
+	case errors.Is(err, content.ErrInvalidKey):
+		handleError(w, "BAD_REQUEST", err.Error(), http.StatusBadRequest, nil)
+	case errors.Is(err, content.ErrNotFound):
+		handleError(w, "NOT_FOUND", err.Error(), http.StatusNotFound, nil)
+	default:
+		handleError(w, "SERVER_ERROR", "server error", http.StatusInternalServerError, err)
+	}
+}
+
+func handleError(w http.ResponseWriter, code, msg string, httpStatus int, err error) {
+	if err != nil {
+		slog.Error("failed to serve request", slog.String("error", err.Error()))
+	}
+
+	w.WriteHeader(http.StatusInternalServerError)
+	message := serializeError(&types.CommonError{
+		Errors: []types.Error{
+			{Message: msg, Code: code, HTTPCode: httpStatus},
+		},
+	})
+
+	w.Write(message)
 }

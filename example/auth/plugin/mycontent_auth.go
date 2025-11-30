@@ -20,7 +20,7 @@ func MyContentWithAuth[T mycontent.Data](base mycontent.Usecase[T]) *mcAuth[T] {
 	}
 }
 
-func (a *mcAuth[T]) Post(ctx context.Context, data T, meta any) (T, *types.CommonError) {
+func (a *mcAuth[T]) Post(ctx context.Context, data T, meta any) (T, error) {
 	auth := getAuth(ctx)
 	if auth == nil {
 		return data, &types.CommonError{
@@ -46,7 +46,7 @@ func (a *mcAuth[T]) Post(ctx context.Context, data T, meta any) (T, *types.Commo
 }
 
 // Get all of your resource for your user ID here
-func (a *mcAuth[T]) Get(ctx context.Context, namespace string, refIDs []string, ID string) ([]T, *types.CommonError) {
+func (a *mcAuth[T]) Get(ctx context.Context, namespace string, refIDs []string, ID string) ([]T, error) {
 	auth := getAuth(ctx)
 	if auth == nil {
 		return nil, &types.CommonError{
@@ -73,7 +73,7 @@ func (a *mcAuth[T]) Get(ctx context.Context, namespace string, refIDs []string, 
 
 // Delete your resource here
 // the implementation can check whether there are linked resource or not
-func (a *mcAuth[T]) Delete(ctx context.Context, namespace string, refIDs []string, ID string) (T, *types.CommonError) {
+func (a *mcAuth[T]) Delete(ctx context.Context, namespace string, refIDs []string, ID string) (T, error) {
 	var data T
 
 	auth := getAuth(ctx)

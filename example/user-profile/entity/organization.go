@@ -83,6 +83,6 @@ func (c *Organization) RefIDs() []string {
 	return []string{}
 }
 
-func (c *Organization) Validate() *types.CommonError {
+func (c *Organization) Validate() error {
 	return nil
 }

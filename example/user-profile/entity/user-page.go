@@ -85,6 +85,6 @@ func (c *UserPage) RefIDs() []string {
 	return []string{c.OrganizationID, c.ProfileId}
 }
 
-func (c *UserPage) Validate() *types.CommonError {
+func (c *UserPage) Validate() error {
 	return nil
 }

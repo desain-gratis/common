@@ -3,22 +3,20 @@ package blob
 import (
 	"context"
 	"io"
-
-	types "github.com/desain-gratis/common/types/http"
 )
 
 type Repository interface {
 	// Upload generic binary to path
 	// Path is internal address
-	Upload(ctx context.Context, path string, contentType string, payload io.Reader) (*Data, *types.CommonError)
+	Upload(ctx context.Context, path string, contentType string, payload io.Reader) (*Data, error)
 
 	// Delete generic binary at path
-	Delete(ctx context.Context, path string) (*Data, *types.CommonError)
+	Delete(ctx context.Context, path string) (*Data, error)
 
 	// Get the data
 	// Better just use the public URL,
 	// But if the data is small & meant to be private then can use this
-	Get(ctx context.Context, path string) (io.ReadCloser, *Data, *types.CommonError)
+	Get(ctx context.Context, path string) (io.ReadCloser, *Data, error)
 }
 
 type Data struct {

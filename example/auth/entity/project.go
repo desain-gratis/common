@@ -4,7 +4,6 @@ import (
 	"time"
 
 	"github.com/desain-gratis/common/delivery/mycontent-api/mycontent"
-	types "github.com/desain-gratis/common/types/http"
 )
 
 type Project struct {
@@ -57,6 +56,6 @@ func (c *Project) RefIDs() []string {
 	return nil
 }
 
-func (c *Project) Validate() *types.CommonError {
+func (c *Project) Validate() error {
 	return nil
 }

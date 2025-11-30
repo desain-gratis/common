@@ -24,7 +24,7 @@ func MyContentAttachmentWithAuth(base *mycontent_base.HandlerWithAttachment) *mc
 	}
 }
 
-func (a *mcAttachAuth) Post(ctx context.Context, data *common_entity.Attachment, meta any) (*common_entity.Attachment, *types.CommonError) {
+func (a *mcAttachAuth) Post(ctx context.Context, data *common_entity.Attachment, meta any) (*common_entity.Attachment, error) {
 	auth := getAuth(ctx)
 	if auth == nil {
 		return data, &types.CommonError{
@@ -50,7 +50,7 @@ func (a *mcAttachAuth) Post(ctx context.Context, data *common_entity.Attachment,
 }
 
 // Get all of your resource for your user ID here
-func (a *mcAttachAuth) Get(ctx context.Context, namespace string, refIDs []string, ID string) ([]*common_entity.Attachment, *types.CommonError) {
+func (a *mcAttachAuth) Get(ctx context.Context, namespace string, refIDs []string, ID string) ([]*common_entity.Attachment, error) {
 	auth := getAuth(ctx)
 	if auth == nil {
 		return nil, &types.CommonError{
@@ -77,7 +77,7 @@ func (a *mcAttachAuth) Get(ctx context.Context, namespace string, refIDs []strin
 
 // Delete your resource here
 // the implementation can check whether there are linked resource or not
-func (a *mcAttachAuth) Delete(ctx context.Context, namespace string, refIDs []string, ID string) (*common_entity.Attachment, *types.CommonError) {
+func (a *mcAttachAuth) Delete(ctx context.Context, namespace string, refIDs []string, ID string) (*common_entity.Attachment, error) {
 	var data *common_entity.Attachment
 
 	auth := getAuth(ctx)
@@ -104,7 +104,7 @@ func (a *mcAttachAuth) Delete(ctx context.Context, namespace string, refIDs []st
 	return a.Handler.Delete(ctx, namespace, refIDs, ID)
 }
 
-func (a *mcAttachAuth) Attach(ctx context.Context, meta *common_entity.Attachment, payload io.Reader) (*common_entity.Attachment, *types.CommonError) {
+func (a *mcAttachAuth) Attach(ctx context.Context, meta *common_entity.Attachment, payload io.Reader) (*common_entity.Attachment, error) {
 	auth := getAuth(ctx)
 	if auth == nil {
 		return meta, &types.CommonError{
@@ -127,7 +127,7 @@ func (a *mcAttachAuth) Attach(ctx context.Context, meta *common_entity.Attachmen
 	return a.HandlerWithAttachment.Attach(ctx, meta, payload)
 }
 
-func (a *mcAttachAuth) GetAttachment(ctx context.Context, userID string, refIDs []string, ID string) (payload io.ReadCloser, meta *common_entity.Attachment, err *types.CommonError) {
+func (a *mcAttachAuth) GetAttachment(ctx context.Context, userID string, refIDs []string, ID string) (payload io.ReadCloser, meta *common_entity.Attachment, err error) {
 	auth := getAuth(ctx)
 	if auth == nil {
 		return nil, meta, &types.CommonError{

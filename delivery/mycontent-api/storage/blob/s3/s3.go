@@ -2,15 +2,13 @@ package s3
 
 import (
 	"context"
+	"fmt"
 	"io"
-	"net/http"
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
-	"github.com/rs/zerolog/log"
 
 	blob "github.com/desain-gratis/common/delivery/mycontent-api/storage/blob"
-	types "github.com/desain-gratis/common/types/http"
 )
 
 var _ blob.Repository = &handler{}
@@ -44,19 +42,10 @@ func New(
 	}, nil
 }
 
-func (h *handler) Upload(ctx context.Context, objectPath string, contentType string, payload io.Reader) (*blob.Data, *types.CommonError) {
+func (h *handler) Upload(ctx context.Context, objectPath string, contentType string, payload io.Reader) (*blob.Data, error) {
 	exists, err := h.client.BucketExists(ctx, h.bucketName)
 	if !exists || err != nil {
-		log.Err(err).Msgf("Cannot get s3 bucket %v", h.bucketName)
-		return nil, &types.CommonError{
-			Errors: []types.Error{
-				{
-					HTTPCode: http.StatusInternalServerError,
-					Code:     "UPLOAD_FAILED",
-					Message:  "Server error when accessing storage",
-				},
-			},
-		}
+		return nil, fmt.Errorf("%w: failure when accessing storage or bucket not exist %v", err, !exists)
 	}
 
 	// TODO: -1 uses memory they said..
@@ -66,19 +55,8 @@ func (h *handler) Upload(ctx context.Context, objectPath string, contentType str
 	if err != nil {
 		// generic message for user.
 		// we don't want users know where do we store data
-		log.Err(err).Msgf("Error when finish writing data to object in")
-		return nil, &types.CommonError{
-			Errors: []types.Error{
-				{
-					HTTPCode: http.StatusFailedDependency,
-					Code:     "UPLOAD_FAILED",
-					Message:  "failed to put object",
-				},
-			},
-		}
+		return nil, fmt.Errorf("%w: failed to put object", err)
 	}
-
-	log.Info().Msgf("upload info: %v", info)
 
 	return &blob.Data{
 		PublicURL:   h.basePublicUrl + "/" + objectPath,
@@ -89,33 +67,15 @@ func (h *handler) Upload(ctx context.Context, objectPath string, contentType str
 }
 
 // Delete generic binary at path
-func (h *handler) Delete(ctx context.Context, path string) (*blob.Data, *types.CommonError) {
+func (h *handler) Delete(ctx context.Context, path string) (*blob.Data, error) {
 	exists, err := h.client.BucketExists(ctx, h.bucketName)
 	if !exists || err != nil {
-		log.Err(err).Msgf("del: cannot get bucket %v", h.bucketName)
-		return nil, &types.CommonError{
-			Errors: []types.Error{
-				{
-					HTTPCode: http.StatusInternalServerError,
-					Code:     "DELETE_FAILED",
-					Message:  "Server error when accessing storage",
-				},
-			},
-		}
+		return nil, fmt.Errorf("%w: (delete) failure when accessing storage or bucket not exist %v", err, !exists)
 	}
 
 	err = h.client.RemoveObject(ctx, h.bucketName, path, minio.RemoveObjectOptions{})
 	if err != nil && err.Error() != "storage: object name is empty" {
-		log.Err(err).Msgf("Cannot delete object at %v", path)
-		return nil, &types.CommonError{
-			Errors: []types.Error{
-				{
-					HTTPCode: http.StatusInternalServerError,
-					Code:     "DELETE_FAILED",
-					Message:  "Server error when delete storage data",
-				},
-			},
-		}
+		return nil, fmt.Errorf("%w: server error during delete", err)
 	}
 
 	return &blob.Data{
@@ -126,33 +86,16 @@ func (h *handler) Delete(ctx context.Context, path string) (*blob.Data, *types.C
 // Get the data
 // Better just use the public URL,
 // But if the data is small & meant to be private then can use this
-func (h *handler) Get(ctx context.Context, path string) (io.ReadCloser, *blob.Data, *types.CommonError) {
+func (h *handler) Get(ctx context.Context, path string) (io.ReadCloser, *blob.Data, error) {
 	exists, err := h.client.BucketExists(ctx, h.bucketName)
 	if !exists || err != nil {
-		log.Err(err).Msgf("get: cannot get bucket %v", h.bucketName)
-		return nil, nil, &types.CommonError{
-			Errors: []types.Error{
-				{
-					HTTPCode: http.StatusInternalServerError,
-					Code:     "GET_FAILED",
-					Message:  "Server error when accessing storage",
-				},
-			},
-		}
+		return nil, nil, fmt.Errorf("%w: failure when accessing storage or bucket not exist %v", err, !exists)
 	}
 
 	object, err := h.client.GetObject(ctx, h.bucketName, path, minio.GetObjectOptions{})
 	if err != nil && err.Error() != "storage: object name is empty" {
-		log.Err(err).Msgf("Cannot delete object at %v", path)
-		return nil, nil, &types.CommonError{
-			Errors: []types.Error{
-				{
-					HTTPCode: http.StatusInternalServerError,
-					Code:     "GET_FAILED",
-					Message:  "Server error when get storage data",
-				},
-			},
-		}
+		return nil, nil, fmt.Errorf(
+			"%w: cannot get object at path %v", err, path)
 	}
 
 	return object, nil, nil

@@ -27,7 +27,7 @@ func New(db *sqlx.DB, tableName string, refSize int) *handler {
 	}
 }
 
-func (h *handler) Get(ctx context.Context, namespace string, refIDs []string, ID string) (resp []content.Data, err *types.CommonError) {
+func (h *handler) Get(ctx context.Context, namespace string, refIDs []string, ID string) (resp []content.Data, err error) {
 	pKey := PrimaryKey{
 		Namespace: namespace,
 		RefIDs:    refIDs,
@@ -89,7 +89,7 @@ func (h *handler) Get(ctx context.Context, namespace string, refIDs []string, ID
 	return
 }
 
-func (h *handler) Post(ctx context.Context, namespace string, refIDs []string, ID string, input content.Data) (out content.Data, err *types.CommonError) {
+func (h *handler) Post(ctx context.Context, namespace string, refIDs []string, ID string, input content.Data) (out content.Data, err error) {
 	pKey := PrimaryKey{
 		Namespace: namespace,
 		ID:        ID,
@@ -144,7 +144,7 @@ func (h *handler) Post(ctx context.Context, namespace string, refIDs []string, I
 	return input, nil
 }
 
-func (h *handler) Delete(ctx context.Context, namespace string, refIDs []string, ID string) (out content.Data, err *types.CommonError) {
+func (h *handler) Delete(ctx context.Context, namespace string, refIDs []string, ID string) (out content.Data, err error) {
 	pKey := PrimaryKey{
 		Namespace: namespace,
 		RefIDs:    refIDs,
@@ -204,6 +204,6 @@ func (h *handler) Delete(ctx context.Context, namespace string, refIDs []string,
 	return out, nil
 }
 
-func (h *handler) Stream(ctx context.Context, namespace string, refIDs []string, ID string) (<-chan content.Data, *types.CommonError) {
+func (h *handler) Stream(ctx context.Context, namespace string, refIDs []string, ID string) (result <-chan content.Data, err error) {
 	return nil, nil
 }
