@@ -12,7 +12,7 @@ import (
 	mycontentapi "github.com/desain-gratis/common/delivery/mycontent-api"
 	mycontent_base "github.com/desain-gratis/common/delivery/mycontent-api/mycontent/base"
 	blob_s3 "github.com/desain-gratis/common/delivery/mycontent-api/storage/blob/s3"
-	content_postgres "github.com/desain-gratis/common/delivery/mycontent-api/storage/content/postgres"
+	content_clickhouse "github.com/desain-gratis/common/delivery/mycontent-api/storage/content/clickhouse"
 	"github.com/desain-gratis/common/example/user-profile/entity"
 	notifier_api "github.com/desain-gratis/common/lib/notifier/api"
 	notifier_impl "github.com/desain-gratis/common/lib/notifier/impl"
@@ -85,14 +85,16 @@ func enableApplicationAPI(
 
 	baseURL := "http://localhost:9090"
 
-	pg, ok := GET_POSTGRES_SUITE_API()
-	if !ok {
-		log.Fatal().Msgf("Failed to obtain postgres connection")
-	}
+	// _, ok := GET_POSTGRES_SUITE_API()
+	// if !ok {
+	// 	log.Fatal().Msgf("Failed to obtain postgres connection")
+	// }
 
-	organizationRepo := content_postgres.New(pg, "organization", 0) // ID overwrite-able / indemppotent (by github)
-	userProfileRepo := content_postgres.New(pg, "user_profile", 1)  // ID overwrite-able / indemppotent (by github)
-	userProfileThumbnailRepo := content_postgres.New(pg, "user_profile_thumbnail", 2)
+	ch, err := GET_CLICKHOUSE_API()
+
+	organizationRepo := content_clickhouse.New(ch, "organization", 0) // ID overwrite-able / indemppotent (by github)
+	userProfileRepo := content_clickhouse.New(ch, "user_profile", 1)  // ID overwrite-able / indemppotent (by github)
+	userProfileThumbnailRepo := content_clickhouse.New(ch, "user_profile_thumbnail", 2)
 	userProfileBlobRepo, err := blob_s3.New(
 		"localhost:9000",
 		"this1s4ccessXey",

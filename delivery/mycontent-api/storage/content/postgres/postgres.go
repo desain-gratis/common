@@ -203,3 +203,7 @@ func (h *handler) Delete(ctx context.Context, namespace string, refIDs []string,
 
 	return out, nil
 }
+
+func (h *handler) Stream(ctx context.Context, namespace string, refIDs []string, ID string) (<-chan content.Data, *types.CommonError) {
+	return nil, nil
+}

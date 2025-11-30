@@ -14,6 +14,9 @@ type Repository interface {
 
 	// Delete specific ID data. If no data, MUST return error
 	Delete(ctx context.Context, namespace string, refIDs []string, ID string) (Data, *types.CommonError)
+
+	// Stream Get data
+	Stream(ctx context.Context, namespace string, refIDs []string, ID string) (<-chan Data, *types.CommonError)
 }
 
 type Data struct {

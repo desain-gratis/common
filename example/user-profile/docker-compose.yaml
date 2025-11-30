@@ -2,15 +2,32 @@ version: "3"
   
 services:
   postgres:
-    image: postgres:latest
+    image: postgres:17
     container_name: postgres-example-user-profile
     ports:
       - "5432:5432"
     env_file:
       - ./.env
     volumes:
-      - database_data:/var/lib/postgresql/data
+      - ./data/postgres_data:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    container_name: clickhouse-example-user-profile
+    restart: on-failure
+    environment:
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: default
+    ports:
+      - "18123:8123"
+      - "19000:9000"
+    volumes:
+      - ./data/clickhouse_data:/var/lib/clickhouse
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
 
   minio:
     container_name: minio
@@ -22,7 +39,7 @@ services:
       MINIO_ROOT_USER: ROOTNAME # Replace with your desired root username
       MINIO_ROOT_PASSWORD: CHANGEME123 # Replace with your desired root password
     volumes:
-      - ~/minio/data:/data # Mount the local data directory to the container's /data
+      - ./data/minio:/data # Mount the local data directory to the container's /data
     command: server /data --console-address ":9001"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9001"]
