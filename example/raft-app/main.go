@@ -17,7 +17,6 @@ import (
 	notifier_api "github.com/desain-gratis/common/lib/notifier/api"
 	notifier_impl "github.com/desain-gratis/common/lib/notifier/impl"
 	raft_replica "github.com/desain-gratis/common/lib/raft/replica"
-	raft_runner "github.com/desain-gratis/common/lib/raft/runner"
 	"github.com/julienschmidt/httprouter"
 	"github.com/lni/dragonboat/v4/client"
 	"github.com/lni/goutils/random"
@@ -47,11 +46,14 @@ func main() {
 	router := httprouter.New()
 
 	raft_replica.ForEachType("happy", func(config raft_replica.Config[raftchat.Config]) error {
+		// init topic
 		chatTopic := notifier_impl.NewStandardTopic()
+
+		// init raft app
 		chatApp := raftchat.New(chatTopic, config.ShardID, config.ReplicaID)
 
-		replicatedChatApp := raft_runner.NewClickhouseBased(config.AppConfig.ClickhouseAddr, config.ID, chatApp)
-		err := config.StartOnDiskReplica(replicatedChatApp)
+		// run raft app
+		err := raft_replica.Run(config, config.ID, chatApp)
 		if err != nil {
 			return err
 		}

@@ -29,31 +29,6 @@ type ClickHouseConfig struct {
 	Address string `yaml:"address"`
 }
 
-func (c *Config[T]) StartOnDiskReplica(fn statemachine.CreateOnDiskStateMachineFunc) error {
-	var target map[uint64]dragonboat.Target
-	if c.internal.Bootstrap {
-		target = getPeer(cfg.Host.Peer, cfg)
-	}
-
-	join := len(target) == 0
-
-	err := dhost.StartOnDiskReplica(target, join, fn, config.Config{
-		ShardID:            c.internal.shardID,
-		ReplicaID:          c.internal.replicaID,
-		HeartbeatRTT:       1,
-		CheckQuorum:        true,
-		ElectionRTT:        10,
-		SnapshotEntries:    0, // todo: set to 0. let manual snapshot by cron by calling request snapshot.
-		CompactionOverhead: 5,
-	})
-
-	if err != nil {
-		log.Panic().Msgf("start replica: %v", err)
-	}
-
-	return nil
-}
-
 func (c *Config[T]) StartReplica(fn statemachine.CreateStateMachineFunc) error {
 	var target map[uint64]dragonboat.Target
 	if c.internal.Bootstrap {
@@ -91,8 +66,6 @@ func Init() error {
 		return err
 	}
 
-	log.Info().Msgf("%+v", ncfg)
-
 	nhost, err := dragonboat.NewNodeHost(config.NodeHostConfig{
 		RaftAddress:       ncfg.Host.RaftAddress,
 		WALDir:            ncfg.Host.WALDir,
@@ -109,7 +82,7 @@ func Init() error {
 	cfg = ncfg
 
 	for i, shardConfig := range cfg.Replica {
-		log.Info().Msgf("configuring sm: %v", shardConfig.ID)
+		log.Debug().Msgf("configuring sm: %v", shardConfig.ID)
 		shardID, err := convertID(i)
 		if err != nil {
 			log.Error().Msgf("err id %v", i)

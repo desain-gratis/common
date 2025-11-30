@@ -3,7 +3,6 @@ package runner
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"io"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
@@ -25,14 +24,12 @@ type baseDiskSM struct {
 	clickhouseAddr string
 }
 
-func NewClickhouseBased(clickhouseAddr, appName string, baseApp raft.Application) func(shardID uint64, replicaID uint64) sm.IOnDiskStateMachine {
+func New(address, database string, app raft.Application) func(shardID uint64, replicaID uint64) sm.IOnDiskStateMachine {
 	return func(shardID uint64, replicaID uint64) sm.IOnDiskStateMachine {
-		database := fmt.Sprintf("%v_%v_%v", appName, shardID, replicaID)
-		clickhouse.CreateDB(clickhouseAddr, database)
 		return &baseDiskSM{
+			clickhouseAddr: address,
 			database:       database,
-			clickhouseAddr: clickhouseAddr,
-			app:            baseApp,
+			app:            app,
 		}
 	}
 }
@@ -59,8 +56,6 @@ func (d *baseDiskSM) Open(stopc <-chan struct{}) (uint64, error) {
 	d.smMetadata = metadata
 	d.initialApplied = *metadata.AppliedIndex
 	d.lastApplied = *metadata.AppliedIndex
-
-	log.Info().Msgf("APPLIED INDEX  %v", *metadata.AppliedIndex)
 
 	err = d.app.Init(ctx)
 	if err != nil {
