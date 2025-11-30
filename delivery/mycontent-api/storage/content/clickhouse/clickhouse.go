@@ -18,8 +18,6 @@ import (
 
 var _ content.Repository = &handler{}
 
-var argsTmpl = []string{"?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?"}
-
 type handler struct {
 	db          driver.Conn
 	tableName   string
@@ -86,7 +84,7 @@ ORDER BY (` + strings.Join(key, ",") + `) ;
 }
 
 func (h *handler) Get(ctx context.Context, namespace string, refIDs []string, ID string) (resp []content.Data, err *types.CommonError) {
-	q, args, cerr := h.buildQueryArgsPair(namespace, refIDs, ID)
+	q, args, cerr := h.prepareGet(namespace, refIDs, ID)
 	if cerr != nil {
 		err = &types.CommonError{
 			Errors: []types.Error{
@@ -102,6 +100,7 @@ func (h *handler) Get(ctx context.Context, namespace string, refIDs []string, ID
 
 	rows, cerr := h.db.Query(ctx, q, args...)
 	if cerr != nil {
+		log.Err(cerr).Msgf("ada apa dengan query `%v` | `%v`", q, args)
 		err = &types.CommonError{
 			Errors: []types.Error{
 				{
@@ -180,11 +179,145 @@ func (h *handler) Post(ctx context.Context, namespace string, refIDs []string, I
 }
 
 func (h *handler) Delete(ctx context.Context, namespace string, refIDs []string, ID string) (out content.Data, err *types.CommonError) {
-	return content.Data{}, nil
+	if len(refIDs) != h.refSize || ID == "" || namespace == "" || namespace == "*" {
+		return content.Data{}, &types.CommonError{
+			Errors: []types.Error{
+				{
+					HTTPCode: http.StatusInternalServerError,
+					Code:     "INTERNAL_SERVER_ERROR",
+					Message:  "Please specify complete reference",
+				},
+			},
+		}
+	}
+
+	q, args, cerr := h.prepareGet(namespace, refIDs, ID)
+	if cerr != nil {
+		log.Err(cerr).Msgf("Q: %v ARGS: %v", q, args)
+		err = &types.CommonError{
+			Errors: []types.Error{
+				{
+					HTTPCode: http.StatusInternalServerError,
+					Code:     "INTERNAL_SERVER_ERROR",
+					Message:  "Prepare get fail: " + q,
+				},
+			},
+		}
+		return
+	}
+	row, errQuery := h.db.Query(ctx, q, args...)
+	if errQuery != nil {
+		log.Err(errQuery).Msgf("err when query Q: %v ARGS: %v", q, args)
+		err = &types.CommonError{
+			Errors: []types.Error{
+				{
+					HTTPCode: http.StatusInternalServerError,
+					Code:     "INTERNAL_SERVER_ERROR",
+					Message:  "Delete Query: " + q,
+				},
+			},
+		}
+	}
+	defer row.Close()
+
+	var data *content.Data
+	for row.Next() {
+		result, dest := h.allocateResultDst(true, true)
+		errScan := row.Scan(dest...)
+		if errScan != nil {
+			log.Err(errScan).Msgf("Q: %v ARGS: %v", q, args)
+			err = &types.CommonError{
+				Errors: []types.Error{
+					{
+						HTTPCode: http.StatusInternalServerError,
+						Code:     "INTERNAL_SERVER_ERROR",
+						Message:  "Failed Scan: " + q,
+					},
+				},
+			}
+			return
+		}
+		data = h.convertGetData(result)
+	}
+	errRow := row.Err()
+	if errRow != nil {
+		log.Err(errRow).Msgf("Q: %v ARGS: %v", q, args)
+		err = &types.CommonError{
+			Errors: []types.Error{
+				{
+					HTTPCode: http.StatusInternalServerError,
+					Code:     "INTERNAL_SERVER_ERROR",
+					Message:  "Failed erRRow: " + q,
+				},
+			},
+		}
+		return
+	}
+
+	if data == nil {
+		err = &types.CommonError{
+			Errors: []types.Error{
+				{
+					HTTPCode: http.StatusInternalServerError,
+					Code:     "BAD_REQUEST",
+					Message:  "no data" + q,
+				},
+			},
+		}
+		return
+	}
+
+	whereQ, whereArgs, errWhere := h.prepareWhereQuery(namespace, refIDs, ID)
+	if errWhere != nil {
+		err = &types.CommonError{
+			Errors: []types.Error{
+				{
+					HTTPCode: http.StatusInternalServerError,
+					Code:     "BAD_REQUEST",
+					Message:  "no data" + q,
+				},
+			},
+		}
+		return
+	}
+
+	qDel := `DELETE FROM ` + h.tableName + ` ` + whereQ
+	errDel := h.db.Exec(ctx, qDel, whereArgs...)
+	if errDel != nil {
+		log.Err(errDel).Msgf("q: %v. params: %v", qDel, whereArgs)
+		err = &types.CommonError{
+			Errors: []types.Error{
+				{
+					HTTPCode: http.StatusInternalServerError,
+					Code:     "DELETE ERR",
+					Message:  "delete err " + errDel.Error(),
+				},
+			},
+		}
+		return
+	}
+
+	return *data, nil
 }
 
 func (h *handler) Stream(ctx context.Context, namespace string, refIDs []string, ID string) (<-chan content.Data, *types.CommonError) {
 	return nil, nil
+}
+
+func (h *handler) allocateResultDst(withData, withMeta bool) ([]string, []any) {
+	c := 0
+	if withData {
+		c++
+	}
+	if withMeta {
+		c++
+	}
+	dst := make([]string, len(h.addressCols)+c)
+	wrapped := make([]any, len(dst))
+	for i := range len(dst) {
+		wrapped[i] = &dst[i]
+	}
+	return dst, wrapped
 }
 
 func (h *handler) preparePost(namespace string, refIDs []string, ID string, data string, meta string) (string, []string, []any, []string) {
@@ -217,36 +350,49 @@ func (h *handler) preparePost(namespace string, refIDs []string, ID string, data
 	return id, columns, args, tmplt
 }
 
-func (h *handler) buildQueryArgsPair(namespace string, refIDs []string, ID string) (string, []any, error) {
+func (h *handler) prepareGet(namespace string, refIDs []string, ID string) (string, []any, error) {
 	if len(refIDs) > h.refSize {
 		return "", nil, errors.New("invalid ref size")
 	}
 
-	args := make([]any, 0, len(refIDs)+2)
 	buf := bytes.NewBuffer(make([]byte, 0, 100))
 
 	// TODO: handle namespace = "*"
 
-	buf.WriteString(`SELECT * FROM ` + h.tableName + ` FINAL `)
+	buf.WriteString(`SELECT ` + strings.Join(append(h.addressCols, "data", "meta"), ",") + ` FROM "` + h.tableName + `" FINAL `)
+
+	whereQ, whereArgs, err := h.prepareWhereQuery(namespace, refIDs, ID)
+	if err != nil {
+		return "", nil, err
+	}
+	buf.WriteString(whereQ)
+
+	return buf.String(), whereArgs, nil
+}
+
+func (h *handler) prepareWhereQuery(namespace string, refIDs []string, ID string) (string, []any, error) {
+	args := make([]any, 0, len(refIDs)+2)
+	buf := bytes.NewBuffer(make([]byte, 0, 100))
+
 	if namespace == "*" {
-		return buf.String(), nil, nil
+		return "", args, nil
 	}
 	if namespace == "" {
-		return "", nil, errors.New("namespace must be specified")
+		return "", args, errors.New("namespace must be specified")
 	}
 
-	buf.WriteString(` WHERE namespace = ?`)
+	buf.WriteString(" WHERE namespace = ?")
 	args = append(args, namespace)
 
 	for idx, refID := range refIDs {
-		buf.WriteString(` AND `)
-		buf.WriteString(` ref_id_` +
-			strconv.Itoa(idx+1) + ` = ?`,
+		buf.WriteString(" AND ")
+		buf.WriteString(" ref_id_" +
+			strconv.Itoa(idx+1) + " = ?",
 		)
 		args = append(args, refID)
 	}
 	if ID != "" {
-		buf.WriteString(` AND id = ?`)
+		buf.WriteString(" AND id = ?")
 		args = append(args, ID)
 	}
 
