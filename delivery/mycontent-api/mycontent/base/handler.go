@@ -3,7 +3,6 @@ package base
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"time"
 
@@ -164,7 +163,82 @@ func (c *Handler[T]) Get(ctx context.Context, namespace string, refIDs []string,
 }
 
 func (c *Handler[T]) Stream(ctx context.Context, namespace string, refIDs []string, ID string) (<-chan T, error) {
-	return nil, errors.New("not implemented")
+	// 1. check if there is ID
+	if ID != "" {
+		if !isValid(refIDs) || len(filterEmpty(refIDs)) != c.expectedRefSize {
+			return nil, fmt.Errorf(
+				"%w: when ID is specified, all reference must be specified", mycontent.ErrValidation)
+		}
+
+		d, err := c.repo.Get(ctx, namespace, refIDs, ID)
+		if err != nil {
+			return nil, err
+		}
+
+		if len(d) == 0 {
+			return nil, fmt.Errorf(
+				"%w: id specified, but content not found", mycontent.ErrNotFound)
+		}
+
+		parsedResult, err := Parse[T](d[0].Data)
+		if err != nil {
+			return nil, err
+		}
+
+		result := make(chan T)
+
+		go func() {
+			defer close(result)
+			result <- parsedResult
+		}()
+
+		return result, nil
+	}
+
+	// 2. check if there is main ref ID (without ID)
+	if isValid(refIDs) {
+		ds, err := c.repo.Stream(ctx, namespace, filterEmpty(refIDs), "")
+		if err != nil {
+			return nil, err
+		}
+
+		result := make(chan T)
+		go func() {
+			defer close(result)
+
+			for d := range ds {
+				parsedResult, err := Parse[T](d.Data)
+				if err != nil {
+					log.Error().Msgf("Should not happend")
+					continue
+				}
+				result <- parsedResult
+			}
+		}()
+		return result, nil
+	}
+
+	// 3. get by namespace
+	ds, err := c.repo.Stream(ctx, namespace, []string{}, "")
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(chan T)
+	go func() {
+		defer close(result)
+
+		for d := range ds {
+			parsedResult, err := Parse[T](d.Data)
+			if err != nil {
+				log.Error().Msgf("Should not happend")
+				continue
+			}
+			result <- parsedResult
+		}
+	}()
+
+	return result, nil
 }
 
 // Delete your resource here

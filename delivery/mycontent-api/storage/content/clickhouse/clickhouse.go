@@ -190,7 +190,60 @@ func (h *handler) Delete(ctx context.Context, namespace string, refIDs []string,
 }
 
 func (h *handler) Stream(ctx context.Context, namespace string, refIDs []string, ID string) (data <-chan content.Data, err error) {
-	return nil, nil
+	q, args, err := h.prepareGet(namespace, refIDs, ID)
+	if err != nil {
+		return nil, err
+	}
+
+	rows, err := h.db.Query(ctx, q, args...)
+	if err != nil {
+		slog.Error(
+			"failed to do query", slog.String("err", err.Error()),
+			slog.String("components", "mycontent.storage.clickhouse.get"))
+		return nil, err
+	}
+
+	output := make(chan content.Data)
+
+	go func() {
+		defer close(output)
+		defer func() {
+			err := rows.Close()
+			if err != nil {
+				slog.Error(
+					"failed to close rows", slog.String("err", err.Error()),
+					slog.String("components", "mycontent.storage.clickhouse.get"))
+			}
+		}()
+
+		for rows.Next() {
+			keyAndContentSize := 1 + h.refSize + 1 + 2 // key + data and meta
+			result := make([]string, keyAndContentSize)
+			resultany := make([]any, len(result))
+
+			for i := range result {
+				resultany[i] = &result[i]
+			}
+
+			err := rows.Scan(resultany...)
+			if err != nil {
+				log.Err(err).Msgf("Failed scan row")
+				slog.Error(
+					"failed to scan row", slog.String("err", err.Error()),
+					slog.String("components", "mycontent.storage.clickhouse.get"))
+				continue
+			}
+
+			for i := range result {
+				resultany[i] = result[i]
+			}
+
+			rowData := h.convertGetData(result)
+			output <- *rowData
+		}
+	}()
+
+	return output, nil
 }
 
 func (h *handler) allocateResultDst(withData, withMeta bool) ([]string, []any) {
