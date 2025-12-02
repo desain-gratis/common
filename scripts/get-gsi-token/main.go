@@ -19,14 +19,22 @@ func init() {
 }
 
 func main() {
+	var clientID string
 	var clientSecret string
 
-	flag.StringVar(&clientSecret, "secret", "", "client secret")
+	flag.StringVar(&clientID, "client-id", "", "client id")
+	flag.StringVar(&clientSecret, "client-secret", "", "client secret")
 	flag.Parse()
 
 	log.Info().Msgf("Getting google ID token..")
+	if clientSecret == "" {
+		log.Panic().Msgf("-client-secret is requireed")
+	}
+	if clientID == "" {
+		log.Panic().Msgf("-client-id is requireed")
+	}
 
-	payload := []byte("client_id=" + CLIENT_ID + "&scope=email%20profile")
+	payload := []byte("client_id=" + clientID + "&scope=email%20profile")
 	req, err := http.NewRequest(
 		http.MethodPost,
 		"https://oauth2.googleapis.com/device/code",
@@ -62,7 +70,7 @@ func main() {
 
 	openBrowser(result.VerificationURL)
 
-	ggwp, err := pollResult("https://oauth2.googleapis.com/token", CLIENT_ID, clientSecret, result.DeviceCode, result.Interval)
+	ggwp, err := pollResult("https://oauth2.googleapis.com/token", clientID, clientSecret, result.DeviceCode, result.Interval)
 	if err != nil {
 		log.Fatal().Msgf("err poll: %v", err)
 	}

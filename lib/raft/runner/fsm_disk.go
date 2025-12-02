@@ -6,7 +6,6 @@ import (
 	"io"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
-	"github.com/desain-gratis/common/example/raft-app/src/conn/clickhouse"
 	"github.com/desain-gratis/common/lib/raft"
 	"github.com/rs/zerolog/log"
 
@@ -39,7 +38,7 @@ func New(address, database string, app raft.Application) func(shardID uint64, re
 func (d *baseDiskSM) Open(stopc <-chan struct{}) (uint64, error) {
 	ctx := context.Background()
 
-	d.conn = clickhouse.Connect(d.clickhouseAddr, d.database)
+	d.conn = Connect(d.clickhouseAddr, d.database)
 
 	ctx = context.WithValue(ctx, chConnKey, d.conn)
 

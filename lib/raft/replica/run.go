@@ -3,7 +3,6 @@ package replica
 import (
 	"fmt"
 
-	"github.com/desain-gratis/common/example/raft-app/src/conn/clickhouse"
 	"github.com/desain-gratis/common/lib/raft"
 	"github.com/desain-gratis/common/lib/raft/runner"
 	"github.com/lni/dragonboat/v4"
@@ -13,7 +12,7 @@ import (
 
 func Run[T any](c Config[T], appName string, app raft.Application) error {
 	database := fmt.Sprintf("%v_%v_%v", appName, c.ShardID, c.ReplicaID)
-	clickhouse.CreateDB(c.ClickHouseConfig.Address, database)
+	runner.CreateClickhouseDB(c.ClickHouseConfig.Address, database)
 
 	fn := runner.New(c.ClickHouseConfig.Address, database, app)
 

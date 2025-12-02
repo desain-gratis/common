@@ -8,6 +8,7 @@ require (
 	cloud.google.com/go/secretmanager v1.13.1
 	cloud.google.com/go/storage v1.42.0
 	github.com/ClickHouse/clickhouse-go/v2 v2.40.3
+	github.com/desain-gratis/common/example/raft-app v0.0.0-20251130162512-c0c9e65522c7
 	github.com/disintegration/imaging v1.6.2
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/golang-jwt/jwt v3.2.2+incompatible
@@ -21,7 +22,8 @@ require (
 	github.com/lib/pq v1.10.9
 	github.com/lni/dragonboat/v4 v4.0.0-20250723143628-076c7f6497dc
 	github.com/minio/minio-go/v7 v7.0.94
-	github.com/rs/zerolog v1.33.0
+	github.com/rs/zerolog v1.34.0
+	github.com/spf13/viper v1.21.0
 	golang.org/x/crypto v0.42.0
 	golang.org/x/image v0.18.0
 	golang.org/x/oauth2 v0.21.0
@@ -41,6 +43,7 @@ require (
 	github.com/HdrHistogram/hdrhistogram-go v1.1.2 // indirect
 	github.com/VictoriaMetrics/metrics v1.18.1 // indirect
 	github.com/agext/levenshtein v1.2.1 // indirect
+	github.com/andybalholm/brotli v1.2.0 // indirect
 	github.com/apparentlymart/go-textseg/v13 v13.0.0 // indirect
 	github.com/apparentlymart/go-textseg/v15 v15.0.0 // indirect
 	github.com/armon/go-metrics v0.0.0-20180917152333-f0300d1749da // indirect
@@ -112,7 +115,6 @@ require (
 	github.com/spf13/afero v1.15.0 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
-	github.com/spf13/viper v1.21.0 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/tinylib/msgp v1.3.0 // indirect
 	github.com/valyala/fastrand v1.1.0 // indirect

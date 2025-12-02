@@ -38,10 +38,6 @@ func openBrowser(url string) error {
 	return nil
 }
 
-const (
-	CLIENT_ID = "165247545017-79e0h1folq75bajht2nril5e96ecu90d.apps.googleusercontent.com"
-)
-
 func pollResult(pollUrl, clientId, clientSecret, deviceCode string, intervalSeconds int) (*TokenPollResponse, error) {
 	if intervalSeconds == 0 {
 		intervalSeconds = 5
