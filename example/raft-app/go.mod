@@ -7,9 +7,11 @@ replace github.com/desain-gratis/common => ../..
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.40.3
 	github.com/Pallinder/go-randomdata v1.2.0
+	github.com/coder/websocket v1.8.14
 	github.com/desain-gratis/common v0.0.0-00010101000000-000000000000
 	github.com/julienschmidt/httprouter v1.3.0
 	github.com/lni/dragonboat/v4 v4.0.0-20250723143628-076c7f6497dc
+	github.com/lni/goutils v1.4.0
 	github.com/rs/zerolog v1.34.0
 )
 
@@ -18,13 +20,13 @@ require (
 	github.com/DataDog/zstd v1.4.5 // indirect
 	github.com/HdrHistogram/hdrhistogram-go v1.1.2 // indirect
 	github.com/VictoriaMetrics/metrics v1.18.1 // indirect
+	github.com/andybalholm/brotli v1.2.0 // indirect
 	github.com/armon/go-metrics v0.0.0-20180917152333-f0300d1749da // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/cockroachdb/errors v1.9.0 // indirect
 	github.com/cockroachdb/logtags v0.0.0-20211118104740-dabe8e521a4f // indirect
 	github.com/cockroachdb/pebble v0.0.0-20221207173255-0f086d933dac // indirect
 	github.com/cockroachdb/redact v1.1.3 // indirect
-	github.com/coder/websocket v1.8.14 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/getsentry/sentry-go v0.12.0 // indirect
 	github.com/go-faster/city v1.0.1 // indirect
@@ -44,7 +46,6 @@ require (
 	github.com/klauspost/compress v1.18.0 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/kr/text v0.2.0 // indirect
-	github.com/lni/goutils v1.4.0 // indirect
 	github.com/lni/vfs v0.2.1-0.20220616104132-8852fd867376 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.19 // indirect

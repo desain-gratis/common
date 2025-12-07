@@ -8,7 +8,6 @@ require (
 	cloud.google.com/go/secretmanager v1.13.1
 	cloud.google.com/go/storage v1.42.0
 	github.com/ClickHouse/clickhouse-go/v2 v2.40.3
-	github.com/desain-gratis/common/example/raft-app v0.0.0-20251130162512-c0c9e65522c7
 	github.com/disintegration/imaging v1.6.2
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/golang-jwt/jwt v3.2.2+incompatible
