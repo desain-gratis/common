@@ -21,10 +21,11 @@ type ExtractFiles[T mycontent.Data] func(t []T) []**entity.File
 type ExtractOtherEntities[T any] func(t []T) []mycontent.Data
 
 type fileDep[T mycontent.Data] struct {
-	sync            *sync[T]
-	client          *client[*entity.Attachment]
-	extract         ExtractFiles[T]
-	uploadDirectory string
+	sync       *sync[T]
+	client     *client[*entity.Attachment]
+	extract    ExtractFiles[T]
+	uploadDir  string
+	customPath func(T) string
 }
 
 type sync[T mycontent.Data] struct {
@@ -34,8 +35,8 @@ type sync[T mycontent.Data] struct {
 
 	OptConfig OptionalConfig
 
-	imageDeps []imageDep[T]
-	fileDeps  []fileDep[T]
+	imageDeps []*imageDep[T]
+	fileDeps  []*fileDep[T]
 }
 
 type OptionalConfig struct {
@@ -61,7 +62,7 @@ func (s *sync[T]) WithImages(
 	uploadDir string,
 	customPath func(t T) string,
 ) *sync[T] {
-	s.imageDeps = append(s.imageDeps, imageDep[T]{
+	s.imageDeps = append(s.imageDeps, &imageDep[T]{
 		sync:       s,
 		client:     client,
 		extract:    extract,
@@ -72,12 +73,12 @@ func (s *sync[T]) WithImages(
 	return s
 }
 
-func (s *sync[T]) WithFiles(client *client[*entity.Attachment], extract ExtractFiles[T], uploadDirectory string) *sync[T] {
-	s.fileDeps = append(s.fileDeps, fileDep[T]{
-		sync:            s,
-		client:          client,
-		extract:         extract,
-		uploadDirectory: uploadDirectory,
+func (s *sync[T]) WithFiles(client *client[*entity.Attachment], extract ExtractFiles[T], uploadDir string) *sync[T] {
+	s.fileDeps = append(s.fileDeps, &fileDep[T]{
+		sync:      s,
+		client:    client,
+		extract:   extract,
+		uploadDir: uploadDir,
 	})
 	return s
 }
@@ -195,7 +196,7 @@ func attachmentToThumbnails(input map[string]*content.Attachment) map[string]*en
 
 func toRefsParam(refsParam []string, refIDs []string) map[string]string {
 	if len(refsParam) != len(refIDs) {
-		log.Fatal().Msgf("Parameter not matching!")
+		log.Fatal().Msgf("Parameter not matching! %v vs %v", refsParam, refIDs)
 	}
 	result := make(map[string]string, len(refsParam))
 	for i := range refIDs {

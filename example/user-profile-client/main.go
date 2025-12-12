@@ -3,9 +3,10 @@ package main
 import (
 	"context"
 	"flag"
-	"net/http"
+	"net/url"
 	"os"
 
+	contentsync "github.com/desain-gratis/common/delivery/mycontent-api-client"
 	mycontentapiclient "github.com/desain-gratis/common/delivery/mycontent-api-client"
 	"github.com/desain-gratis/common/example/user-profile/entity"
 	"github.com/rs/zerolog"
@@ -17,28 +18,33 @@ func init() {
 }
 
 func main() {
-
 	var reset bool
 	flag.BoolVar(&reset, "reset", false, "reset all data in the app")
-
 	flag.Parse()
 
-	orgClient := mycontentapiclient.New[*entity.Organization](http.DefaultClient, "http://localhost:9090/org", nil)
-	userClient := mycontentapiclient.New[*entity.UserProfile](http.DefaultClient, "http://localhost:9090/org/user", []string{"org_id"})
-	userThumbnailClient := mycontentapiclient.NewAttachment(http.DefaultClient, "http://localhost:9090/org/user/thumbnail", []string{"org_id", "profile_id"})
-
-	orgSync := mycontentapiclient.Sync(orgClient, "*", sampleOrg, mycontentapiclient.OptionalConfig{})
+	orgEndpoint, _ := url.Parse("http://localhost:9090/org")
+	userEndpoint, _ := url.Parse("http://localhost:9090/org/user")
 
 	if reset {
 		sampleUser = nil
 	}
 
-	userSync := mycontentapiclient.Sync(userClient, "*", sampleUser, mycontentapiclient.OptionalConfig{}).
-		WithImages(userThumbnailClient, getUserProfileImage, ".", nil) // upload from local URL, with . root directory
+	orgSync := contentsync.Builder[*entity.Organization](orgEndpoint).
+		WithNamespace("*").
+		WithData(sampleOrg)
+
+	userSync := contentsync.Builder[*entity.UserProfile](userEndpoint, "org_id").
+		WithNamespace("*").
+		WithData(sampleUser)
+
+	userSync.
+		WithImages(getUserProfileImage, "./thumbnail", "profile_id").
+		WithUploadDirectory(".")
 
 	ctx := context.Background()
-	orgSync.Execute(ctx)
-	userSync.Execute(ctx)
+
+	orgSync.Build().Execute(ctx)
+	userSync.Build().Execute(ctx)
 }
 
 func getUserProfileImage(users []*entity.UserProfile) (imageRefs []mycontentapiclient.ImageContext[*entity.UserProfile]) {

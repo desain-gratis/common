@@ -1,5 +1,5 @@
 version: "3"
-  
+
 services:
   postgres:
     image: postgres:17
@@ -29,8 +29,8 @@ services:
         soft: 262144
         hard: 262144
 
-  minio:
-    container_name: minio
+  minio-user-profile:
+    container_name: minio-user-profile
     image: quay.io/minio/minio:RELEASE.2025-03-12T18-04-18Z # Or a more recent stable release
     ports:
       - "9000:9000" # MinIO S3 API port
@@ -47,23 +47,22 @@ services:
       timeout: 30s
       retries: 3
       start_period: 60s
-  createbucket:
-    container_name: createbucket
+  createbucket-user-profile:
+    container_name: createbucket-user-profile
     image: quay.io/minio/minio:RELEASE.2025-03-12T18-04-18Z # Or a more recent stable release
     depends_on:
-      minio:
+      minio-user-profile:
         condition: service_healthy
 
     entrypoint: >
       /bin/sh -c "
-      /usr/bin/mc config host add myminio http://minio:9000 ROOTNAME CHANGEME123;
+      /usr/bin/mc config host add myminio http://minio-user-profile:9000 ROOTNAME CHANGEME123;
       /usr/bin/mc rm -r --force myminio/user-profile-bucket;
       /usr/bin/mc mb myminio/user-profile-bucket;
       /usr/bin/mc admin accesskey create --access-key this1s4ccessXey --secret-key S3cR3tthebestd0tcom myminio;
       /usr/bin/mc anonymous set public myminio/user-profile-bucket;
       exit 0;
       "
-
 
 volumes:
   database_data:
