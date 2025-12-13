@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Team Profiles</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <style>
+    body {
+      margin: 0;
+      padding: 40px;
+      background: #f4f6f8;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial;
+      color: #1f2937;
+    }
+
+    h1 {
+      margin-bottom: 16px;
+      font-size: 28px;
+      font-weight: 600;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 6px;
+      font-weight: 500;
+    }
+
+    select {
+      padding: 8px 12px;
+      border-radius: 8px;
+      border: 1px solid #d1d5db;
+      min-width: 280px;
+      margin-bottom: 28px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 24px;
+    }
+
+    .card {
+      background: #fff;
+      border-radius: 16px;
+      padding: 24px;
+      box-shadow: 0 10px 25px rgba(0,0,0,.08);
+      transition: transform .2s ease, box-shadow .2s ease;
+    }
+
+    .card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 14px 30px rgba(0,0,0,.12);
+    }
+
+    .avatar {
+      width: 120px;
+      height: 120px;
+      margin: 0 auto 16px;
+      border-radius: 50%;
+      overflow: hidden;
+      border: 4px solid #e5e7eb;
+    }
+
+    .avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .name {
+      text-align: center;
+      font-size: 18px;
+      font-weight: 600;
+    }
+
+    .org {
+      text-align: center;
+      font-size: 14px;
+      color: #6b7280;
+      margin-bottom: 16px;
+    }
+
+    .meta {
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .profile-link {
+      display: block;
+      margin-top: 16px;
+      text-align: center;
+      font-size: 14px;
+      color: #2563eb;
+      text-decoration: none;
+      font-weight: 500;
+    }
+
+    .profile-link:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+
+<h1>Team Profiles</h1>
+
+<label for="orgSelect">Organization</label>
+<select id="orgSelect">
+  <option value="">Loading organizations…</option>
+</select>
+
+<div id="profiles" class="grid"></div>
+
+<script>
+  const ORG_API  = "http://localhost:9090/org";
+  const USER_API = "http://localhost:9090/org/user";
+
+  const orgSelect = document.getElementById("orgSelect");
+  const profiles  = document.getElementById("profiles");
+
+  function renderProfiles(users) {
+    profiles.innerHTML = "";
+
+    if (!users || users.length === 0) {
+      profiles.innerHTML = "<p>No users found.</p>";
+      return;
+    }
+
+    users.forEach(user => {
+      const card = document.createElement("div");
+      card.className = "card";
+
+      const img =
+        user.thumbnail_1x1?.data_url ||
+        user.thumbnail_1x1?.url ||
+        "";
+
+      card.innerHTML = `
+        <div class="avatar">
+          <img src="${img}" alt="${user.name}" />
+        </div>
+
+        <div class="name">${user.name}</div>
+        <div class="org">${user.organization_id}</div>
+
+        <div class="meta">
+          <div><strong>ID:</strong> ${user.id}</div>
+          <div><strong>Created:</strong>
+            ${new Date(user.created_at).toLocaleString()}
+          </div>
+        </div>
+
+        <a class="profile-link" href="${user.url}" target="_blank">
+          View Profile
+        </a>
+      `;
+
+      profiles.appendChild(card);
+    });
+  }
+
+  function loadUsers(orgId) {
+    profiles.innerHTML = "<p>Loading users…</p>";
+
+    fetch(`${USER_API}?org_id=${encodeURIComponent(orgId)}`, {
+      headers: { "X-Namespace": "*" }
+    })
+      .then(r => r.json())
+      .then(d => renderProfiles(d.success))
+      .catch(err => {
+        console.error(err);
+        profiles.innerHTML = "<p>Failed to load users</p>";
+      });
+  }
+
+  function loadOrganizations() {
+    fetch(ORG_API, {
+      headers: { "X-Namespace": "*" }
+    })
+      .then(r => r.json())
+      .then(d => {
+        orgSelect.innerHTML =
+          "<option value=\"\">Select organization</option>";
+
+        d.success.forEach(org => {
+          const opt = document.createElement("option");
+
+          // pick the most stable identifier
+          opt.value = org.id || org.namespace || org.name;
+          opt.textContent = org.name || org.namespace || org.id;
+
+          orgSelect.appendChild(opt);
+        });
+      })
+      .catch(err => {
+        console.error(err);
+        orgSelect.innerHTML =
+          "<option value=\"\">Failed to load organizations</option>";
+      });
+  }
+
+  orgSelect.addEventListener("change", () => {
+    if (orgSelect.value) {
+      loadUsers(orgSelect.value);
+    } else {
+      profiles.innerHTML = "";
+    }
+  });
+
+  loadOrganizations();
+</script>
+
+</body>
+</html>

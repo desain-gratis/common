@@ -1,6 +1,7 @@
 package main
 
 import (
+	mycontentapiclient "github.com/desain-gratis/common/delivery/mycontent-api-client"
 	"github.com/desain-gratis/common/example/user-profile/entity"
 	common_entity "github.com/desain-gratis/common/types/entity"
 )
@@ -86,4 +87,28 @@ var sampleUser []*entity.UserProfile = []*entity.UserProfile{
 			RatioY:         1,
 		},
 	},
+	{
+		Ns:             "mantap-corps-llc",
+		Id:             "", // try with no id --> always will be re-deleted
+		Name:           "Anonymous User",
+		OrganizationID: "mantap-corps-llc",
+		Thumbnail_1x1: &common_entity.Image{
+			Id:             "mantap-corps-llc|mark.png",
+			Url:            "assets/mark.png",
+			ScalePx:        100,
+			ScaleDirection: common_entity.SCALE_DIRECTION_HORIZONTAL,
+			RatioX:         1,
+			RatioY:         1,
+		},
+	},
+}
+
+func getUserProfileImage(users []*entity.UserProfile) (imageRefs []mycontentapiclient.ImageContext[*entity.UserProfile]) {
+	for idx := range users {
+		imageRefs = append(imageRefs, mycontentapiclient.ImageContext[*entity.UserProfile]{
+			Image: &users[idx].Thumbnail_1x1,
+			Base:  users[idx],
+		})
+	}
+	return imageRefs
 }

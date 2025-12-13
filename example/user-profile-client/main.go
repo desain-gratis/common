@@ -7,7 +7,6 @@ import (
 	"os"
 
 	contentsync "github.com/desain-gratis/common/delivery/mycontent-api-client"
-	mycontentapiclient "github.com/desain-gratis/common/delivery/mycontent-api-client"
 	"github.com/desain-gratis/common/example/user-profile/entity"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -45,14 +44,4 @@ func main() {
 
 	orgSync.Build().Execute(ctx)
 	userSync.Build().Execute(ctx)
-}
-
-func getUserProfileImage(users []*entity.UserProfile) (imageRefs []mycontentapiclient.ImageContext[*entity.UserProfile]) {
-	for idx := range users {
-		imageRefs = append(imageRefs, mycontentapiclient.ImageContext[*entity.UserProfile]{
-			Image: &users[idx].Thumbnail_1x1,
-			Base:  users[idx],
-		})
-	}
-	return imageRefs
 }
