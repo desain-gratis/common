@@ -10,7 +10,6 @@ import (
 	"github.com/rs/zerolog/log"
 
 	types "github.com/desain-gratis/common/types/http"
-	"github.com/desain-gratis/common/usecase/signing"
 )
 
 const maxHeaderSize = 1 << 20
@@ -135,7 +134,7 @@ func (s *signingService) MultiKeys(w http.ResponseWriter, r *http.Request, p htt
 	s.Keys(w, r, p)
 }
 
-func verifyAuthorizationHeader(ctx context.Context, verifier signing.Verifier, value string) (payload []byte, err error) {
+func verifyAuthorizationHeader(ctx context.Context, verifier Verifier, value string) (payload []byte, err error) {
 	if len(payload) > maxHeaderSize {
 		return nil, &types.CommonError{
 			Errors: []types.Error{
