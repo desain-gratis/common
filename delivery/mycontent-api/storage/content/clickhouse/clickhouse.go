@@ -331,21 +331,24 @@ func (h *handler) prepareWhereQuery(namespace string, refIDs []string, ID string
 	args := make([]any, 0, keySize)
 	buf := bytes.NewBuffer(make([]byte, 0, 100))
 
-	// query all data
-	if namespace == "*" {
-		return "", args, nil
-	}
-
 	// if not querying all data, namespace must be specified
 	if namespace == "" {
 		return "", args, fmt.Errorf("%w: namespace must be specified", content.ErrInvalidKey)
 	}
 
-	_, err := buf.WriteString(` WHERE namespace = ?`)
+	// just to start the where statement..
+	_, err := buf.WriteString(` WHERE 1=1 `)
 	if err != nil {
 		return "", nil, err
 	}
-	args = append(args, namespace)
+
+	if namespace != "*" {
+		_, err := buf.WriteString(` AND namespace = ?`)
+		if err != nil {
+			return "", nil, err
+		}
+		args = append(args, namespace)
+	}
 
 	for idx, refID := range refIDs {
 		_, err := buf.WriteString(` AND `)
