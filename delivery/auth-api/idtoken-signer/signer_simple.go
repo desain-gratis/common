@@ -4,11 +4,10 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
-	"net/http"
+	"fmt"
 	"time"
 
 	authapi "github.com/desain-gratis/common/delivery/auth-api"
-	types "github.com/desain-gratis/common/types/http"
 	"github.com/golang-jwt/jwt"
 )
 
@@ -46,8 +45,8 @@ func New(issuer string, hmacKeys map[string]string, keyID string) *simpleSigner 
 	}
 }
 
-func (s *simpleSigner) Sign(ctx context.Context, claim []byte, expire time.Time) (token string, errUC *types.CommonError) {
-	_token := jwt.NewWithClaims(jwt.SigningMethodES256, CustomClaim{
+func (s *simpleSigner) Sign(ctx context.Context, claim []byte, expire time.Time) (token string, errUC error) {
+	_token := jwt.NewWithClaims(jwt.SigningMethodHS512, CustomClaim{
 		StandardClaims: jwt.StandardClaims{
 			ExpiresAt: expire.Unix(),
 			Issuer:    s.issuer,
@@ -56,38 +55,22 @@ func (s *simpleSigner) Sign(ctx context.Context, claim []byte, expire time.Time)
 	})
 	_token.Header[KID_HEADER] = s.keyID
 
-	token, err := _token.SignedString(s.hmacKeys[s.keyID])
+	token, err := _token.SignedString([]byte(s.hmacKeys[s.keyID]))
 	if err != nil {
-		return "", &types.CommonError{
-			Errors: []types.Error{
-				{
-					Code:     "GENERATE_TOKEN_FAILED",
-					HTTPCode: http.StatusInternalServerError,
-					Message:  "Failed to generate token",
-				},
-			},
-		}
+		return "", fmt.Errorf("failed to sign using key ID %v %v: %w", s.keyID, s.hmacKeys[s.keyID], err)
 	}
 	return token, nil
 }
 
-func (s *simpleSigner) Verify(ctx context.Context, token string) (claim []byte, errUC *types.CommonError) {
+func (s *simpleSigner) Verify(ctx context.Context, token string) (claim []byte, errUC error) {
 	claim, err := ParseHMACJWTToken(s.hmacKeys, token)
 	if err != nil {
-		return nil, &types.CommonError{
-			Errors: []types.Error{
-				{
-					Code:     "VERIFY_TOKEN_FAILED",
-					HTTPCode: http.StatusInternalServerError,
-					Message:  "Failed to verify token",
-				},
-			},
-		}
+		return nil, err
 	}
 	return claim, nil
 }
 
-func (s *simpleSigner) Keys(ctx context.Context) ([]authapi.Keys, *types.CommonError) {
+func (s *simpleSigner) Keys(ctx context.Context) ([]authapi.Keys, error) {
 	result := make([]authapi.Keys, 0, len(s.hmacKeys))
 	for keyID, key := range s.hmacKeys {
 		result = append(result, authapi.Keys{
@@ -106,12 +89,16 @@ func ParseHMACJWTToken(hmacKeys map[string]string, token string) (payload []byte
 
 		key, ok := parsed.Header[KID_HEADER].(string)
 		if !ok {
-			return nil, err
+			return nil, fmt.Errorf("token doesn't have a 'kid' header %w", err)
 		}
-		secret := hmacKeys[key]
+		secret := []byte(hmacKeys[key])
 
 		return secret, nil
 	})
+
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrInvalidToken, err)
+	}
 
 	if !parsed.Valid {
 		return nil, ErrInvalidToken
@@ -119,7 +106,7 @@ func ParseHMACJWTToken(hmacKeys map[string]string, token string) (payload []byte
 
 	claims, ok := parsed.Claims.(jwt.MapClaims)
 	if !ok {
-		return nil, ErrInvalidToken
+		return nil, fmt.Errorf("token doesn't contain claim: %w", ErrInvalidToken)
 	}
 
 	data, ok := claims[PAYLOAD_CLAIM]

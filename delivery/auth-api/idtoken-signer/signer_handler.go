@@ -97,7 +97,7 @@ func NewWithKeyManagement(
 	return s
 }
 
-func (s *oidcLogin) Sign(ctx context.Context, claim []byte, expire time.Time) (token string, errUC *types.CommonError) {
+func (s *oidcLogin) Sign(ctx context.Context, claim []byte, expire time.Time) (token string, errUC error) {
 	keys, errUC := s.getKeys(ctx)
 	if errUC != nil || len(keys) == 0 {
 		return "", &types.CommonError{
@@ -126,15 +126,15 @@ func (s *oidcLogin) Sign(ctx context.Context, claim []byte, expire time.Time) (t
 	return token, nil
 }
 
-func (s *oidcLogin) Verify(ctx context.Context, token string) (claim []byte, errUC *types.CommonError) {
+func (s *oidcLogin) Verify(ctx context.Context, token string) (claim []byte, err error) {
 	if len(s.keys) == 0 {
 		log.Err(errors.New("empty public key in verifier")).Msgf("Empty public keys: `%v`", s.config.SigningConfig.Secret)
-		errUC = &types.CommonError{
+		err = &types.CommonError{
 			Errors: []types.Error{
 				{HTTPCode: http.StatusInternalServerError, Code: "FAILED_TO_PARSE_TOKEN", Message: "Failed to parse token"},
 			},
 		}
-		return nil, errUC
+		return nil, err
 	}
 
 	// TODO: handle keys versioning. currenly will only support the last version
@@ -150,12 +150,12 @@ func (s *oidcLogin) Verify(ctx context.Context, token string) (claim []byte, err
 	return payload, nil
 }
 
-func (s *oidcLogin) Keys(ctx context.Context) ([]authapi.Keys, *types.CommonError) {
+func (s *oidcLogin) Keys(ctx context.Context) ([]authapi.Keys, error) {
 	result, err := s.getKeys(ctx)
 	return convertToOIDCKeys(result), err
 }
 
-func (s *oidcLogin) getKeys(ctx context.Context) ([]keys, *types.CommonError) {
+func (s *oidcLogin) getKeys(ctx context.Context) ([]keys, error) {
 	if len(s.keys) > 0 {
 		if time.Since(s.keys[0].cacheUpdateTime) < s.config.SigningConfig.PollTime {
 			return s.keys, nil
@@ -164,7 +164,7 @@ func (s *oidcLogin) getKeys(ctx context.Context) ([]keys, *types.CommonError) {
 	return s.updateSigningKeys(ctx)
 }
 
-func (s *oidcLogin) updateSigningKeys(ctx context.Context) ([]keys, *types.CommonError) {
+func (s *oidcLogin) updateSigningKeys(ctx context.Context) ([]keys, error) {
 	res := s.group.DoChan(s.config.SigningConfig.Secret, func() (interface{}, error) {
 		payloads, err := s.secretkvStore.List(context.Background(), s.config.SigningConfig.Secret)
 		if err != nil {

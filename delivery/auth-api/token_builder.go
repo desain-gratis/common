@@ -2,6 +2,8 @@ package authapi
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -10,6 +12,7 @@ import (
 	"google.golang.org/api/idtoken"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/desain-gratis/common/delivery/mycontent-api/mycontent"
 	types "github.com/desain-gratis/common/types/http"
 )
 
@@ -54,11 +57,20 @@ func GetToken(tokenBuilder TokenBuilder, tokenSigner TokenSigner) httprouter.Han
 		}
 
 		// 2. Build proto token
-		data, apiData, expiry, errUC := tokenBuilder.BuildToken(r, name, auth)
-		if errUC != nil {
+		data, apiData, expiry, err := tokenBuilder.BuildToken(r, name, auth)
+		if err != nil && errors.Is(err, mycontent.ErrNotFound) {
 			errMessage := types.SerializeError(&types.CommonError{
 				Errors: []types.Error{
-					{Message: "Failed to get user auth: " + errUC.Error(), Code: "SERVER_ERROR"},
+					{Message: "Failed to get user auth", Code: "CLIENT_ERROR"},
+				}})
+			w.WriteHeader(http.StatusNotFound)
+			w.Write(errMessage)
+			return
+		}
+		if err != nil {
+			errMessage := types.SerializeError(&types.CommonError{
+				Errors: []types.Error{
+					{Message: "Failed to get user auth: " + err.Error(), Code: "SERVER_ERROR"},
 				}})
 			w.WriteHeader(http.StatusInternalServerError)
 			w.Write(errMessage)
@@ -85,7 +97,7 @@ func GetToken(tokenBuilder TokenBuilder, tokenSigner TokenSigner) httprouter.Han
 			if r.Context().Err() != nil {
 				return
 			}
-			errMessage := types.SerializeError(errUC)
+			errMessage := types.SerializeError(fmt.Errorf("failed to sign token: %w (check signer implementation)", err))
 			w.WriteHeader(http.StatusInternalServerError)
 			w.Write(errMessage)
 			return

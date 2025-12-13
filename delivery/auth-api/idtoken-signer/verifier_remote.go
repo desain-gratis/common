@@ -35,14 +35,14 @@ func NewRemoteAuthVerifier(rsaStore jwtrsa.Provider, keysURL string) *remoteVeri
 	// TODO graceful error and retry
 	keys, err := s.updateKeys(context.Background())
 	if err != nil {
-		log.Err(err.Err()).Str("url", s.keysURL).Msgf("Failed to parse public signing key %+v", err)
+		log.Err(err).Str("url", s.keysURL).Msgf("Failed to parse public signing key %+v", err)
 	}
 	s.keys = keys
 
 	return s
 }
 
-func (s *remoteVerifier) Verify(ctx context.Context, token string) (claim []byte, errUC *types.CommonError) {
+func (s *remoteVerifier) Verify(ctx context.Context, token string) (claim []byte, errUC error) {
 	if len(s.keys) == 0 {
 		return nil, &types.CommonError{
 			Errors: []types.Error{
@@ -64,11 +64,11 @@ func (s *remoteVerifier) Verify(ctx context.Context, token string) (claim []byte
 }
 
 // Print claim in user readable format
-func (s *remoteVerifier) Parse(ctx context.Context, claim []byte) (data any, errUC *types.CommonError) {
+func (s *remoteVerifier) Parse(ctx context.Context, claim []byte) (data any, errUC error) {
 	return claim, nil
 }
 
-func (s *remoteVerifier) updateKeys(ctx context.Context) (result []keys, errUC *types.CommonError) {
+func (s *remoteVerifier) updateKeys(ctx context.Context) (result []keys, errUC error) {
 	req, err := http.NewRequest(http.MethodGet, s.keysURL, nil)
 	if err != nil {
 		return nil, &types.CommonError{

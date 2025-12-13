@@ -129,7 +129,7 @@ func NewMicrosoftAuth(clientID string) *microsoftVerifier {
 	}
 }
 
-func (g *microsoftVerifier) VerifyAs(ctx context.Context, token string) (*idtoken.Payload, *types.CommonError) {
+func (g *microsoftVerifier) VerifyAs(ctx context.Context, token string) (*idtoken.Payload, error) {
 	// TODO: move init or cache
 	keySet, err := jwk.Fetch(ctx, "https://login.microsoftonline.com/common/discovery/v2.0/keys")
 	if err != nil {

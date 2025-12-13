@@ -7,7 +7,7 @@ import (
 	types "github.com/desain-gratis/common/types/http"
 )
 
-func getToken(authorizationToken string) (string, *types.CommonError) {
+func getToken(authorizationToken string) (string, error) {
 	token := strings.Split(authorizationToken, " ")
 	if len(token) < 2 {
 		return "", &types.CommonError{

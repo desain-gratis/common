@@ -24,7 +24,7 @@ func AppAuth(verifier authapi.TokenVerifier, authKey any, parser authapi.TokenPa
 			if err != nil {
 				errMessage := types.SerializeError(&types.CommonError{
 					Errors: []types.Error{
-						{Code: "UNAUTHORIZED", HTTPCode: http.StatusBadRequest, Message: "Unauthorized. Please specify correct token."},
+						{Code: "UNAUTHORIZED", HTTPCode: http.StatusBadRequest, Message: "Unauthorized. Please specify correct token. " + err.Error()},
 					},
 				})
 				w.WriteHeader(http.StatusBadRequest)

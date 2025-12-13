@@ -15,7 +15,7 @@ import (
 
 const maxHeaderSize = 1 << 20
 
-type TokenParser func(ctx context.Context, payload []byte) (any, *types.CommonError)
+type TokenParser func(ctx context.Context, payload []byte) (any, error)
 
 type signingService struct {
 	signerVerifier SignerVerifier
@@ -35,14 +35,14 @@ func NewTokenAPI(
 
 // Keys allows other service to verify this published delivery Open ID credential
 func (s *signingService) Keys(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	keys, errUC := s.signerVerifier.Keys(r.Context())
-	if errUC != nil {
+	keys, err := s.signerVerifier.Keys(r.Context())
+	if err != nil {
 		if r.Context().Err() != nil {
 			return
 		}
 
-		log.Err(errUC.Err()).Msgf("Failed to get keys")
-		errMessage := types.SerializeError(errUC)
+		log.Err(err).Msgf("Failed to get keys")
+		errMessage := types.SerializeError(err)
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write(errMessage)
 		return
@@ -82,8 +82,8 @@ func (s *signingService) Debug(w http.ResponseWriter, r *http.Request, p httprou
 		return
 	}
 
-	result, errUC := s.tokenParser(r.Context(), data)
-	if errUC != nil {
+	result, err := s.tokenParser(r.Context(), data)
+	if err != nil {
 		log.Debug().Msg("Token schema changed. User need to update their token.")
 		errMessage := types.SerializeError(errUC)
 		w.WriteHeader(http.StatusInternalServerError)
@@ -135,7 +135,7 @@ func (s *signingService) MultiKeys(w http.ResponseWriter, r *http.Request, p htt
 	s.Keys(w, r, p)
 }
 
-func verifyAuthorizationHeader(ctx context.Context, verifier signing.Verifier, value string) (payload []byte, errUC *types.CommonError) {
+func verifyAuthorizationHeader(ctx context.Context, verifier signing.Verifier, value string) (payload []byte, err error) {
 	if len(payload) > maxHeaderSize {
 		return nil, &types.CommonError{
 			Errors: []types.Error{

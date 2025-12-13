@@ -3,8 +3,6 @@ package authapi
 import (
 	"context"
 	"time"
-
-	types "github.com/desain-gratis/common/types/http"
 )
 
 type SignerVerifier interface {
@@ -20,21 +18,21 @@ type Verifier TokenVerifier
 // TOKEN Based authorization
 type TokenSigner interface {
 	// Convert any data proto to signed JWT token
-	Sign(ctx context.Context, claim []byte, expire time.Time) (token string, errUC *types.CommonError)
+	Sign(ctx context.Context, claim []byte, expire time.Time) (token string, err error)
 
 	// Get keys to verify token this usecase have signed
-	Keys(ctx context.Context) (keys []Keys, errUC *types.CommonError)
+	Keys(ctx context.Context) (keys []Keys, err error)
 }
 
 type TokenVerifier interface {
 	// Verify token
-	Verify(ctx context.Context, token string) (claim []byte, errUC *types.CommonError)
+	Verify(ctx context.Context, token string) (claim []byte, err error)
 }
 
 // Specific case of Verifier
 type VerifierOf[T any] interface {
 	// Verify token
-	VerifyAs(ctx context.Context, token string) (claim T, errUC *types.CommonError)
+	VerifyAs(ctx context.Context, token string) (claim T, err error)
 }
 
 type Keys struct {
