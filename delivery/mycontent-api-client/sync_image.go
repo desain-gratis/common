@@ -213,6 +213,34 @@ func (i *imageDep[T]) computeImageConfigHashMulti(dir string, images map[string]
 	return id2hash, errUC
 }
 
+func computeFileConfigHash(dir string, file *entity.File) (string, error) {
+	h := fnv.New128()
+
+	url := path.Join(dir, file.Url)
+	f, err := os.Open(url)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	imgData, err := io.ReadAll(f)
+	if err != nil {
+		return "", err
+	}
+
+	// the raw image
+	h.Write(imgData)
+
+	h.Write([]byte(file.Description))
+
+	_result := make([]byte, 0, 16)
+	_result = h.Sum(_result)
+
+	result := base64.StdEncoding.EncodeToString(_result)
+
+	return result, nil
+}
+
 // compute hash for the image config
 func computeImageConfigHash(dir string, img *entity.Image) (string, error) {
 	h := fnv.New128()
@@ -360,6 +388,18 @@ func attachmentToImage(attachment *content.Attachment) *entity.Image {
 	}
 }
 
+// attachmentToImage an utility function to map attachment to an entity
+func attachmentToFile(attachment *content.Attachment) *entity.File {
+	log.Info().Msgf("from serva: %+v", attachment.Url)
+	return &entity.File{
+		Id:          attachment.Id,
+		Url:         attachment.Url,
+		Tags:        attachment.Tags,
+		Description: attachment.Description,
+		// Hash: r, should not have haash.. TODO: deprecate hash in thumbnail. Use in attachment instead
+	}
+}
+
 func attachmentToMap(attachments []*entity.Attachment) map[string]*entity.Attachment {
 	result := make(map[string]*entity.Attachment)
 	for _, attachment := range attachments {
@@ -373,10 +413,40 @@ func completeImageUploadPath(dir string, image **entity.Image) string {
 	return dir + "|" + (**image).Url
 }
 
+func completeUploadPath(dir string, url string) string {
+	return dir + "|" + url
+}
+
 func (i *imageDep[T]) customDir(dir string, base T) string {
 	newdir := dir
 	if i.customPath != nil {
 		newdir = path.Join(dir, i.customPath(base))
 	}
 	return newdir
+}
+
+func processFile(dir string, fileRef **entity.File) ([]byte, string, error) {
+	key := completeUploadPath(dir, (**fileRef).Url)
+	img := *fileRef
+	url := path.Join(dir, img.Url)
+	f, err := os.Open(url)
+	if err != nil {
+		return nil, "", &types.CommonError{
+			Errors: []types.Error{
+				{HTTPCode: http.StatusBadRequest, Code: "CLIENT_ERROR", Message: "Cannot open image '" + key + " ' at '" + url + "': " + err.Error()},
+			},
+		}
+	}
+	defer f.Close()
+
+	// TODO: read all first
+	data, err := io.ReadAll(f)
+	if err != nil {
+		return nil, "", err
+	}
+
+	// for image_data_url (placeholder) ; notice, only 32px bounding rectangle
+	placeholderEncode := ""
+
+	return data, placeholderEncode, nil
 }

@@ -35,6 +35,8 @@ func NewAttachment(
 }
 
 // Upload attachment
+// TODO: FROM READER :"
+// TODO REFACTOR GILA2AN CLIENT
 func (a *attachmentClient) Upload(ctx context.Context, authToken string, namespace string, metadata *entity.Attachment, fromPath string, fromMemory []byte) (authResp *entity.Attachment, errUC *types.CommonError) {
 	reqbody, writer := io.Pipe()
 	mwriter := multipart.NewWriter(writer)
@@ -206,6 +208,7 @@ func (a *attachmentClient) Upload(ctx context.Context, authToken string, namespa
 	}
 
 	if parsed.Error != nil {
+		log.Err(parsed.Error).Msgf("AJEGILAA %v", parsed.Error.Err())
 		return nil, parsed.Error
 	}
 

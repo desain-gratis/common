@@ -16,13 +16,18 @@ type ImageContext[T mycontent.Data] struct {
 	Image **entity.Image
 }
 
+type FileContext[T mycontent.Data] struct {
+	Base T
+	File **entity.File
+}
+
 type ExtractImages[T mycontent.Data] func(t []T) []ImageContext[T]
-type ExtractFiles[T mycontent.Data] func(t []T) []**entity.File
+type ExtractFiles[T mycontent.Data] func(t []T) []FileContext[T]
 type ExtractOtherEntities[T any] func(t []T) []mycontent.Data
 
 type fileDep[T mycontent.Data] struct {
 	sync       *sync[T]
-	client     *client[*entity.Attachment]
+	client     *attachmentClient
 	extract    ExtractFiles[T]
 	uploadDir  string
 	customPath func(T) string
@@ -73,7 +78,7 @@ func (s *sync[T]) WithImages(
 	return s
 }
 
-func (s *sync[T]) WithFiles(client *client[*entity.Attachment], extract ExtractFiles[T], uploadDir string) *sync[T] {
+func (s *sync[T]) WithFiles(client *attachmentClient, extract ExtractFiles[T], uploadDir string) *sync[T] {
 	s.fileDeps = append(s.fileDeps, &fileDep[T]{
 		sync:      s,
 		client:    client,
@@ -165,6 +170,17 @@ func (s *sync[T]) Execute(ctx context.Context) *types.CommonError {
 	}
 
 	// TODO: sync file dependencies as well
+	log.Info().Msgf("	Syncing file dependencies..")
+	for _, fileDep := range s.fileDeps {
+		fileRefs := fileDep.extract(localEntities) // pointer to images, for inplace update
+		stat, err := fileDep.syncFiles(fileRefs)
+		if err != nil {
+			log.Error().Msgf("	Failed to sync project file. Err: %v", err)
+			continue
+		}
+		log.Info().Msgf(`Sync project's file statistics:
+		%+v`, stat)
+	}
 
 	// Sync back the project since the data in localProjects have been already modified
 	for _, localEntity := range localEntities {

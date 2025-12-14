@@ -55,7 +55,7 @@ func (h *handler) Upload(ctx context.Context, objectPath string, contentType str
 	if err != nil {
 		// generic message for user.
 		// we don't want users know where do we store data
-		return nil, fmt.Errorf("%w: failed to put object", err)
+		return nil, fmt.Errorf("%w: failed to put object %v", err, ctx.Err())
 	}
 
 	return &blob.Data{

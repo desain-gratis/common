@@ -61,7 +61,7 @@ func (i *imageDep[T]) WithUploadDirectory(dir string) *imageDep[T] {
 	return i
 }
 
-func (i *imageDep[T]) WithCustomImagePath(pathFun func(T) string) *imageDep[T] {
+func (i *imageDep[T]) WithCustomPath(pathFun func(T) string) *imageDep[T] {
 	i.customPath = pathFun
 	return i
 }
@@ -71,7 +71,7 @@ func (i *fileDep[T]) WithUploadDirectory(dir string) *fileDep[T] {
 	return i
 }
 
-func (i *fileDep[T]) WithCustomFilePath(pathFun func(T) string) *fileDep[T] {
+func (i *fileDep[T]) WithCustomPath(pathFun func(T) string) *fileDep[T] {
 	// TODO: actually implement
 	i.customPath = pathFun
 	return i
@@ -107,10 +107,12 @@ func (b *builder[T]) WithFiles(extract ExtractFiles[T], relPath string, params .
 
 	dep := &fileDep[T]{
 		extract: extract,
-		client: &client[*entity.Attachment]{
-			endpoint:  filesEndpoint.String(),
-			refsParam: params,
-			httpc:     b.syncer.client.httpc,
+		client: &attachmentClient{
+			client: client[*entity.Attachment]{
+				endpoint:  filesEndpoint.String(),
+				refsParam: params,
+				httpc:     b.syncer.client.httpc,
+			},
 		},
 		sync:       b.syncer,
 		uploadDir:  b.fileDir,
