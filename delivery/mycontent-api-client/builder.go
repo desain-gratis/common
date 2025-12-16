@@ -1,6 +1,8 @@
 package mycontentapiclient
 
 import (
+	"context"
+	"io"
 	"net/http"
 	"net/url"
 	"path"
@@ -94,11 +96,18 @@ func (b *builder[T]) WithImages(extract ExtractImages[T], relPath string, params
 		uploadDir:  b.imageDir,
 		customPath: nil,
 	}
+	// can spawn go routine pool
 
 	b.syncer.imageDeps = append(b.syncer.imageDeps, dep)
 
 	// so user can modify/configure separately
 	return dep
+}
+
+// TODO: move to mycontent-api
+type AttachmentUploader[T mycontent.Data] interface {
+	// upload context
+	Upload(ctx context.Context, path string, data T) (io.ReadCloser, *entity.Attachment, error)
 }
 
 func (b *builder[T]) WithFiles(extract ExtractFiles[T], relPath string, params ...string) *fileDep[T] {
@@ -123,6 +132,11 @@ func (b *builder[T]) WithFiles(extract ExtractFiles[T], relPath string, params .
 	// so user can modify/configure separately
 	return dep
 }
+
+func (b *builder[T]) WithDependency(extract Extract) {}
+
+type Extractd[T mycontent.Data] func(T) []mycontent.Data
+type ExtractAttachment[T mycontent.Data] func(T) []
 
 func (b *builder[T]) Build() *sync[T] {
 	if b.syncer.namespace == "" {

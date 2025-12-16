@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/binary"
+	"errors"
 	"hash/fnv"
 	"image"
 	"io"
@@ -33,6 +34,11 @@ type SyncStat struct {
 	AlreadyInSync   int
 	ToAdd           int
 	ToDelete        int
+}
+
+type Attachment[T mycontent.Data] struct {
+	sync   *sync[T]
+	client *attachmentClient
 }
 
 type imageDep[T mycontent.Data] struct {
@@ -400,8 +406,24 @@ func attachmentToFile(attachment *content.Attachment) *entity.File {
 	}
 }
 
+// attachmentToImage an utility function to map attachment to an entity
+func attachmentToData(attachment *content.Attachment) mycontent.Data {
+	log.Info().Msgf("from serva: %+v", attachment.Url)
+	// TODO
+	return nil
+}
+
 func attachmentToMap(attachments []*entity.Attachment) map[string]*entity.Attachment {
 	result := make(map[string]*entity.Attachment)
+	for _, attachment := range attachments {
+		key := getKey(attachment.RefIDs(), attachment.ID())
+		result[key] = attachment
+	}
+	return result
+}
+
+func (i *commonDep[T, U]) attachmentToMap(attachments []*entity.Attachment) map[string]mycontent.Data {
+	result := make(map[string]mycontent.Data)
 	for _, attachment := range attachments {
 		key := getKey(attachment.RefIDs(), attachment.ID())
 		result[key] = attachment
@@ -423,6 +445,11 @@ func (i *imageDep[T]) customDir(dir string, base T) string {
 		newdir = path.Join(dir, i.customPath(base))
 	}
 	return newdir
+}
+
+func openStream(dir string, localUrl string) ([]byte, string, error) {
+	// todo: return reader for most of the usecae (except image in which we will perform some processing)
+	return nil, "", errors.New("not implemented")
 }
 
 func processFile(dir string, fileRef **entity.File) ([]byte, string, error) {

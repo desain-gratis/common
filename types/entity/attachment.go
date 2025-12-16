@@ -6,6 +6,8 @@ import (
 	"github.com/desain-gratis/common/delivery/mycontent-api/mycontent"
 )
 
+var _ mycontent.Data = &Attachment{}
+
 type Attachment struct {
 	Id           string   `json:"id,omitempty"`
 	RefIds       []string `json:"ref_ids,omitempty"`

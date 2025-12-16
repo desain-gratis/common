@@ -21,6 +21,13 @@ type FileContext[T mycontent.Data] struct {
 	File **entity.File
 }
 
+type Context struct {
+	Base       mycontent.Data
+	Attachment mycontent.Data
+}
+
+type Extract[T mycontent.Data] func(t []T) []Context
+
 type ExtractImages[T mycontent.Data] func(t []T) []ImageContext[T]
 type ExtractFiles[T mycontent.Data] func(t []T) []FileContext[T]
 type ExtractOtherEntities[T any] func(t []T) []mycontent.Data
