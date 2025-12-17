@@ -14,7 +14,7 @@ type Attachment struct {
 	Name         string   `json:"name,omitempty"` // name of the resource
 	Url          string   `json:"url,omitempty"`  // public URL of the resource
 	ContentType  string   `json:"content_type,omitempty"`
-	ContentSize  int64    `json:"content_size,omitempty"`
+	ContentSize  uint64   `json:"content_size,omitempty"`
 	Description  string   `json:"description,omitempty"`
 	Tags         []string `json:"tags,omitempty"` // meta data
 	Ordering     int32    `json:"ordering,omitempty"`

@@ -9,6 +9,7 @@ import (
 	"github.com/minio/minio-go/v7/pkg/credentials"
 
 	blob "github.com/desain-gratis/common/delivery/mycontent-api/storage/blob"
+	"github.com/desain-gratis/common/types/entity"
 )
 
 var _ blob.Repository = &handler{}
@@ -42,15 +43,15 @@ func New(
 	}, nil
 }
 
-func (h *handler) Upload(ctx context.Context, objectPath string, contentType string, payload io.Reader) (*blob.Data, error) {
+func (h *handler) Upload(ctx context.Context, objectPath string, attachment *entity.Attachment, payload io.Reader) (*blob.Data, error) {
 	exists, err := h.client.BucketExists(ctx, h.bucketName)
 	if !exists || err != nil {
 		return nil, fmt.Errorf("%w: failure when accessing storage or bucket not exist %v", err, !exists)
 	}
 
 	// TODO: -1 uses memory they said..
-	info, err := h.client.PutObject(ctx, h.bucketName, objectPath, payload, -1, minio.PutObjectOptions{
-		ContentType: contentType,
+	info, err := h.client.PutObject(ctx, h.bucketName, objectPath, payload, int64(attachment.ContentSize), minio.PutObjectOptions{
+		ContentType: attachment.ContentType,
 	})
 	if err != nil {
 		// generic message for user.
@@ -61,7 +62,7 @@ func (h *handler) Upload(ctx context.Context, objectPath string, contentType str
 	return &blob.Data{
 		PublicURL:   h.basePublicUrl + "/" + objectPath,
 		Path:        objectPath,
-		ContentType: contentType,
+		ContentType: attachment.ContentType,
 		ContentSize: info.Size,
 	}, nil
 }

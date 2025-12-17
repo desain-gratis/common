@@ -9,6 +9,7 @@ import (
 	"cloud.google.com/go/storage"
 
 	"github.com/desain-gratis/common/delivery/mycontent-api/storage/blob"
+	"github.com/desain-gratis/common/types/entity"
 )
 
 var _ blob.Repository = &handler{}
@@ -31,7 +32,7 @@ func New(
 	}
 }
 
-func (h *handler) Upload(ctx context.Context, objectPath string, contentType string, payload io.Reader) (*blob.Data, error) {
+func (h *handler) Upload(ctx context.Context, objectPath string, attachment *entity.Attachment, payload io.Reader) (*blob.Data, error) {
 	bucket := h.gcsClient.Bucket(h.bucketName)
 	if bucket == nil {
 		return nil, fmt.Errorf("empty bucket")
@@ -39,7 +40,7 @@ func (h *handler) Upload(ctx context.Context, objectPath string, contentType str
 
 	object := bucket.Object(objectPath)
 	objWriter := object.NewWriter(ctx)
-	objWriter.ContentType = contentType
+	objWriter.ContentType = attachment.ContentType
 	// objWriter.Name = filepath.Base(objectPath)
 
 	length, err := io.Copy(objWriter, payload)

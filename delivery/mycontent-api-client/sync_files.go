@@ -144,6 +144,7 @@ func (i *fileDep[T]) syncFiles(dataArr []FileContext[T]) (stat SyncStat, errUC *
 			Hash:         localHash[completeUploadPath(locUploadDir, (**localData.File).Url)],
 			Description:  (*localData.File).Description,
 			Tags:         (*localData.File).Tags,
+			ContentSize:  uint64(len(fileData)),
 			ImageDataUrl: "",
 			CreatedAt:    time.Now().Format(time.RFC3339),
 		}

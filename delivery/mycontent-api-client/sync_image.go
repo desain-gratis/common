@@ -176,6 +176,7 @@ func (i *imageDep[T]) syncImages(dataArr []ImageContext[T]) (stat SyncStat, errU
 			Hash:         localHash[completeImageUploadPath(locUploadDir, localData.Image)],
 			Description:  (*localData.Image).Description,
 			Tags:         (*localData.Image).Tags,
+			ContentSize:  uint64(len(imageData)),
 			ImageDataUrl: placeholder,
 			CreatedAt:    time.Now().Format(time.RFC3339),
 		}

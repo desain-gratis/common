@@ -3,12 +3,14 @@ package blob
 import (
 	"context"
 	"io"
+
+	"github.com/desain-gratis/common/types/entity"
 )
 
 type Repository interface {
 	// Upload generic binary to path
 	// Path is internal address
-	Upload(ctx context.Context, path string, contentType string, payload io.Reader) (*Data, error)
+	Upload(ctx context.Context, path string, attachment *entity.Attachment, payload io.Reader) (*Data, error)
 
 	// Delete generic binary at path
 	Delete(ctx context.Context, path string) (*Data, error)

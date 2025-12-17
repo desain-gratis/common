@@ -154,14 +154,14 @@ func (c *HandlerWithAttachment) Attach(ctx context.Context, meta *entity.Attachm
 	}
 
 	// TODO: create proper path / brainstorm better approach (but this works also)
-	repometa, err := c.blobRepo.Upload(ctx, result.Path, result.ContentType, payload)
+	repometa, err := c.blobRepo.Upload(ctx, result.Path, result, payload)
 	if err != nil {
 		_, _ = c.Handler.Delete(ctx, meta.Namespace(), meta.RefIDs(), meta.ID())
 		return nil, err
 	}
 
 	// Another server protected field
-	result.ContentSize = repometa.ContentSize
+	result.ContentSize = uint64(repometa.ContentSize)
 	result.Url = repometa.PublicURL // the blob storage URL, not this metadata for this case
 
 	// write back

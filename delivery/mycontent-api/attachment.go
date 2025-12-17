@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/julienschmidt/httprouter"
+	"github.com/rs/zerolog/log"
 
 	"github.com/desain-gratis/common/delivery/mycontent-api/mycontent"
 	"github.com/desain-gratis/common/delivery/mycontent-api/storage/content"
@@ -127,9 +128,9 @@ func (i *uploadService) Get(w http.ResponseWriter, r *http.Request, p httprouter
 	defer payload.Close()
 
 	w.Header().Set("Content-Type", meta.ContentType)
-	w.Header().Set("Content-Length", strconv.FormatInt(meta.ContentSize, 10))
+	w.Header().Set("Content-Length", strconv.FormatUint(meta.ContentSize, 10))
 	if i.cacheControl != "" {
-		w.Header().Set("Cache-Control", strconv.FormatInt(meta.ContentSize, 10))
+		w.Header().Set("Cache-Control", strconv.FormatUint(meta.ContentSize, 10))
 	}
 	w.WriteHeader(http.StatusOK)
 
@@ -148,6 +149,7 @@ func (i *uploadService) Get(w http.ResponseWriter, r *http.Request, p httprouter
 func (i *uploadService) Upload(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	// Read body parse entity and extract metadata
 	r.Body = http.MaxBytesReader(w, r.Body, maximumRequestLengthAttachment)
+	defer r.Body.Close()
 
 	reader, err := r.MultipartReader()
 	if err != nil {
@@ -181,7 +183,7 @@ func (i *uploadService) Upload(w http.ResponseWriter, r *http.Request, p httprou
 
 	if attachmentData.Namespace() == "" {
 		handleError(
-			w, "BAD_REQUEST", "attachment data namespace cannot be empty header is empty",
+			w, "BAD_REQUEST", "namespace cannot be empty",
 			http.StatusBadRequest, nil)
 		return
 	}
@@ -230,8 +232,25 @@ func (i *uploadService) Upload(w http.ResponseWriter, r *http.Request, p httprou
 		attachmentData.ContentType = contentType
 	}
 	if attachmentData.ContentSize == 0 && part.Header.Get("Content-Length") != "" {
-		size, _ := strconv.ParseInt(part.Header.Get("Content-Length"), 10, 64)
+		size, err := strconv.ParseUint(part.Header.Get("Content-Length"), 10, 64)
+		if err != nil {
+			handleError(w, "BAD_REQUEST",
+				"invalid attachment size: invali ContentSize or Content-Length header",
+				http.StatusBadRequest,
+				errors.New("missing content size"),
+			)
+			return
+		}
 		attachmentData.ContentSize = size
+	}
+
+	if attachmentData.ContentSize == 0 {
+		handleError(w, "BAD_REQUEST",
+			"missing attachment size: specify either attachment's ContentSize or Content-Length header",
+			http.StatusBadRequest,
+			errors.New("missing content size"),
+		)
+		return
 	}
 	// TODO: validate name
 	// TODO: validate everything to make it secure
@@ -249,18 +268,20 @@ func (i *uploadService) Upload(w http.ResponseWriter, r *http.Request, p httprou
 	})
 	if err != nil {
 		handleError(
-			w, "SERVER_ERROR", "server encounter an error",
+			w, "SERVER_ERROR", "failed to build response json",
 			http.StatusInternalServerError, err)
 	}
 
 	w.WriteHeader(http.StatusOK)
 	w.Write(payload)
 }
+
 func handleAttachError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, content.ErrInvalidKey):
 		handleError(w, "BAD_REQUEST", err.Error(), http.StatusBadRequest, nil)
 	default:
+		log.Error().Msgf("server error: %v", err)
 		handleError(w, "SERVER_ERROR", "server error", http.StatusInternalServerError, err)
 	}
 }
