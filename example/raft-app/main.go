@@ -50,7 +50,7 @@ func main() {
 		chatTopic := notifier_impl.NewStandardTopic()
 
 		// init raft app
-		chatApp := raftchat.New(chatTopic, config.ShardID, config.ReplicaID)
+		chatApp := raftchat.New(chatTopic)
 
 		// run raft app
 		err := raft_replica.Run(config, config.ID, chatApp)

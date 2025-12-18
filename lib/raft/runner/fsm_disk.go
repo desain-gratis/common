@@ -21,6 +21,7 @@ type baseDiskSM struct {
 	app            raft.Application
 	database       string
 	clickhouseAddr string
+	raftContext    RaftContext
 }
 
 func New(address, database string, app raft.Application) func(shardID uint64, replicaID uint64) sm.IOnDiskStateMachine {
@@ -29,6 +30,7 @@ func New(address, database string, app raft.Application) func(shardID uint64, re
 			clickhouseAddr: address,
 			database:       database,
 			app:            app,
+			raftContext:    RaftContext{ShardID: shardID, ReplicaID: replicaID},
 		}
 	}
 }
@@ -68,12 +70,14 @@ func (d *baseDiskSM) Open(stopc <-chan struct{}) (uint64, error) {
 func (d *baseDiskSM) Lookup(key interface{}) (interface{}, error) {
 	// Inject with context
 	ctx := context.WithValue(context.Background(), chConnKey, d.conn)
+	ctx = context.WithValue(ctx, contextKey, d.raftContext)
 
 	return d.app.Lookup(ctx, key)
 }
 
 func (d *baseDiskSM) Update(ents []sm.Entry) ([]sm.Entry, error) {
 	ctx := context.WithValue(context.Background(), chConnKey, d.conn)
+	ctx = context.WithValue(ctx, contextKey, d.raftContext)
 
 	metadataBatch, err := d.conn.PrepareBatch(ctx, `INSERT INTO metadata (namespace, data)`)
 	if err != nil {

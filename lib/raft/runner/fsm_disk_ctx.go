@@ -10,9 +10,15 @@ import (
 const (
 	chConnKey        ContextKey = "clickhouse-conn"
 	metadataBatchKey ContextKey = "metadata-batch"
+	contextKey       ContextKey = "context-key"
 )
 
 type ContextKey string
+
+type RaftContext struct {
+	ShardID   uint64
+	ReplicaID uint64
+}
 
 func GetClickhouseConnection(ctx context.Context) driver.Conn {
 	return ctx.Value(chConnKey).(driver.Conn)
@@ -31,4 +37,9 @@ func GetMetadata(ctx context.Context, namespace string) ([]byte, error) {
 func SetMetadata(ctx context.Context, namespace string, data []byte) error {
 	batch := ctx.Value(metadataBatchKey).(driver.Batch)
 	return batch.Append(namespace, string(data))
+}
+
+func GetRaftContext(ctx context.Context) RaftContext {
+	raftCtx := ctx.Value(contextKey).(RaftContext)
+	return raftCtx
 }

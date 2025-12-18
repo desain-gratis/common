@@ -28,20 +28,16 @@ var _ raft.Application = &chatWriterApp{}
 // because this is an OLAP usecase,  writing to DB, choosing the appropriate DB & indexes are tightly coupled.
 // will not try to abstract away
 type chatWriterApp struct {
-	state     *state
-	topicReg  notifierhelper.TopicRegistry
-	replicaID uint64
-	shardID   uint64
+	state    *state
+	topicReg notifierhelper.TopicRegistry
 }
 
-func New(topic notifier.Topic, shardID, replicaID uint64) *chatWriterApp {
+func New(topic notifier.Topic) *chatWriterApp {
 	nh := notifierhelper.NewTopicRegistry(map[string]notifier.Topic{
 		TopicChatLog: topic,
 	})
 	return &chatWriterApp{
-		topicReg:  nh,
-		shardID:   shardID,
-		replicaID: replicaID,
+		topicReg: nh,
 	}
 }
 
@@ -132,7 +128,7 @@ func (s *chatWriterApp) OnUpdate(ctx context.Context, e raft.Entry) raft.OnAfter
 		}
 	case Command_StartSubscription:
 		return func() (raft.Result, error) {
-			err := s.startSubscription(e, cmd.Data, chatIdx)
+			err := s.startSubscription(ctx, e, cmd.Data, chatIdx)
 			if err != nil {
 				resp, _ := json.Marshal(StartSubscriptionResponse{
 					Error: err,
@@ -240,10 +236,11 @@ func (s *chatWriterApp) Apply(ctx context.Context) error {
 	return nil
 }
 
-func (s *chatWriterApp) startSubscription(_ raft.Entry, rawData json.RawMessage, startIdx uint64) error {
+func (s *chatWriterApp) startSubscription(ctx context.Context, _ raft.Entry, rawData json.RawMessage, startIdx uint64) error {
+	raftCtx := raft_runner.GetRaftContext(ctx)
 	var data notifierhelper.StartSubscriptionRequest
 	_ = json.Unmarshal(rawData, &data)
-	err := s.topicReg.StartSubscription(s.replicaID, startIdx, data)
+	err := s.topicReg.StartSubscription(raftCtx.ReplicaID, startIdx, data)
 	if err != nil {
 		return err
 	}
