@@ -3,11 +3,11 @@ package replica
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	"github.com/lni/dragonboat/v4"
 	"github.com/lni/dragonboat/v4/config"
 	"github.com/lni/dragonboat/v4/raftio"
-	"github.com/lni/dragonboat/v4/statemachine"
 	"github.com/rs/zerolog/log"
 )
 
@@ -27,31 +27,6 @@ type Config[T any] struct {
 
 type ClickHouseConfig struct {
 	Address string `yaml:"address"`
-}
-
-func (c *Config[T]) StartReplica(fn statemachine.CreateStateMachineFunc) error {
-	var target map[uint64]dragonboat.Target
-	if c.internal.Bootstrap {
-		target = getPeer(cfg.Host.Peer, cfg)
-	}
-
-	join := len(target) == 0
-
-	err := dhost.StartReplica(target, join, fn, config.Config{
-		ShardID:            c.internal.shardID,
-		ReplicaID:          c.internal.replicaID,
-		HeartbeatRTT:       1,
-		CheckQuorum:        true,
-		ElectionRTT:        10,
-		SnapshotEntries:    10, // todo: set to 0. let manual snapshot by cron by calling request snapshot.
-		CompactionOverhead: 5,
-	})
-
-	if err != nil {
-		log.Panic().Msgf("start replica: %v", err)
-	}
-
-	return nil
 }
 
 var dhost *dragonboat.NodeHost
@@ -89,42 +64,68 @@ func Init() error {
 			continue
 		}
 
-		cfg.Replica[i].shardID = shardID
-		cfg.Replica[i].replicaID = cfg.Host.ReplicaID
+		cfg.Replica[i].ShardID = shardID
+		cfg.Replica[i].ReplicaID = cfg.Host.ReplicaID
 	}
 
 	return nil
 }
 
-func ForEachType[T any](appType string, f func(config Config[T]) error) {
-	for _, sc := range cfg.Replica {
-		if sc.Type != appType {
-			continue
+func GetConfig() DragonboatConfig2 {
+	return DragonboatConfig2(cfg)
+}
+
+func DHost() *dragonboat.NodeHost {
+	return dhost
+}
+
+func SusbcribeLeadershipEvent(shardID, replicaID uint64) {
+	// todo: add lock etc.
+	listener.ShardListener[shardID] = notifyLeader(dhost, shardID, replicaID)
+}
+
+func notifyLeader(dhost *dragonboat.NodeHost, shardID uint64, replicaID uint64) func(raftio.LeaderInfo) {
+	return func(info raftio.LeaderInfo) {
+		if info.LeaderID == replicaID {
+			a, i, u, e := dhost.GetLeaderID(shardID)
+			log.Info().Msgf("i'm the leader for shard: %v | %v %v %v %v", shardID, a, i, u, e)
+			log.Info().Msgf("proposing to the state machine...")
+
+			info, _ := json.Marshal(info)
+			d, _ := json.Marshal(UpdateRequest{
+				CmdName: Command_UpdateLeader,
+				CmdVer:  0,
+				Data:    info,
+			})
+
+			sess := dhost.GetNoOPSession(shardID)
+			ctx, c := context.WithTimeout(context.Background(), 5*time.Second)
+			res, err := dhost.SyncPropose(ctx, sess, d)
+			c()
+			if err != nil {
+				log.Error().Msgf("error propose: %v", err)
+				return
+			}
+
+			l, _ := dhost.GetLogReader(1)
+			l.NodeState()
+
+			log.Info().Msgf("result: %v", string(res.Data))
+
+			return
+		} else {
+			// sync propose as well..
 		}
-
-		shardID := sc.shardID
-
-		listener.ShardListener[shardID] = notifyLeader(dhost, shardID, cfg.Host.ReplicaID)
-
-		c := Config[T]{
-			internal:         sc,
-			Host:             dhost,
-			ShardID:          sc.shardID,
-			ReplicaID:        cfg.Host.ReplicaID,
-			ID:               sc.ID,
-			Alias:            sc.Alias,
-			Type:             sc.Type,
-			ClickHouseConfig: cfg.Host.ClickHouse,
-		}
-
-		var t T
-		err := json.Unmarshal([]byte(sc.Config), &t)
-		if err != nil {
-			log.Warn().Msgf("failed to marshal config")
-		}
-
-		c.AppConfig = t
-
-		f(c)
 	}
+}
+
+type Command string
+
+const Command_UpdateLeader = "update-leader"
+
+// UpdateRequest common Update request to state machine
+type UpdateRequest struct {
+	CmdName Command         `json:"cmd_name"`
+	CmdVer  uint64          `json:"cmd_version"`
+	Data    json.RawMessage `json:"data"`
 }

@@ -24,7 +24,7 @@ type baseDiskSM struct {
 	raftContext    RaftContext
 }
 
-func New(address, database string, app raft.Application) func(shardID uint64, replicaID uint64) sm.IOnDiskStateMachine {
+func newBaseDiskSM(address, database string, app raft.Application) func(shardID uint64, replicaID uint64) sm.IOnDiskStateMachine {
 	return func(shardID uint64, replicaID uint64) sm.IOnDiskStateMachine {
 		return &baseDiskSM{
 			clickhouseAddr: address,

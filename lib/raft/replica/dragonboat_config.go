@@ -64,6 +64,8 @@ type config2 struct {
 	Replica map[string]*ReplicaConfig `mapstructure:"replica"`
 }
 
+type DragonboatConfig2 config2
+
 type HostConfig struct {
 	ReplicaID    uint64           `mapstructure:"replica_id"`
 	RaftAddress  string           `mapstructure:"raft_address"`
@@ -75,8 +77,8 @@ type HostConfig struct {
 }
 
 type ReplicaConfig struct {
-	shardID   uint64
-	replicaID uint64
+	ShardID   uint64
+	ReplicaID uint64
 
 	Bootstrap bool   `yaml:"bootstrap"`
 	ID        string `yaml:"id"`

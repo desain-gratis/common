@@ -49,7 +49,7 @@ func Connect(address, database string) driver.Conn {
 	return conn
 }
 
-func CreateClickhouseDB(address, database string) error {
+func createClickhouseDB(address, database string) error {
 	opts := &clickhouse.Options{
 		Addr: []string{address},
 		Auth: clickhouse.Auth{

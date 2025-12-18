@@ -1,4 +1,4 @@
-package delivery
+package integration
 
 import (
 	"context"
@@ -16,10 +16,12 @@ import (
 	"github.com/desain-gratis/common/lib/notifier"
 	notifier_impl "github.com/desain-gratis/common/lib/notifier/impl"
 	notifierhelper "github.com/desain-gratis/common/lib/raft/notifier-helper"
+	raft_runner "github.com/desain-gratis/common/lib/raft/runner"
 	"github.com/julienschmidt/httprouter"
 	"github.com/lni/dragonboat/v4"
 	"github.com/lni/dragonboat/v4/client"
 	"github.com/lni/dragonboat/v4/statemachine"
+	"github.com/lni/goutils/random"
 	"github.com/rs/zerolog/log"
 )
 
@@ -27,13 +29,25 @@ import (
 type ChatAppIntegration struct {
 	ShardID   uint64
 	ReplicaID uint64
-	Dhost     *dragonboat.NodeHost
 	Sess      *client.Session
+	DHost     *dragonboat.NodeHost
 }
 
 type SubscriptionData struct {
 	IDToken string
 	Name    string
+}
+
+func New(ctx context.Context) *ChatAppIntegration {
+	raftCtx := raft_runner.GetRaftContext(ctx)
+
+	// TODO: we can create raft.Client to abstract away session creation
+	return &ChatAppIntegration{
+		ShardID:   raftCtx.ShardID,
+		ReplicaID: raftCtx.ReplicaID,
+		DHost:     raftCtx.DHost,
+		Sess:      client.NewNoOPSession(raftCtx.ShardID, random.NewLockedRand()),
+	}
 }
 
 func (b *ChatAppIntegration) Websocket(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
@@ -330,7 +344,7 @@ func (b *ChatAppIntegration) publishToRaft(ctx context.Context, msg any) ([]byte
 	var res statemachine.Result
 	for range 3 {
 		ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		res, err = b.Dhost.SyncPropose(ctx, b.Sess, data)
+		res, err = b.DHost.SyncPropose(ctx, b.Sess, data)
 		if err == nil {
 			cancel()
 			break
@@ -366,7 +380,7 @@ func (b *ChatAppIntegration) getSubscription(ctx context.Context, csfn notifier.
 	defer c()
 
 	// 1. get & register local instance of the subscription, but not yet received any event
-	v, err := b.Dhost.SyncRead(rctx, b.ShardID, raftchat.Subscribe{Topic: raftchat.TopicChatLog})
+	v, err := b.DHost.SyncRead(rctx, b.ShardID, raftchat.Subscribe{Topic: raftchat.TopicChatLog})
 	if err != nil {
 		return nil, 0, err
 	}
@@ -409,7 +423,7 @@ func (b *ChatAppIntegration) getSubscription(ctx context.Context, csfn notifier.
 	ctx2, c2 := context.WithTimeout(ctx, 5*time.Second)
 	defer c2()
 
-	result, err := b.Dhost.SyncPropose(ctx2, b.Sess, payload)
+	result, err := b.DHost.SyncPropose(ctx2, b.Sess, payload)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -472,7 +486,7 @@ func (b *ChatAppIntegration) queryLog(pctx context.Context, wsconn *websocket.Co
 	ctx, c := context.WithTimeout(pctx, 5*time.Second)
 	defer c()
 
-	q, err := b.Dhost.SyncRead(ctx, b.ShardID, qlog)
+	q, err := b.DHost.SyncRead(ctx, b.ShardID, qlog)
 	if err != nil {
 		return err
 	}

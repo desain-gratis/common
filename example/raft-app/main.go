@@ -13,13 +13,12 @@ import (
 	"time"
 
 	raftchat "github.com/desain-gratis/common/example/raft-app/src/app/raft-chat"
-	raftchat_delivery "github.com/desain-gratis/common/example/raft-app/src/app/raft-chat/delivery"
+	raftchat_http "github.com/desain-gratis/common/example/raft-app/src/app/raft-chat/integration"
 	notifier_api "github.com/desain-gratis/common/lib/notifier/api"
 	notifier_impl "github.com/desain-gratis/common/lib/notifier/impl"
 	raft_replica "github.com/desain-gratis/common/lib/raft/replica"
+	raft_runner "github.com/desain-gratis/common/lib/raft/runner"
 	"github.com/julienschmidt/httprouter"
-	"github.com/lni/dragonboat/v4/client"
-	"github.com/lni/goutils/random"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
@@ -38,6 +37,7 @@ func main() {
 
 	initConfig(appCtx, c)
 
+	// TODO: merge raft_replica & raft_runner to become one. raft.Init(), raft.ForEachReplica, raft.Run, raft.GetReplicaConfig(ctx), raft.GetClient()
 	err := raft_replica.Init()
 	if err != nil {
 		log.Panic().Msgf("panic init replica: %v", err)
@@ -45,7 +45,7 @@ func main() {
 
 	router := httprouter.New()
 
-	raft_replica.ForEachType("happy", func(config raft_replica.Config[raftchat.Config]) error {
+	raft_runner.ForEachReplica[raftchat.Config]("happy", func(ctx context.Context) error {
 		// init topic
 		chatTopic := notifier_impl.NewStandardTopic()
 
@@ -53,54 +53,23 @@ func main() {
 		chatApp := raftchat.New(chatTopic)
 
 		// run raft app
-		err := raft_replica.Run(config, config.ID, chatApp)
+		err := raft_runner.Run(ctx, chatApp)
 		if err != nil {
 			return err
 		}
 
-		topicAPI := notifier_api.NewTopicAPI(chatTopic, func(v any) any {
-			switch t := v.(type) {
-			case []byte:
-				return string(t)
-			case raftchat.Event:
-				d, _ := json.Marshal(v)
-				return string(d)
-			}
-			return v
-		})
-
 		// integrate the chat app with outside world / "delivery"
 		// in this case, a chat application that we've built.
-		chatIntegration := raftchat_delivery.ChatAppIntegration{
-			Dhost:     config.Host,
-			ShardID:   config.ShardID,
-			ReplicaID: config.ReplicaID,
-			Sess:      client.NewNoOPSession(config.ShardID, random.NewLockedRand()),
-		}
+		chatIntegration := raftchat_http.New(ctx)
 
-		router.GET("/happy/"+config.ID, topicAPI.Metrics)
-		router.POST("/happy/"+config.ID, topicAPI.Publish)
-		router.GET("/happy/"+config.ID+"/tail", topicAPI.Tail)
-		router.GET("/happy/"+config.ID+"/ws", chatIntegration.Websocket)
+		// spawn topic for each replica instance
+		topicAPI := notifier_api.NewTopicAPI(chatTopic, parseTable)
 
-		// For realtime part:
-		// todo: brokerAPI.WebSocket(topic) Tail(topic)
-		// in other words, a default API (jsonl stream / websocket) for "notifier.Topic".
-		// able to filter by:
-		// 1. table_name / event_name
-		// 2. by other custom key value filter fn, (type assertion on Event's data)
-		// 3. or other capabilities... map/reduce / functional programming / DAGs/ UDFs etc..
-		// 4. can have default API for parsing simple DAGs to combine more than 1 real time topic
-		//. and any other custom implementations...s
-
-		// For the non realtime/snapshot / key-value part:
-		// and then later, can have key value storage or any derivatives of the event
-		// there is default for desain.gratis.. but user can create custom filter / DAGs / UDFslater
-		// router.GET("/happy/"+config.ID+"/table/active-users", ...)
-		// router.GET("/happy/"+config.ID+"/table/chat?room_id=...", ...)
-		// router.GET("/happy/"+config.ID+"/table/purchase?id=...", ...)
-
-		// lets implement that.. and desain.gratis will be unstoppable
+		raftCtx := raft_runner.GetRaftContext(ctx)
+		router.GET("/happy/"+raftCtx.ID, topicAPI.Metrics)
+		router.POST("/happy/"+raftCtx.ID, topicAPI.Publish)
+		router.GET("/happy/"+raftCtx.ID+"/tail", topicAPI.Tail)
+		router.GET("/happy/"+raftCtx.ID+"/ws", chatIntegration.Websocket)
 
 		return nil
 	})
@@ -182,4 +151,15 @@ func main() {
 
 	<-idleConnsClosed
 	log.Info().Msgf("Bye bye")
+}
+
+func parseTable(v any) any {
+	switch t := v.(type) {
+	case []byte:
+		return string(t)
+	case raftchat.Event:
+		d, _ := json.Marshal(v)
+		return string(d)
+	}
+	return v
 }

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
+	"github.com/lni/dragonboat/v4"
 )
 
 const (
@@ -16,8 +17,15 @@ const (
 type ContextKey string
 
 type RaftContext struct {
+	ID        string
 	ShardID   uint64
 	ReplicaID uint64
+	Type      string
+	AppConfig any
+	DHost     *dragonboat.NodeHost
+
+	// internal state
+	isBootstrap bool
 }
 
 func GetClickhouseConnection(ctx context.Context) driver.Conn {
