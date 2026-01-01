@@ -1,0 +1,35 @@
+name: Upload User Profile API
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Hello"
+        required: true
+        default: "staging"
+
+jobs:
+  send-metadata:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Tailscale
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:desain-gratis-ci
+
+      - name: Debug Tailscale
+        run: |
+          tailscale status
+          tailscale ping mb1
+
+      - name: Send deploy metadata
+        uses: desain-gratis/deployd-gh-action@v1
+        with:
+          url: https://mb1:9999
+          namespace: desain-gratis
+          name: user-profile
+          build-script: ./example/user-profile/build.sh
+          archive: ./example/user-profile/dist
