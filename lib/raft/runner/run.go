@@ -41,6 +41,57 @@ type ClickHouseConfig struct {
 	Address string `yaml:"address"`
 }
 
+func Context[T any](appID string) (context.Context, error) {
+	cfg := replica.GetConfig()
+
+	sc, ok := cfg.Replica[appID]
+	if !ok {
+		return nil, fmt.Errorf("replica config not found for app ID: %v", appID)
+	}
+
+	var t T
+	err := json.Unmarshal([]byte(sc.Config), &t)
+	if err != nil {
+		log.Warn().Msgf("failed to marshal config")
+	}
+
+	// Pass everything via context to make the API clean
+	ctx := context.Background()
+	ctx = context.WithValue(ctx, contextKey, RaftContext{
+		ID:        sc.ID,
+		ShardID:   sc.ShardID,
+		ReplicaID: sc.ReplicaID,
+		Type:      sc.Type,
+		AppConfig: t,
+		DHost:     replica.DHost(),
+
+		// internal state
+		isBootstrap: sc.Bootstrap,
+
+		// can add more as required
+	})
+
+	return ctx, nil
+}
+
+func RunReplica[T any](appID string, app raft.Application) (context.Context, error) {
+	cfg := replica.GetConfig()
+
+	sc, ok := cfg.Replica[appID]
+	if !ok {
+		return nil, fmt.Errorf("replica config not found for app ID: %v", appID)
+	}
+
+	shardID := sc.ShardID
+	replicaID := cfg.Host.ReplicaID
+
+	replica.SusbcribeLeadershipEvent(shardID, replicaID)
+
+	ctx, _ := Context[T](appID)
+
+	return ctx, Run(ctx, app)
+}
+
 func ForEachReplica[T any](appType string, f func(ctx context.Context) error) {
 	cfg := replica.GetConfig()
 

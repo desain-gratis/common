@@ -3,6 +3,7 @@ package mycontentapi
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -72,6 +73,14 @@ func (i *service[T]) Post(w http.ResponseWriter, r *http.Request, p httprouter.P
 	if err != nil {
 		handleError(
 			w, "BAD_REQUEST", "failed to parse body. Make sure file size does not exceed 200Kb",
+			http.StatusBadRequest, nil)
+		return
+	}
+
+	err = resource.Validate()
+	if err != nil {
+		handleError(
+			w, "BAD_REQUEST", fmt.Sprintf("validation errors: %v.", err),
 			http.StatusBadRequest, nil)
 		return
 	}
