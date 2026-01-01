@@ -28,7 +28,7 @@ jobs:
       - name: Send deploy metadata
         uses: desain-gratis/deployd-gh-action@v1
         with:
-          url: https://mb1:9999
+          url: http://mb1:9999
           namespace: desain-gratis
           name: user-profile
           build-script: ./example/user-profile/build.sh
