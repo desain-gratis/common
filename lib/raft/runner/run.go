@@ -44,9 +44,9 @@ type ClickHouseConfig struct {
 func Context[T any](appID string) (context.Context, error) {
 	cfg := replica.GetConfig()
 
-	sc, ok := cfg.Replica[appID]
+	sc, ok := cfg.ReplicaByID[appID]
 	if !ok {
-		return nil, fmt.Errorf("replica config not found for app ID: %v", appID)
+		return nil, fmt.Errorf("replica config not found in context for app ID: %v", appID)
 	}
 
 	var t T
@@ -77,7 +77,7 @@ func Context[T any](appID string) (context.Context, error) {
 func RunReplica[T any](appID string, app raft.Application) (context.Context, error) {
 	cfg := replica.GetConfig()
 
-	sc, ok := cfg.Replica[appID]
+	sc, ok := cfg.ReplicaByID[appID]
 	if !ok {
 		return nil, fmt.Errorf("replica config not found for app ID: %v", appID)
 	}

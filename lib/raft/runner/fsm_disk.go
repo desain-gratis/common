@@ -3,6 +3,9 @@ package runner
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
@@ -75,6 +78,13 @@ func (d *baseDiskSM) Lookup(key interface{}) (interface{}, error) {
 	return d.app.Lookup(ctx, key)
 }
 
+// Raft Command
+type Command struct {
+	Command string          `json:"command"`
+	Value   json.RawMessage `json:"value"`
+	// add more fields below
+}
+
 func (d *baseDiskSM) Update(ents []sm.Entry) ([]sm.Entry, error) {
 	ctx := context.WithValue(context.Background(), chConnKey, d.conn)
 	ctx = context.WithValue(ctx, contextKey, d.raftContext)
@@ -98,7 +108,33 @@ func (d *baseDiskSM) Update(ents []sm.Entry) ([]sm.Entry, error) {
 		if ents[idx].Index <= d.initialApplied {
 			log.Panic().Msgf("oh no initial")
 		}
-		afterApplys[idx] = d.app.OnUpdate(ctx, raft.Entry(ents[idx]))
+		var msg Command
+		err := json.Unmarshal(ents[idx].Cmd, &msg)
+		if err != nil {
+			afterApplys[idx] = func() (raft.Result, error) {
+				return raft.Result{Value: 1, Data: []byte("invalid message: not a valid JSON")}, nil
+			}
+			continue
+		}
+
+		afterApplys[idx], err = d.app.OnUpdate(ctx, raft.Entry{
+			Entry:   &ents[idx],
+			Index:   ents[idx].Index,
+			Command: msg.Command,
+			Value:   []byte(msg.Value),
+		})
+		if err != nil && errors.Is(err, raft.ErrUnsupported) {
+			afterApplys[idx] = func() (raft.Result, error) {
+				return raft.Result{Value: 1, Data: []byte(err.Error())}, nil
+			}
+			continue
+		}
+		if err != nil {
+			afterApplys[idx] = func() (raft.Result, error) {
+				return raft.Result{Value: 1, Data: []byte(fmt.Sprintf("fatal error: %v", err))}, nil
+			}
+			continue
+		}
 	}
 
 	// Apply update to disk

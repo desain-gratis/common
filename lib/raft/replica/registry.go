@@ -56,6 +56,8 @@ func Init() error {
 	dhost = nhost
 	cfg = ncfg
 
+	cfg.ReplicaByID = make(map[string]ReplicaConfig)
+
 	for i, shardConfig := range cfg.Replica {
 		log.Debug().Msgf("configuring sm: %v", shardConfig.ID)
 		shardID, err := convertID(i)
@@ -65,7 +67,9 @@ func Init() error {
 		}
 
 		cfg.Replica[i].ShardID = shardID
-		cfg.Replica[i].ReplicaID = cfg.Host.ReplicaID
+		cfg.Replica[i].ReplicaID = ncfg.Host.ReplicaID
+
+		cfg.ReplicaByID[shardConfig.ID] = *cfg.Replica[i]
 	}
 
 	return nil

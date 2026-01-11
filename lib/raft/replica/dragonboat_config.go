@@ -62,6 +62,8 @@ func initDragonboatConfig(_ context.Context) (cfg config2, err error) {
 type config2 struct {
 	Host    HostConfig                `mapstructure:"host"`
 	Replica map[string]*ReplicaConfig `mapstructure:"replica"`
+
+	ReplicaByID map[string]ReplicaConfig
 }
 
 type DragonboatConfig2 config2
@@ -80,9 +82,9 @@ type ReplicaConfig struct {
 	ShardID   uint64
 	ReplicaID uint64
 
-	Bootstrap bool   `yaml:"bootstrap"`
-	ID        string `yaml:"id"`
-	Alias     string `yaml:"alias"`
-	Type      string `yaml:"type"`
-	Config    string `yaml:"config"`
+	Bootstrap bool   `mapstructure:"bootstrap"`
+	ID        string `mapstructure:"id"`
+	Alias     string `mapstructure:"alias"`
+	Type      string `mapstructure:"type"`
+	Config    string `mapstructure:"config"`
 }

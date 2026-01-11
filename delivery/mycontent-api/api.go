@@ -15,6 +15,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/desain-gratis/common/delivery/mycontent-api/mycontent"
+	mycontent_base "github.com/desain-gratis/common/delivery/mycontent-api/mycontent/base"
 	"github.com/desain-gratis/common/delivery/mycontent-api/storage/content"
 	types "github.com/desain-gratis/common/types/http"
 )
@@ -30,6 +31,11 @@ type service[T mycontent.Data] struct {
 }
 
 type PostProcess[T mycontent.Data] func(t T)
+
+func NewFromStorage[T mycontent.Data](baseURL string, refParams []string, store content.Repository, refSize int) *service[T] {
+	base := mycontent_base.New[T](store, refSize) // todo use refSize from store
+	return New(base, baseURL, refParams)
+}
 
 func New[T mycontent.Data](
 	uc mycontent.Usecase[T],
