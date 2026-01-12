@@ -78,7 +78,28 @@ func (c *mycontentClient) Post(ctx context.Context, namespace string, refIDs []s
 
 // Get daya by owner ID
 func (c *mycontentClient) Get(ctx context.Context, namespace string, refIDs []string, ID string) ([]content.Data, error) {
-	return nil, fmt.Errorf("not implemented yet")
+	resp, err := c.queryLocal(ctx, QueryMyContent{
+		Table:     c.tableName,
+		Namespace: namespace,
+		RefIDs:    refIDs,
+		ID:        ID,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	chanResp, ok := resp.(QueryMyContentResponse)
+	if !ok {
+		return nil, fmt.Errorf("server error: not query my content response: %T %v", resp, resp)
+	}
+
+	// for get, we store them all into memory
+	result := make([]content.Data, 0)
+	for data := range chanResp {
+		result = append(result, *data)
+	}
+
+	return result, nil
 }
 
 // Delete specific ID data. If no data, MUST return error
@@ -133,17 +154,20 @@ func (c *mycontentClient) publishToRaft(ctx context.Context, msg any) ([]byte, e
 
 func (c *mycontentClient) queryLocal(ctx context.Context, msg any) (any, error) {
 	var res any
+	var errg error
 	for range 3 {
 		ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		tmpRes, err := c.DHost.SyncRead(ctx, c.Sess.ShardID, msg)
 		if err == nil {
 			res = tmpRes
+			errg = nil
 			cancel()
 			break
 		}
+		errg = err
 		cancel()
 		time.Sleep(500 * time.Millisecond)
 	}
 
-	return res, nil
+	return res, errg
 }

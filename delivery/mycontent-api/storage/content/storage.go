@@ -27,6 +27,9 @@ type Repository interface {
 }
 
 type Data struct {
+	// Incremental value for "log" storage for OLAP maxxing
+	EventID uint64
+
 	// The location of the data in the repository
 	Namespace string
 	RefIDs    []string

@@ -53,6 +53,8 @@ type Data interface {
 	Created
 	RefIDs
 	Validator
+
+	// TODO: Add EventID
 }
 
 // Mutator or modifier, fluent style

@@ -6,11 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
+	"github.com/desain-gratis/common/delivery/mycontent-api/storage/content"
 	"github.com/desain-gratis/common/lib/notifier"
 	"github.com/desain-gratis/common/lib/raft"
 	notifierhelper "github.com/desain-gratis/common/lib/raft/notifier-helper"
@@ -26,6 +28,27 @@ const (
 )
 
 var _ raft.Application = &chatWriterApp{}
+
+type QueryMyContent struct {
+	Table     string   `json:"table"`
+	Namespace string   `json:"namespace"`
+	RefIDs    []string `json:"ref_ids"`
+	ID        string   `json:"id"`
+}
+
+type QueryMyContentResponse <-chan *content.Data
+
+type DataWrapper struct {
+	// todo: mycontent data might need to use this instead of
+
+	Table     string          `json:"table"`
+	Namespace string          `json:"namespace"`
+	RefIDs    []string        `json:"ref_ids"`
+	ID        string          `json:"id"`
+	EventID   uint64          `json:"event_id"`
+	Data      json.RawMessage `json:"data"`
+	Meta      json.RawMessage `json:"meta"`
+}
 
 // happySM to isolate all business logic from the state machine technicality
 // because this is an OLAP usecase,  writing to DB, choosing the appropriate DB & indexes are tightly coupled.
@@ -77,9 +100,80 @@ func (s *chatWriterApp) Lookup(ctx context.Context, query interface{}) (interfac
 	case QueryLog:
 		// query historical log
 		return s.queryLog(ctx, q)
+	case QueryMyContent:
+		return s.queryMyContent(ctx, q)
 	}
 
 	return nil, errors.New("unsupported query")
+}
+
+func (s *chatWriterApp) queryMyContent(ctx context.Context, query QueryMyContent) (QueryMyContentResponse, error) {
+	tableCfg, ok := s.tableConfig[query.Table]
+	if !ok {
+		return nil, fmt.Errorf("table not found: %v", query.Table)
+	}
+
+	if len(query.RefIDs) != tableCfg.RefSize {
+		return nil, fmt.Errorf("invalid reference: %v", query.RefIDs)
+	}
+
+	conn := raft_runner.GetClickhouseConnection(ctx)
+	q, args, err := s.prepareGet(tableCfg.Name, tableCfg.RefSize, query.Namespace, query.RefIDs, query.ID)
+	if err != nil {
+		return nil, fmt.Errorf("prepare get: %v", err)
+	}
+
+	rows, err := conn.Query(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+
+	// log.Info().Msgf("QUERY: %v", q)
+	// log.Info().Msgf("PARAMS: %v", args)
+
+	out := make(chan *content.Data)
+
+	go func() {
+		defer close(out)
+		defer rows.Close()
+
+		for rows.Next() {
+			keyAndContentSize := 1 + 1 + 1 + tableCfg.RefSize + 2 // event id+  key + data and meta
+
+			var eventID uint64
+			result := make([]string, keyAndContentSize-1) // exclude eventID
+			resultany := make([]any, 1+len(result))
+
+			pos := 0
+			resultany[pos] = &eventID
+			pos++
+			for i := range result { // the first one an UInt eventID
+				resultany[pos] = &result[i]
+				pos++
+			}
+
+			err := rows.Scan(resultany...)
+			if err != nil {
+				log.Err(err).Msgf("Failed scan row")
+				slog.Error(
+					"failed to scan row", slog.String("err", err.Error()),
+					slog.String("components", "mycontent.storage.clickhouse.get"))
+				continue
+			}
+
+			for i := range result {
+				resultany[i] = result[i]
+			}
+
+			rowData := s.convertGetData(tableCfg.RefSize, eventID, result)
+			out <- rowData
+		}
+	}()
+
+	var rq QueryMyContentResponse
+	rq = (<-chan *content.Data)(out)
+
+	return rq, nil
 }
 
 func (s *chatWriterApp) Init(ctx context.Context) error {
@@ -269,24 +363,6 @@ func (s *chatWriterApp) delete(ctx context.Context, payload DataWrapper) (raft.O
 	}, nil
 }
 
-type DataWrapper struct {
-	// todo: mycontent data might need to use this instead of
-
-	Table     string          `json:"table"`
-	Namespace string          `json:"namespace"`
-	RefIDs    []string        `json:"ref_ids"`
-	ID        string          `json:"id"`
-	EventID   uint64          `json:"event_id"`
-	Data      json.RawMessage `json:"data"`
-	Meta      json.RawMessage `json:"meta"`
-}
-
-func parseAs[T any](payload []byte) (T, error) {
-	var t T
-	err := json.Unmarshal(payload, &t)
-	return t, err
-}
-
 // OnUpdate updates the object using the specified committed raft entry.
 func (s *chatWriterApp) OnUpdate(ctx context.Context, e raft.Entry) (raft.OnAfterApply, error) {
 	// chatIdx := *s.state.ChatIndex
@@ -456,4 +532,126 @@ func (s *chatWriterApp) preparePost(refSize int, eventID uint64, namespace strin
 	}
 
 	return id, columns, args, tmplt
+}
+
+// todo: re-organize / move this to clickhouse to share shared query logic
+
+func (s *chatWriterApp) prepareGet(tableName string, refSize int, namespace string, refIDs []string, ID string) (string, []any, error) {
+	if len(refIDs) > refSize {
+		return "", nil, fmt.Errorf(
+			"%w: ref size is greater than expected (got %v, expected %v)", content.ErrInvalidKey, len(refIDs), refSize)
+	}
+
+	buf := bytes.NewBuffer(make([]byte, 0, 100))
+
+	keyCols := make([]string, 0, refSize)
+
+	keyCols = append(keyCols, "event_id", "namespace")
+
+	for i := range refSize {
+		// TODO: reuse the one inside get DDL function
+		refID := `ref_id_` + strconv.Itoa(i+1)
+		keyCols = append(keyCols, refID)
+	}
+
+	keyCols = append(keyCols, "id")
+
+	_, err := buf.WriteString(`SELECT ` + strings.Join(append(keyCols, "data", "meta"), ",") + ` FROM "` + tableName + `" FINAL `)
+	if err != nil {
+		return "", nil, err
+	}
+
+	whereQ, whereArgs, err := s.prepareWhereQuery(refSize, namespace, refIDs, ID)
+	if err != nil {
+		return "", nil, err
+	}
+
+	_, err = buf.WriteString(whereQ)
+	if err != nil {
+		return "", nil, err
+	}
+
+	return buf.String(), whereArgs, nil
+}
+
+func (s *chatWriterApp) prepareWhereQuery(refSize int, namespace string, refIDs []string, ID string) (string, []any, error) {
+	// keys consist of (namespace, ...refIDs, ID)
+	keySize := len(refIDs) + 2
+
+	args := make([]any, 0, keySize)
+	buf := bytes.NewBuffer(make([]byte, 0, 100))
+
+	// if not querying all data, namespace must be specified
+	if namespace == "" {
+		return "", args, fmt.Errorf("%w: namespace must be specified", content.ErrInvalidKey)
+	}
+
+	// just to start the where statement..
+	_, err := buf.WriteString(` WHERE 1=1 `)
+	if err != nil {
+		return "", nil, err
+	}
+
+	if namespace != "*" {
+		_, err := buf.WriteString(` AND namespace = ?`)
+		if err != nil {
+			return "", nil, err
+		}
+		args = append(args, namespace)
+	}
+
+	for idx, refID := range refIDs {
+		_, err := buf.WriteString(` AND `)
+		if err != nil {
+			return "", nil, err
+		}
+
+		_, err = buf.WriteString(` ref_id_` +
+			strconv.Itoa(idx+1) + ` = ?`,
+		)
+		if err != nil {
+			return "", nil, err
+		}
+
+		args = append(args, refID)
+	}
+
+	// check if it's not looking for ID
+	if len(refIDs) < refSize {
+		if ID != "" {
+			return "", nil, fmt.Errorf(
+				"%w: id provided without complete parent references", content.ErrInvalidKey)
+		}
+		return buf.String(), args, nil
+	}
+
+	if ID != "" {
+		buf.WriteString(` AND id = ?`)
+		args = append(args, ID)
+	}
+
+	return buf.String(), args, nil
+}
+
+func (s *chatWriterApp) convertGetData(refSize int, eventID uint64, result []string) *content.Data {
+	refIDs := make([]string, 0, refSize)
+
+	for i := 1; i < len(result)-2; i++ {
+		refIDs = append(refIDs, result[i])
+	}
+
+	return &content.Data{
+		ID:        result[len(result)-3],
+		EventID:   eventID,
+		Namespace: result[0],
+		RefIDs:    refIDs,
+		Data:      []byte(result[len(result)-2]),
+		Meta:      []byte(result[len(result)-1]),
+	}
+}
+
+func parseAs[T any](payload []byte) (T, error) {
+	var t T
+	err := json.Unmarshal(payload, &t)
+	return t, err
 }
