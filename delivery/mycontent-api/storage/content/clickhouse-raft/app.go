@@ -113,10 +113,6 @@ func (s *chatWriterApp) queryMyContent(ctx context.Context, query QueryMyContent
 		return nil, fmt.Errorf("table not found: %v", query.Table)
 	}
 
-	if len(query.RefIDs) != tableCfg.RefSize {
-		return nil, fmt.Errorf("invalid reference: %v", query.RefIDs)
-	}
-
 	conn := raft_runner.GetClickhouseConnection(ctx)
 	q, args, err := s.prepareGet(tableCfg.Name, tableCfg.RefSize, query.Namespace, query.RefIDs, query.ID)
 	if err != nil {
@@ -256,7 +252,9 @@ func (s *chatWriterApp) post(ctx context.Context, payload DataWrapper) (raft.OnA
 
 	if len(payload.RefIDs) != tableCfg.RefSize {
 		return func() (raft.Result, error) {
-			return raft.Result{Value: 1, Data: []byte("invalid reference")}, nil
+			return raft.Result{Value: 1, Data: []byte(
+				fmt.Sprintf("unexpected reference count: expected %v got %v", tableCfg.RefSize, len(payload.RefIDs)),
+			)}, nil
 		}, nil
 	}
 

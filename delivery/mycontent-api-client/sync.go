@@ -7,7 +7,6 @@ import (
 	"github.com/desain-gratis/common/delivery/mycontent-api/mycontent"
 	"github.com/desain-gratis/common/types/entity"
 	content "github.com/desain-gratis/common/types/entity"
-	types "github.com/desain-gratis/common/types/http"
 	"github.com/rs/zerolog/log"
 )
 
@@ -88,8 +87,7 @@ func (s *sync[T]) WithFiles(client *attachmentClient, extract ExtractFiles[T], u
 	return s
 }
 
-func (s *sync[T]) Execute(ctx context.Context) *types.CommonError {
-
+func (s *sync[T]) Execute(ctx context.Context) error {
 	// 1. get all main entity from remote, for all namespace
 	remoteEntities, errUC := s.client.Get(ctx, s.OptConfig.AuthorizationToken, s.namespace, nil, "") // "*" special namespace to get all namespace
 	remoteEntitiesMap := make(map[string]T)
