@@ -132,7 +132,7 @@ func (i *fileDep[T]) syncFiles(dataArr []FileContext[T]) (stat SyncStat, errUC *
 		locUploadDir := i.customDir(uploadDir, localData.Base)
 		fileData, _, errUC := processFile(locUploadDir, localData.File)
 		if errUC != nil {
-			log.Error().Msgf("  failed to process image '%+v', msg: %+v", key, errUC)
+			log.Error().Msgf("  failed to process file '%+v', msg: %+v", key, errUC)
 			continue
 		}
 
@@ -166,7 +166,6 @@ func (i *fileDep[T]) syncFiles(dataArr []FileContext[T]) (stat SyncStat, errUC *
 func (i *fileDep[T]) computeFileConfigHashMulti(dir string, files map[string]FileContext[T]) (map[string]string, []*types.Error) {
 	id2hash := make(map[string]string)
 	errUC := make([]*types.Error, 0)
-	log.Info().Msgf("Read image path: %v", dir)
 	for _, file := range files {
 		newdir := i.customDir(dir, file.Base)
 		imgHash, err := computeFileConfigHash(newdir, *file.File)

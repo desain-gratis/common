@@ -119,11 +119,13 @@ func (s *sync[T]) Execute(ctx context.Context) error {
 		localEntities = localEntities[:countValid]
 	}
 
-	// 3. check if local project exist in server, if not create one
+	// 3. check if local project exist in server, if not create one, only for entity that doesn't have ID yet.
+	// ID is used if the local entity have file or image dependencies.
+
 	// TODO: using goroutine pool
 	for _, localEntity := range localEntities {
 		key := getKey2(localEntity)
-		if _, ok := remoteEntitiesMap[key]; !ok {
+		if _, ok := remoteEntitiesMap[key]; !ok && localEntity.ID() == "" {
 			synced, errUC := s.client.Post(ctx, s.OptConfig.AuthorizationToken, localEntity)
 			if errUC != nil {
 				log.Error().Msgf("Failed to create entity of type %T with key %v", localEntity, key)
@@ -139,6 +141,7 @@ func (s *sync[T]) Execute(ctx context.Context) error {
 	}
 
 	// 4. inversely, for all remote project that is not in local, delete them
+	// TODO: add flag to skip this part.
 	for _, remoteEntity := range remoteEntities {
 		remoteID := getKey2(remoteEntity)
 		if _, ok := localEntitiesMap[remoteID]; !ok {
@@ -155,9 +158,13 @@ func (s *sync[T]) Execute(ctx context.Context) error {
 	// 5. Collect dependency information in the project
 	//    Prepare for their respective endpoint
 
-	log.Info().Msgf("	Syncing images dependencies..")
+	if len(s.imageDeps) > 0 {
+		log.Info().Msgf("	Syncing images dependencies..")
+	}
+
 	for _, imgDep := range s.imageDeps {
 		imageRefs := imgDep.extract(localEntities) // pointer to images, for inplace update
+		// todo: implement worker thread
 		stat, err := imgDep.syncImages(imageRefs)
 		if err != nil {
 			log.Error().Msgf("	Failed to sync project thumbnails. Err: %v", err)
@@ -168,9 +175,12 @@ func (s *sync[T]) Execute(ctx context.Context) error {
 	}
 
 	// TODO: sync file dependencies as well
-	log.Info().Msgf("	Syncing file dependencies..")
+	if len(s.fileDeps) > 0 {
+		log.Info().Msgf("	Syncing file dependencies..")
+	}
 	for _, fileDep := range s.fileDeps {
 		fileRefs := fileDep.extract(localEntities) // pointer to images, for inplace update
+		// todo: implement worker thread
 		stat, err := fileDep.syncFiles(fileRefs)
 		if err != nil {
 			log.Error().Msgf("	Failed to sync project file. Err: %v", err)
@@ -183,7 +193,6 @@ func (s *sync[T]) Execute(ctx context.Context) error {
 	// Sync back the project since the data in localProjects have been already modified
 	for _, localEntity := range localEntities {
 		// TODO: calculate hash or compare directly to optimize upload
-
 		_, errUC = s.client.Post(ctx, s.OptConfig.AuthorizationToken, localEntity)
 		if errUC != nil {
 			log.Error().Msgf("Failed to update project definition %+v", errUC)

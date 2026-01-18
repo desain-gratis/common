@@ -134,19 +134,23 @@ func (s *chatWriterApp) queryMyContent(ctx context.Context, query QueryMyContent
 		defer rows.Close()
 
 		for rows.Next() {
-			keyAndContentSize := 1 + 1 + 1 + tableCfg.RefSize + 2 // event id+  key + data and meta
+			keyAndContentSize := 1 + tableCfg.RefSize + 2 // namespace +  len(ref ids) + data and meta
 
 			var eventID uint64
-			result := make([]string, keyAndContentSize-1) // exclude eventID
-			resultany := make([]any, 1+len(result))
+			result := make([]string, keyAndContentSize) // exclude eventID
+			resultany := make([]any, len(result)+1)
 
 			pos := 0
-			resultany[pos] = &eventID
-			pos++
-			for i := range result { // the first one an UInt eventID
+
+			// fill with keyAndContent
+			for i := range result {
 				resultany[pos] = &result[i]
 				pos++
 			}
+
+			// fill with eventID
+			resultany[pos] = &eventID
+			pos++
 
 			err := rows.Scan(resultany...)
 			if err != nil {
@@ -544,7 +548,7 @@ func (s *chatWriterApp) prepareGet(tableName string, refSize int, namespace stri
 
 	keyCols := make([]string, 0, refSize)
 
-	keyCols = append(keyCols, "event_id", "namespace")
+	keyCols = append(keyCols, "namespace") // event id is no longer a key
 
 	for i := range refSize {
 		// TODO: reuse the one inside get DDL function
@@ -552,9 +556,7 @@ func (s *chatWriterApp) prepareGet(tableName string, refSize int, namespace stri
 		keyCols = append(keyCols, refID)
 	}
 
-	keyCols = append(keyCols, "id")
-
-	_, err := buf.WriteString(`SELECT ` + strings.Join(append(keyCols, "data", "meta"), ",") + ` FROM "` + tableName + `" FINAL `)
+	_, err := buf.WriteString(`SELECT ` + strings.Join(append(keyCols, "argMax(data, event_id) as data", "argMax(meta, event_id) as meta, max(event_id)"), ",") + ` FROM "` + tableName + `" FINAL `)
 	if err != nil {
 		return "", nil, err
 	}
@@ -564,10 +566,12 @@ func (s *chatWriterApp) prepareGet(tableName string, refSize int, namespace stri
 		return "", nil, err
 	}
 
-	_, err = buf.WriteString(whereQ)
+	_, err = buf.WriteString(whereQ + ` AND is_deleted = 0 `)
 	if err != nil {
 		return "", nil, err
 	}
+
+	buf.WriteString(` GROUP BY ` + strings.Join(keyCols, ",")) // all key except event id
 
 	return buf.String(), whereArgs, nil
 }
