@@ -66,7 +66,7 @@ func (c *Handler[T]) Post(ctx context.Context, data T, meta any) (T, error) {
 		return t, err
 	}
 
-	var metaPayload []byte
+	metaPayload := []byte("{}")
 	if meta != nil {
 		metaPayload, errMarshal = json.Marshal(meta)
 		if errMarshal != nil {

@@ -76,7 +76,7 @@ func (h *handler) Delete(ctx context.Context, path string) (*blob.Data, error) {
 
 	err = h.client.RemoveObject(ctx, h.bucketName, path, minio.RemoveObjectOptions{})
 	if err != nil && err.Error() != "storage: object name is empty" {
-		return nil, fmt.Errorf("%w: server error during delete", err)
+		return nil, fmt.Errorf("%w: server error during delete (bucket: %v path: %v)", err, h.bucketName, path)
 	}
 
 	return &blob.Data{
