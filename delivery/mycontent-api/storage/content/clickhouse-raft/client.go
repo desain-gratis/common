@@ -35,13 +35,13 @@ func (c *mycontentClient) Post(ctx context.Context, namespace string, refIDs []s
 	err := json.Unmarshal(data.Data, &validate)
 	if err != nil {
 		// opinionated
-		return content.Data{}, fmt.Errorf("expected json mycontent payload: %v")
+		return content.Data{}, fmt.Errorf("expected json mycontent data payload: %v", string(data.Data))
 	}
 
 	err = json.Unmarshal(data.Meta, &validate)
 	if err != nil {
 		// opinionated
-		return content.Data{}, fmt.Errorf("expected json mycontent payload: %v")
+		return content.Data{}, fmt.Errorf("expected json mycontent meta payload: %v", string(data.Meta))
 	}
 
 	wrap := map[string]any{
