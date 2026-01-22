@@ -27,7 +27,7 @@ func New[T mycontent.Data](
 	return &client[T]{
 		httpc:     httpc,
 		endpoint:  endpoint,
-		refsParam: refsParam,
+		refsParam: refsParam, // TODO: ADD validation immediately to improve DevX
 	}
 }
 
