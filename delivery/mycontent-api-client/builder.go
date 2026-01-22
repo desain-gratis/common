@@ -110,7 +110,7 @@ func (b *builder[T]) WithFiles(extract ExtractFiles[T], relPath string, params .
 		client: &attachmentClient{
 			client: client[*entity.Attachment]{
 				endpoint:  filesEndpoint.String(),
-				refsParam: params,
+				refsParam: params, // TODO: add remote validation to check meta for ease of use
 				httpc:     b.syncer.client.httpc,
 			},
 		},

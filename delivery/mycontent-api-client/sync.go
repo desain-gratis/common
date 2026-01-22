@@ -147,7 +147,7 @@ func (s *sync[T]) Execute(ctx context.Context) error {
 		if _, ok := localEntitiesMap[remoteID]; !ok {
 			_, errUC := s.client.Delete(ctx, s.OptConfig.AuthorizationToken, remoteEntity.Namespace(), toRefsParam(s.client.refsParam, remoteEntity.RefIDs()), remoteEntity.ID())
 			if errUC != nil {
-				log.Error().Msgf("Failed to delete project Id %v", remoteID)
+				log.Error().Msgf("Failed to delete remote entity with id: %v err: %v", remoteID, errUC)
 			}
 		}
 	}
@@ -219,7 +219,7 @@ func attachmentToThumbnails(input map[string]*content.Attachment) map[string]*en
 
 func toRefsParam(refsParam []string, refIDs []string) map[string]string {
 	if len(refsParam) != len(refIDs) {
-		log.Fatal().Msgf("Parameter not matching! %v vs %v", refsParam, refIDs)
+		log.Fatal().Msgf("Parameter not matching! expected: %v got: %v", refsParam, refIDs)
 	}
 	result := make(map[string]string, len(refsParam))
 	for i := range refIDs {
