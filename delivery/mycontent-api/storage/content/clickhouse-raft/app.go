@@ -46,8 +46,8 @@ type DataWrapper struct {
 	RefIDs    []string        `json:"ref_ids"`
 	ID        string          `json:"id"`
 	EventID   uint64          `json:"event_id"`
-	Data      json.RawMessage `json:"data"`
-	Meta      json.RawMessage `json:"meta"`
+	Data      json.RawMessage `json:"data,omitempty"` // todo use ref omitempty
+	Meta      json.RawMessage `json:"meta,omitempty"` // omitempty
 }
 
 // happySM to isolate all business logic from the state machine technicality
@@ -114,7 +114,7 @@ func (s *chatWriterApp) queryMyContent(ctx context.Context, query QueryMyContent
 	}
 
 	conn := raft_runner.GetClickhouseConnection(ctx)
-	q, args, err := s.prepareGet(tableCfg.Name, tableCfg.RefSize, query.Namespace, query.RefIDs, query.ID)
+	q, args, scanFn, err := s.prepareGet(tableCfg.Name, tableCfg.RefSize, query.Namespace, query.RefIDs, query.ID)
 	if err != nil {
 		return nil, fmt.Errorf("prepare get: %v", err)
 	}
@@ -124,9 +124,6 @@ func (s *chatWriterApp) queryMyContent(ctx context.Context, query QueryMyContent
 		return nil, err
 	}
 
-	// log.Info().Msgf("QUERY: %v", q)
-	// log.Info().Msgf("PARAMS: %v", args)
-
 	out := make(chan *content.Data)
 
 	go func() {
@@ -134,25 +131,11 @@ func (s *chatWriterApp) queryMyContent(ctx context.Context, query QueryMyContent
 		defer rows.Close()
 
 		for rows.Next() {
-			keyAndContentSize := 1 + tableCfg.RefSize + 2 // namespace +  len(ref ids) + data and meta
+			// todo: check context done
 
-			var eventID uint64
-			result := make([]string, keyAndContentSize) // exclude eventID
-			resultany := make([]any, len(result)+1)
+			scanResult, scanReceiver := scanFn()
 
-			pos := 0
-
-			// fill with keyAndContent
-			for i := range result {
-				resultany[pos] = &result[i]
-				pos++
-			}
-
-			// fill with eventID
-			resultany[pos] = &eventID
-			pos++
-
-			err := rows.Scan(resultany...)
+			err := rows.Scan(scanReceiver...)
 			if err != nil {
 				log.Err(err).Msgf("Failed scan row")
 				slog.Error(
@@ -161,11 +144,7 @@ func (s *chatWriterApp) queryMyContent(ctx context.Context, query QueryMyContent
 				continue
 			}
 
-			for i := range result {
-				resultany[i] = result[i]
-			}
-
-			rowData := s.convertGetData(tableCfg.RefSize, eventID, result)
+			rowData := s.convertScanResult(scanResult)
 			out <- rowData
 		}
 	}()
@@ -327,6 +306,24 @@ func (s *chatWriterApp) delete(ctx context.Context, payload DataWrapper) (raft.O
 		eventIdx = &index
 	}
 
+	prevData, err := s.queryMyContent(ctx, QueryMyContent{
+		Table:     tableCfg.Name,
+		Namespace: payload.Namespace,
+		RefIDs:    payload.RefIDs,
+		ID:        payload.ID,
+	})
+
+	var toDelete *content.Data
+	for d := range prevData {
+		toDelete = d
+	}
+
+	if toDelete == nil {
+		return func() (raft.Result, error) {
+			return raft.Result{Value: 1, Data: []byte("not found")}, nil // todo: decide behaviour (return error or not)
+		}, nil
+	}
+
 	_, cols, args, tmplt := s.preparePost(
 		tableCfg.RefSize,
 		*eventIdx,
@@ -339,10 +336,9 @@ func (s *chatWriterApp) delete(ctx context.Context, payload DataWrapper) (raft.O
 	)
 
 	q := `INSERT INTO ` + tableCfg.Name + `(` + strings.Join(cols, ",") + `) 
-	VALUES (` + strings.Join(tmplt, ",") + `);
-	`
+	VALUES (` + strings.Join(tmplt, ",") + `);`
 
-	err := conn.Exec(ctx, q, args...)
+	err = conn.Exec(ctx, q, args...)
 	if err != nil {
 		return func() (raft.Result, error) {
 			return raft.Result{Value: 1, Data: []byte(fmt.Sprintf("error writing to table: %v", err))}, nil
@@ -351,9 +347,7 @@ func (s *chatWriterApp) delete(ctx context.Context, payload DataWrapper) (raft.O
 
 	*s.state.EventIndexes[tableCfg.Name]++
 
-	encResult, err := json.Marshal(map[string]any{
-		"result": "success",
-	})
+	encResult, err := json.Marshal(toDelete)
 	if err != nil {
 		return func() (raft.Result, error) {
 			return raft.Result{Value: 1, Data: []byte(fmt.Sprintf("error marshal: %v", err))}, nil
@@ -371,7 +365,7 @@ func (s *chatWriterApp) OnUpdate(ctx context.Context, e raft.Entry) (raft.OnAfte
 
 	payload, err := parseAs[DataWrapper](e.Value)
 	if err != nil {
-		return nil, fmt.Errorf("%w: failed to parse command", raft.ErrUnsupported)
+		return nil, fmt.Errorf("%w: failed to parse command as JSON (%v)", err, string(e.Value))
 	}
 
 	switch e.Command {
@@ -383,7 +377,7 @@ func (s *chatWriterApp) OnUpdate(ctx context.Context, e raft.Entry) (raft.OnAfte
 		return s.subscribe(ctx, payload)
 	}
 
-	return nil, fmt.Errorf("%w: %v", raft.ErrUnsupported, e.Command)
+	return nil, fmt.Errorf("raft update %w: %v", raft.ErrUnsupported, e.Command)
 }
 
 // Apply or "Sync". The core of dragonboat's state machine "Update" function.
@@ -538,15 +532,31 @@ func (s *chatWriterApp) preparePost(refSize int, eventID uint64, namespace strin
 
 // todo: re-organize / move this to clickhouse to share shared query logic
 
-func (s *chatWriterApp) prepareGet(tableName string, refSize int, namespace string, refIDs []string, ID string) (string, []any, error) {
+// reference query:
+// SELECT namespace, ref_id_1, id, t.1 AS data, t.2 AS meta, t.4 AS event_id
+// FROM (
+//
+//	SELECT namespace, ref_id_1, id,
+//	       argMax((data, meta, is_deleted, event_id), event_id) AS t
+//	FROM "artifactd_build"
+//	GROUP BY namespace, ref_id_1, id
+//
+// )
+// WHERE t.3 = 0;
+func (s *chatWriterApp) prepareGet(tableName string, refSize int, namespace string, refIDs []string, ID string) (string, []any, func() (*scanResult, []any), error) {
 	if len(refIDs) > refSize {
-		return "", nil, fmt.Errorf(
+		return "", nil, nil, fmt.Errorf(
 			"%w: ref size is greater than expected (got %v, expected %v)", content.ErrInvalidKey, len(refIDs), refSize)
 	}
 
 	buf := bytes.NewBuffer(make([]byte, 0, 100))
 
 	keyCols := make([]string, 0, refSize)
+
+	whereQ, whereArgs, err := s.prepareWhereQuery(refSize, namespace, refIDs, ID)
+	if err != nil {
+		return "", nil, nil, err
+	}
 
 	keyCols = append(keyCols, "namespace") // event id is no longer a key
 
@@ -556,24 +566,59 @@ func (s *chatWriterApp) prepareGet(tableName string, refSize int, namespace stri
 		keyCols = append(keyCols, refID)
 	}
 
-	_, err := buf.WriteString(`SELECT ` + strings.Join(append(keyCols, "argMax(data, event_id) as data", "argMax(meta, event_id) as meta, max(event_id)"), ",") + ` FROM "` + tableName + `" FINAL `)
+	keyCols = append(keyCols, "id")
+
+	// keys + data column
+	allCols := append(keyCols, "t.1 AS data", "t.2 AS meta", "t.4 AS event_id")
+
+	_, err = buf.WriteString(
+		`SELECT ` + strings.Join(allCols, ", ") + ` FROM (` +
+			`SELECT ` + strings.Join(keyCols, ", ") + `, ` +
+			`argMax((data, meta, is_deleted, event_id), event_id) AS t ` +
+			`FROM "` + tableName + `" ` +
+			whereQ + ` ` +
+			`GROUP BY ` + strings.Join(keyCols, ", ") +
+			`) ` +
+			`WHERE t.3 = 0`,
+	)
 	if err != nil {
-		return "", nil, err
+		return "", nil, nil, err
 	}
 
-	whereQ, whereArgs, err := s.prepareWhereQuery(refSize, namespace, refIDs, ID)
-	if err != nil {
-		return "", nil, err
-	}
+	return buf.String(), whereArgs, func() (*scanResult, []any) {
+		sr := &scanResult{
+			keys: make([]string, len(keyCols)),
+		}
 
-	_, err = buf.WriteString(whereQ + ` AND is_deleted = 0 `)
-	if err != nil {
-		return "", nil, err
-	}
+		scanAny := make([]any, len(allCols))
 
-	buf.WriteString(` GROUP BY ` + strings.Join(keyCols, ",")) // all key except event id
+		// populate keys result receiver
+		var idx int
+		for range sr.keys {
+			scanAny[idx] = &sr.keys[idx]
+			idx++
+		}
 
-	return buf.String(), whereArgs, nil
+		// populate data
+		// note: if sr is not a reference type, it will create new reference
+		scanAny[idx] = &sr.data
+		idx++
+
+		scanAny[idx] = &sr.meta
+		idx++
+
+		scanAny[idx] = &sr.eventID
+		idx++
+
+		return sr, scanAny
+	}, nil
+}
+
+type scanResult struct {
+	keys    []string
+	data    string
+	meta    string
+	eventID uint64
 }
 
 func (s *chatWriterApp) prepareWhereQuery(refSize int, namespace string, refIDs []string, ID string) (string, []any, error) {
@@ -635,20 +680,14 @@ func (s *chatWriterApp) prepareWhereQuery(refSize int, namespace string, refIDs 
 	return buf.String(), args, nil
 }
 
-func (s *chatWriterApp) convertGetData(refSize int, eventID uint64, result []string) *content.Data {
-	refIDs := make([]string, 0, refSize)
-
-	for i := 1; i < len(result)-2; i++ {
-		refIDs = append(refIDs, result[i])
-	}
-
+func (s *chatWriterApp) convertScanResult(sr *scanResult) *content.Data {
 	return &content.Data{
-		ID:        result[len(result)-3],
-		EventID:   eventID,
-		Namespace: result[0],
-		RefIDs:    refIDs,
-		Data:      []byte(result[len(result)-2]),
-		Meta:      []byte(result[len(result)-1]),
+		Namespace: sr.keys[0],
+		RefIDs:    sr.keys[1 : len(sr.keys)-1],
+		ID:        sr.keys[len(sr.keys)-1],
+		Data:      []byte(sr.data),
+		Meta:      []byte(sr.meta),
+		EventID:   sr.eventID,
 	}
 }
 

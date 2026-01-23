@@ -248,11 +248,15 @@ func (c *Handler[T]) Delete(ctx context.Context, namespace string, refIDs []stri
 		return t, fmt.Errorf("%w: complete reference must be provided during delete", mycontent.ErrValidation)
 	}
 
+	if namespace == "" || namespace == "*" {
+		return t, fmt.Errorf("%w: namespace cannot be empty or '*' during delete", mycontent.ErrValidation)
+	}
+
 	// TODO user ID validation
 	d, err := c.repo.Delete(ctx, namespace, refIDs, ID)
 	if err != nil {
 		var t T
-		return t, err
+		return t, fmt.Errorf("repository error: %w", err)
 	}
 
 	parsedResult, err := Parse[T](d.Data)

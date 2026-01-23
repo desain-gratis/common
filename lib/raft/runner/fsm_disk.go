@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
@@ -131,7 +130,7 @@ func (d *baseDiskSM) Update(ents []sm.Entry) ([]sm.Entry, error) {
 		}
 		if err != nil {
 			afterApplys[idx] = func() (raft.Result, error) {
-				return raft.Result{Value: 1, Data: []byte(fmt.Sprintf("fatal error: %v", err))}, nil
+				return raft.Result{Value: 1, Data: []byte(err.Error())}, nil
 			}
 			continue
 		}

@@ -64,7 +64,7 @@ func (c *mycontentClient) Post(ctx context.Context, namespace string, refIDs []s
 	var parsedRaft DataWrapper
 	err = json.Unmarshal(resp, &parsedRaft)
 	if err != nil {
-		return content.Data{}, err
+		return content.Data{}, fmt.Errorf("failed to parse raft response: %w '%v'", err, string(resp))
 	}
 
 	return content.Data{
@@ -73,6 +73,7 @@ func (c *mycontentClient) Post(ctx context.Context, namespace string, refIDs []s
 		ID:        parsedRaft.ID,
 		Data:      parsedRaft.Data,
 		Meta:      parsedRaft.Meta,
+		EventID:   parsedRaft.EventID,
 	}, nil
 }
 
@@ -104,23 +105,30 @@ func (c *mycontentClient) Get(ctx context.Context, namespace string, refIDs []st
 
 // Delete specific ID data. If no data, MUST return error
 func (c *mycontentClient) Delete(ctx context.Context, namespace string, refIDs []string, ID string) (content.Data, error) {
-	resp, err := c.publishToRaft(ctx, map[string]any{
+	placeholder := json.RawMessage("{}")
+
+	wrap := map[string]any{
 		"command": "gratis.desain.mycontent.delete",
-		"data": DataWrapper{
+		"value": DataWrapper{
 			Table:     c.tableName,
 			Namespace: namespace,
 			RefIDs:    refIDs,
 			ID:        ID,
+			Data:      placeholder,
+			Meta:      placeholder,
 		},
-	})
+	}
+
+	resp, err := c.publishToRaft(ctx, wrap)
+	// TODO: find better way to parse data back and forth & error handling between client and raft app
 	if err != nil {
-		return content.Data{}, err
+		return content.Data{}, fmt.Errorf("failed to publish delete message to raft: %w", err)
 	}
 
 	var parsedRaft content.Data
 	err = json.Unmarshal(resp, &parsedRaft)
 	if err != nil {
-		return content.Data{}, err
+		return content.Data{}, fmt.Errorf("failed to parse message from raft: %w (%v)", err, string(resp))
 	}
 
 	return parsedRaft, nil
@@ -134,7 +142,7 @@ func (c *mycontentClient) Stream(ctx context.Context, namespace string, refIDs [
 func (c *mycontentClient) publishToRaft(ctx context.Context, msg any) ([]byte, error) {
 	data, err := json.Marshal(msg)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to marshal msg to raft: %w (%v)", err, string(data))
 	}
 
 	var res statemachine.Result
@@ -147,6 +155,10 @@ func (c *mycontentClient) publishToRaft(ctx context.Context, msg any) ([]byte, e
 		}
 		cancel()
 		time.Sleep(500 * time.Millisecond)
+	}
+
+	if res.Value > 0 {
+		return nil, fmt.Errorf("got error from raft: '%v'", string(res.Data))
 	}
 
 	return res.Data, nil
