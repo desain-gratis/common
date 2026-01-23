@@ -481,6 +481,9 @@ func getDDL(tableName string, refSize int) string {
 		is_deleted UInt8,
 		) ENGINE = ReplacingMergeTree ORDER BY (event_id);
 	`) // -- consider deletion as a business event.
+	// -- consider also using ordinary merge tree, but uses  namespace, ref IDs + ref for KV access
+	// OR, we can create separate table just for the head of the KV.
+	// because right now I focused on the events log
 	if err != nil {
 		log.Panic().Msgf("error write string buffer in getDDL: %v", err)
 	}
