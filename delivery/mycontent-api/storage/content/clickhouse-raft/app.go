@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/desain-gratis/common/delivery/mycontent-api/storage/content"
 	"github.com/desain-gratis/common/lib/notifier"
 	"github.com/desain-gratis/common/lib/raft"
@@ -97,9 +96,6 @@ func (s *chatWriterApp) Lookup(ctx context.Context, query interface{}) (interfac
 		// subscribe to real time event for log update
 		log.Info().Msgf("I WANT TO SUBSCRIBE: %T %+v", q, q)
 		return s.topicReg[q.Topic], nil
-	case QueryLog:
-		// query historical log
-		return s.queryLog(ctx, q)
 	case QueryMyContent:
 		return s.queryMyContent(ctx, q)
 	}
@@ -404,82 +400,33 @@ func (s *chatWriterApp) startSubscription(ctx context.Context, _ raft.Entry, raw
 	return nil
 }
 
-func (s *chatWriterApp) queryLog(ctx context.Context, q QueryLog) (chan Event, error) {
-	var rows driver.Rows
-	var err error
-
-	conn := raft_runner.GetClickhouseConnection(ctx)
-
-	if q.FromDatetime != nil {
-		rows, err = conn.Query(q.Ctx, DQLReadAll, q.ToOffset, *q.FromDatetime)
-	} else {
-		rows, err = conn.Query(q.Ctx, DQLReadAll, q.ToOffset)
-	}
-
-	if err != nil {
-		if errors.Is(err, context.Canceled) {
-			return nil, err
-		}
-		log.Err(err).Msgf("helo failed to qeuery clickhouse")
-		return nil, err
-	}
-
-	result := make(chan Event)
-	go func() {
-		defer close(result)
-		defer rows.Close()
-		defer func() {
-			log.Info().Msgf("query finished")
-		}()
-
-		for rows.Next() {
-			if q.Ctx.Err() != nil {
-				return
-			}
-
-			var evt Event
-
-			evt.EvtTable = TopicChatLog
-			evt.EvtName = EventName_Echo // todo: maybe move it somewher
-
-			var namespace string
-			var data string
-			err := rows.Scan(&namespace, &evt.EvtID, &evt.ServerTimestamp, &data)
-			if err != nil {
-				log.Err(err).Msgf("error scaning row")
-				return
-			}
-			evt.Data = []byte(data)
-			result <- evt
-		}
-	}()
-
-	return result, nil
-}
-
 func getDDL(tableName string, refSize int) string {
 	buf := bytes.NewBuffer(make([]byte, 0, 100))
 
 	_, err := buf.WriteString(`CREATE TABLE IF NOT EXISTS ` + tableName + ` (
 		event_id UInt64,
-		namespace String,
 	`)
 	if err != nil {
 		log.Panic().Msgf("error write string buffer in getDDL: %v", err)
 	}
 
+	keys := []string{"namespace String"}
+
 	for i := 0; i < refSize; i++ {
 		refID := `ref_id_` + strconv.Itoa(i+1)
 		buf.WriteString(refID + ` String, ` + "\n")
+		keys = append(keys, refID)
 	}
 
+	keys = append(keys, "id")
+
 	_, err = buf.WriteString(`
-		id String,
+		` + strings.Join(keys, ", \n") + `
 		data String,
 		meta String,
 		server_time DateTime,
 		is_deleted UInt8,
-		) ENGINE = ReplacingMergeTree ORDER BY (event_id);
+		) ENGINE = ReplacingMergeTree ORDER BY (` + strings.Join(keys, ",") + `);
 	`) // -- consider deletion as a business event.
 	// -- consider also using ordinary merge tree, but uses  namespace, ref IDs + ref for KV access
 	// OR, we can create separate table just for the head of the KV.
