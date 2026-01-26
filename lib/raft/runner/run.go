@@ -41,7 +41,7 @@ type ClickHouseConfig struct {
 	Address string `yaml:"address"`
 }
 
-func Context[T any](appID string) (context.Context, error) {
+func Context[T any](ctx context.Context, appID string) (context.Context, error) {
 	cfg := replica.GetConfig()
 
 	sc, ok := cfg.ReplicaByID[appID]
@@ -56,7 +56,6 @@ func Context[T any](appID string) (context.Context, error) {
 	}
 
 	// Pass everything via context to make the API clean
-	ctx := context.Background()
 	ctx = context.WithValue(ctx, contextKey, RaftContext{
 		ID:        sc.ID,
 		ShardID:   sc.ShardID,
@@ -74,7 +73,7 @@ func Context[T any](appID string) (context.Context, error) {
 	return ctx, nil
 }
 
-func RunReplica[T any](appID string, app raft.Application) (context.Context, error) {
+func RunReplica[T any](ctx context.Context, appID string, app raft.Application) (context.Context, error) {
 	cfg := replica.GetConfig()
 
 	sc, ok := cfg.ReplicaByID[appID]
@@ -87,7 +86,10 @@ func RunReplica[T any](appID string, app raft.Application) (context.Context, err
 
 	replica.SusbcribeLeadershipEvent(shardID, replicaID)
 
-	ctx, _ := Context[T](appID)
+	ctx, err := Context[T](ctx, appID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build raft replica context: %v", err)
+	}
 
 	return ctx, Run(ctx, app)
 }

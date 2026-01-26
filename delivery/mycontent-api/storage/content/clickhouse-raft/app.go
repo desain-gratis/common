@@ -400,7 +400,8 @@ func (s *chatWriterApp) startSubscription(ctx context.Context, _ raft.Entry, raw
 	return nil
 }
 
-func getDDL(tableName string, refSize int) string {
+// getDDLLogType sort key only "event_id"
+func getDDLLogType(tableName string, refSize int) string {
 	buf := bytes.NewBuffer(make([]byte, 0, 100))
 
 	_, err := buf.WriteString(`CREATE TABLE IF NOT EXISTS ` + tableName + ` (
@@ -427,6 +428,50 @@ func getDDL(tableName string, refSize int) string {
 		server_time DateTime,
 		is_deleted UInt8,
 		) ENGINE = ReplacingMergeTree ORDER BY (` + strings.Join(keys, ",") + `);
+	`) // -- consider deletion as a business event.
+	// -- consider also using ordinary merge tree, but uses  namespace, ref IDs + ref for KV access
+	// OR, we can create separate table just for the head of the KV.
+	// because right now I focused on the events log
+	if err != nil {
+		log.Panic().Msgf("error write string buffer in getDDL: %v", err)
+	}
+
+	return buf.String()
+}
+
+// getDDLLogType sort key is all my content ref (namespace, ref IDs, id) as a Key Value (KV) store
+// might need to disable background merge "SYSTEM STOP MERGES db.table" if want to retain historical data
+// or another implementation strategy is combined this with above log type table and do a double write
+// maybe can optimize get by using the ordered event id also
+func getDDL(tableName string, refSize int) string {
+	buf := bytes.NewBuffer(make([]byte, 0, 100))
+
+	_, err := buf.WriteString(`CREATE TABLE IF NOT EXISTS ` + tableName + ` (
+		event_id UInt64,
+		`)
+	if err != nil {
+		log.Panic().Msgf("error write string buffer in getDDL: %v", err)
+	}
+
+	buf.WriteString("namespace String,\n")
+
+	keyCols := []string{"namespace"}
+
+	for i := 0; i < refSize; i++ {
+		refID := `ref_id_` + strconv.Itoa(i+1)
+		buf.WriteString(`		` + refID + " String,\n")
+		keyCols = append(keyCols, refID)
+	}
+
+	keyCols = append(keyCols, "id")
+
+	_, err = buf.WriteString(
+		`		id String,
+		data String,
+		meta String,
+		server_time DateTime,
+		is_deleted UInt8
+		) ENGINE = ReplacingMergeTree ORDER BY (` + strings.Join(keyCols, ", ") + `);
 	`) // -- consider deletion as a business event.
 	// -- consider also using ordinary merge tree, but uses  namespace, ref IDs + ref for KV access
 	// OR, we can create separate table just for the head of the KV.
