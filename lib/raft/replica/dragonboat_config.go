@@ -29,8 +29,12 @@ type shardConfig struct {
 	Bootstrap  map[int]string   `json:"bootstrap"`
 }
 
-func initDragonboatConfig(_ context.Context) (cfg config2, err error) {
+func initDragonboatConfig(ctx context.Context) (cfg config2, err error) {
 	cfgFile := "/etc/dragonboat.yaml"
+	return initDragonboatConfigWithFile(ctx, cfgFile)
+}
+
+func initDragonboatConfigWithFile(_ context.Context, cfgFile string) (cfg config2, err error) {
 	dc := os.Getenv("DC")
 	if dc != "" {
 		cfgFile = dc

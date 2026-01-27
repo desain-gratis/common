@@ -36,7 +36,12 @@ var listener = &raftListener{
 }
 
 func Init() error {
-	ncfg, err := initDragonboatConfig(context.Background())
+	cfgFile := "/etc/dragonboat.yaml"
+	return InitWithConfigFile(cfgFile)
+}
+
+func InitWithConfigFile(cfgFile string) error {
+	ncfg, err := initDragonboatConfigWithFile(context.Background(), cfgFile)
 	if err != nil {
 		return err
 	}
