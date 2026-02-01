@@ -45,6 +45,9 @@ type sync[T mycontent.Data] struct {
 
 type OptionalConfig struct {
 	AuthorizationToken string
+
+	// Perform a hard sync (make serverthe same as client, by deleting content in the server)
+	Hard bool
 }
 
 func Sync[T mycontent.Data](client *client[T], namespace string, data []T, optConfig OptionalConfig) *sync[T] {
@@ -141,8 +144,10 @@ func (s *sync[T]) Execute(ctx context.Context) error {
 	}
 
 	// 4. inversely, for all remote project that is not in local, delete them
-	// TODO: add flag to skip this part.
 	for _, remoteEntity := range remoteEntities {
+		if !s.OptConfig.Hard {
+			break
+		}
 		remoteID := getKey2(remoteEntity)
 		if _, ok := localEntitiesMap[remoteID]; !ok {
 			_, errUC := s.client.Delete(ctx, s.OptConfig.AuthorizationToken, remoteEntity.Namespace(), toRefsParam(s.client.refsParam, remoteEntity.RefIDs()), remoteEntity.ID())

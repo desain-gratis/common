@@ -54,6 +54,11 @@ func (b *builder[T]) WithAuth(token string) *builder[T] {
 	return b
 }
 
+func (b *builder[T]) HardSync(hard bool) *builder[T] {
+	b.syncer.OptConfig.Hard = hard
+	return b
+}
+
 // actually dep is also kind of a builder
 
 func (i *imageDep[T]) WithUploadDirectory(dir string) *imageDep[T] {
