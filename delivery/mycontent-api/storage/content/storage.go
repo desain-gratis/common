@@ -30,6 +30,11 @@ type Data struct {
 	// Incremental value for "log" storage for OLAP maxxing
 	EventID uint64
 
+	// For all content ID, we have incremental value
+	// might not be not needed, since it can be put inside ID
+	// and it's written at Post time
+	// Version uint64
+
 	// The location of the data in the repository
 	Namespace string
 	RefIDs    []string

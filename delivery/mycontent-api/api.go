@@ -37,6 +37,11 @@ func NewFromStorage[T mycontent.Data](baseURL string, refParams []string, store 
 	return New(base, baseURL, refParams)
 }
 
+func NewFromStorageVersioned[T mycontent.VersionedData](baseURL string, refParams []string, store content.Repository, refSize int) *service[T] {
+	base := mycontent_base.NewVersioned[T](store, refSize) // todo use refSize from store
+	return New(base, baseURL, refParams)
+}
+
 func New[T mycontent.Data](
 	uc mycontent.Usecase[T],
 	baseURL string,

@@ -31,16 +31,45 @@ type ClickHouseConfig struct {
 
 var dhost *dragonboat.NodeHost
 var cfg config2
+var cfg3 config3
 var listener = &raftListener{
 	ShardListener: make(map[uint64]func(info raftio.LeaderInfo)),
 }
 
-func Init() error {
-	cfgFile := "/etc/dragonboat.yaml"
-	return InitWithConfigFile(cfgFile)
+type config3 struct {
+	nhConfig    config.NodeHostConfig
+	host        *dragonboat.NodeHost
+	replica     map[uint64]*ReplicaConfig
+	replicaByID map[string]ReplicaConfig
 }
 
-func InitWithConfigFile(cfgFile string) error {
+func Init() error {
+	cfgFile := "/etc/dragonboat.yaml"
+	return InitWithConfigFile(cfgFile, nil)
+}
+
+func Run(replicaID uint64, nhConfig config.NodeHostConfig) error {
+	nhost, err := dragonboat.NewNodeHost(nhConfig)
+	if err != nil {
+		return err
+	}
+
+	dhost = nhost
+	cfg3.host = nhost
+	cfg3.nhConfig = nhConfig
+
+	return nil
+}
+
+func ConfigureReplica(replica map[uint64]ReplicaConfig) {
+	for shardID, shardConfig := range replica {
+		cfg3.replica[shardID].ShardID = shardID
+		// cfg3.replica[shardID].ReplicaID = cfg3.nhConfig.
+		cfg3.replicaByID[shardConfig.ID] = replica[shardID]
+	}
+}
+
+func InitWithConfigFile(cfgFile string, replicaOverwrite map[string]ReplicaConfig) error {
 	ncfg, err := initDragonboatConfigWithFile(context.Background(), cfgFile)
 	if err != nil {
 		return err
@@ -63,8 +92,12 @@ func InitWithConfigFile(cfgFile string) error {
 
 	cfg.ReplicaByID = make(map[string]ReplicaConfig)
 
+	for i := range replicaOverwrite {
+		rep := replicaOverwrite[i]
+		cfg.Replica[i] = &rep
+	}
+
 	for i, shardConfig := range cfg.Replica {
-		log.Debug().Msgf("configuring sm: %v", shardConfig.ID)
 		shardID, err := convertID(i)
 		if err != nil {
 			log.Error().Msgf("err id %v", i)

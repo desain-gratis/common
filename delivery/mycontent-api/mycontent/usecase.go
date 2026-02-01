@@ -57,6 +57,11 @@ type Data interface {
 	// TODO: Add EventID
 }
 
+type VersionedData interface {
+	Data
+	WithEventID(eventID uint64) VersionedData
+}
+
 // Mutator or modifier, fluent style
 // It enables the usecase to get and modify the underlying data
 type ID interface {

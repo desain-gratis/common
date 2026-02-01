@@ -4,12 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"time"
+
+	"github.com/rs/zerolog/log"
 
 	"github.com/desain-gratis/common/delivery/mycontent-api/mycontent"
 	"github.com/desain-gratis/common/delivery/mycontent-api/storage/content"
-	"github.com/google/uuid"
-	"github.com/rs/zerolog/log"
 )
 
 var _ mycontent.Usecase[mycontent.Data] = &Handler[mycontent.Data]{}
@@ -48,18 +47,19 @@ func (c *Handler[T]) Post(ctx context.Context, data T, meta any) (T, error) {
 	// delivery --- up to here -----
 
 	// if create new and no id, assign new id
-	id := data.ID()
-	if id == "" {
-		_id := uuid.New()
-		id = _id.String()
-	}
-	data.WithID(id)
+	// TODO: enforce this behaviour on repository layer
+	// id := data.ID()
+	// if id == "" {
+	// 	_id := uuid.New()
+	// 	id = _id.String()
+	// }
+	// data.WithID(id)
 
 	// created that empty, assign new created date
-	date := data.CreatedTime()
-	if date.Equal(time.Time{}) {
-		data.WithCreatedTime(time.Now())
-	}
+	// date := data.CreatedTime()
+	// if date.Equal(time.Time{}) {
+	// 	data.WithCreatedTime(time.Now())
+	// }
 
 	payload, errMarshal := json.Marshal(data)
 	if errMarshal != nil {
@@ -70,7 +70,7 @@ func (c *Handler[T]) Post(ctx context.Context, data T, meta any) (T, error) {
 	if meta != nil {
 		metaPayload, errMarshal = json.Marshal(meta)
 		if errMarshal != nil {
-			return t, err
+			return t, fmt.Errorf("failed to marshall meta")
 		}
 	}
 
@@ -87,39 +87,31 @@ func (c *Handler[T]) Post(ctx context.Context, data T, meta any) (T, error) {
 		return t, err
 	}
 
+	parsedResult.WithID(result.ID)
+
 	return parsedResult, nil
 }
 
-// Get all of your resource for your user ID here
-// Simple wrapper for repository
-func (c *Handler[T]) Get(ctx context.Context, namespace string, refIDs []string, ID string) ([]T, error) {
+// raw data
+func (c *Handler[T]) get(ctx context.Context, namespace string, refIDs []string, ID string) ([]content.Data, error) {
 	// 1. check if there is ID
 	if ID != "" {
 		if !isValid(refIDs) || len(filterEmpty(refIDs)) != c.expectedRefSize {
-			result := make([]T, 0, 1)
-			return result, fmt.Errorf(
+			return nil, fmt.Errorf(
 				"%w: when ID is specified, all reference must be specified", mycontent.ErrValidation)
 		}
 
-		result := make([]T, 0, 1)
-
-		d, err := c.repo.Get(ctx, namespace, refIDs, ID)
+		ds, err := c.repo.Get(ctx, namespace, refIDs, ID)
 		if err != nil {
 			return nil, err
 		}
 
-		if len(d) == 0 {
-			return result, fmt.Errorf(
+		if len(ds) == 0 {
+			return nil, fmt.Errorf(
 				"%w: id specified, but content not found", mycontent.ErrNotFound)
 		}
 
-		parsedResult, err := Parse[T](d[0].Data)
-		if err != nil {
-			return nil, err
-		}
-
-		result = append(result, parsedResult)
-		return result, nil
+		return ds, nil
 	}
 
 	// 2. check if there is main ref ID (without ID)
@@ -128,22 +120,22 @@ func (c *Handler[T]) Get(ctx context.Context, namespace string, refIDs []string,
 		if err != nil {
 			return nil, err
 		}
-
-		result := make([]T, 0, len(ds))
-		for _, d := range ds {
-			parsedResult, err := Parse[T](d.Data)
-			if err != nil {
-				log.Error().Msgf("Should not happend")
-				continue
-			}
-
-			result = append(result, parsedResult)
-		}
-		return result, nil
+		return ds, nil
 	}
 
 	// 3. get by namespace
 	ds, err := c.repo.Get(ctx, namespace, []string{}, "")
+	if err != nil {
+		return nil, err
+	}
+
+	return ds, nil
+}
+
+// Get all of your resource for your user ID here
+// Simple wrapper for repository
+func (c *Handler[T]) Get(ctx context.Context, namespace string, refIDs []string, ID string) ([]T, error) {
+	ds, err := c.get(ctx, namespace, refIDs, ID)
 	if err != nil {
 		return nil, err
 	}
@@ -156,12 +148,16 @@ func (c *Handler[T]) Get(ctx context.Context, namespace string, refIDs []string,
 			continue
 		}
 
+		// repository responsble to specify it inside their ID
+		parsedResult.WithID(d.ID)
+
 		result = append(result, parsedResult)
 	}
 
 	return result, nil
 }
 
+// TODO: implement properly
 func (c *Handler[T]) Stream(ctx context.Context, namespace string, refIDs []string, ID string) (<-chan T, error) {
 	// 1. check if there is ID
 	if ID != "" {
@@ -263,6 +259,8 @@ func (c *Handler[T]) Delete(ctx context.Context, namespace string, refIDs []stri
 	if err != nil {
 		return t, err
 	}
+
+	parsedResult.WithID(d.ID)
 
 	return parsedResult, nil
 }

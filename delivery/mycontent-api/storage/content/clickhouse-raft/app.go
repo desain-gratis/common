@@ -59,8 +59,10 @@ type chatWriterApp struct {
 }
 
 type TableConfig struct {
-	Name    string
-	RefSize int
+	Name                  string
+	RefSize               int
+	IncrementalID         bool
+	IncrementalIDGetLimit uint8
 }
 
 func New(topic notifier.Topic, tableConfig ...TableConfig) *chatWriterApp {
@@ -86,6 +88,45 @@ func New(topic notifier.Topic, tableConfig ...TableConfig) *chatWriterApp {
 	}
 }
 
+func (s *chatWriterApp) Init(ctx context.Context) error {
+	conn := raft_runner.GetClickhouseConnection(ctx)
+
+	for _, table := range s.tableConfig {
+		ddl := getDDL(table.Name, table.RefSize)
+		err := conn.Exec(ctx, ddl)
+		if err != nil {
+			log.Panic().Msgf("failed to execute DDL for table %v (%v): %v", table.Name, table.RefSize, err)
+		}
+	}
+
+	// get metadata
+	meta, err := raft_runner.GetMetadata(ctx, appName)
+	if err != nil {
+		return err
+	}
+
+	s.state = &state{}
+
+	if len(meta) > 0 {
+		err = json.Unmarshal(meta, s.state)
+		if err != nil {
+			return err
+		}
+	}
+
+	if s.state.EventIndexes == nil {
+		s.state.EventIndexes = make(map[string]*uint64)
+	}
+
+	// TODO: later we might need to use dedicated table for this
+	// but now we store it in meta for simplicity
+	if s.state.VersionIndexes == nil {
+		s.state.VersionIndexes = make(map[string]*uint64)
+	}
+
+	return nil
+}
+
 func (s *chatWriterApp) Lookup(ctx context.Context, query interface{}) (interface{}, error) {
 	if query == nil {
 		return nil, fmt.Errorf("empty query")
@@ -103,6 +144,76 @@ func (s *chatWriterApp) Lookup(ctx context.Context, query interface{}) (interfac
 	return nil, errors.New("unsupported query")
 }
 
+// PrepareUpdate prepare the resources for upcoming message
+func (s *chatWriterApp) PrepareUpdate(ctx context.Context) (context.Context, context.CancelFunc, error) {
+	// conn := statemachine.GetClickhouseConnection(ctx)
+
+	// batch, err := conn.PrepareBatch(ctx, DMLWriteChat)
+	// if err != nil {
+	// 	return ctx, err
+	// }
+
+	// return context.WithValue(ctx, chatTableKey, batch), nil
+	return ctx, func() {}, nil
+}
+
+// OnUpdate updates the object using the specified committed raft entry.
+func (s *chatWriterApp) OnUpdate(ctx context.Context, e raft.Entry) (raft.OnAfterApply, error) {
+	// chatIdx := *s.state.ChatIndex
+
+	payload, err := parseAs[DataWrapper](e.Value)
+	if err != nil {
+		return nil, fmt.Errorf("%w: failed to parse command as JSON (%v)", err, string(e.Value))
+	}
+
+	switch e.Command {
+	case "gratis.desain.mycontent.post":
+		return s.post(ctx, payload)
+	case "gratis.desain.mycontent.delete":
+		return s.delete(ctx, payload)
+	case "gratis.desain.mycontent.subscribe":
+		return s.subscribe(ctx, payload)
+	}
+
+	return nil, fmt.Errorf("raft update %w: %v", raft.ErrUnsupported, e.Command)
+}
+
+// Apply or "Sync". The core of dragonboat's state machine "Update" function.
+func (s *chatWriterApp) Apply(ctx context.Context) error {
+	// save metadata
+	payload, _ := json.Marshal(s.state)
+	err := raft_runner.SetMetadata(ctx, appName, payload)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *chatWriterApp) subscribe(ctx context.Context, payload DataWrapper) (raft.OnAfterApply, error) {
+	tableCfg, ok := s.tableConfig[payload.Table]
+	if !ok {
+		return func() (raft.Result, error) {
+			return raft.Result{Value: 1, Data: []byte("invalid table")}, nil
+		}, nil
+	}
+
+	_ = tableCfg
+
+	encResult, err := json.Marshal(map[string]any{
+		"message": "ggwp",
+	})
+	if err != nil {
+		return func() (raft.Result, error) {
+			return raft.Result{Value: 1, Data: []byte(fmt.Sprintf("error marshal: %v", err))}, nil
+		}, nil
+	}
+
+	return func() (raft.Result, error) {
+		return raft.Result{Value: 1, Data: encResult}, nil
+	}, nil
+}
+
 func (s *chatWriterApp) queryMyContent(ctx context.Context, query QueryMyContent) (QueryMyContentResponse, error) {
 	tableCfg, ok := s.tableConfig[query.Table]
 	if !ok {
@@ -110,9 +221,9 @@ func (s *chatWriterApp) queryMyContent(ctx context.Context, query QueryMyContent
 	}
 
 	conn := raft_runner.GetClickhouseConnection(ctx)
-	q, args, scanFn, err := s.prepareGet(tableCfg.Name, tableCfg.RefSize, query.Namespace, query.RefIDs, query.ID)
+	q, args, scanFn, err := s.prepareGet(tableCfg, query, query.Namespace, query.RefIDs, query.ID)
 	if err != nil {
-		return nil, fmt.Errorf("prepare get: %v", err)
+		return nil, err
 	}
 
 	rows, err := conn.Query(ctx, q, args...)
@@ -151,76 +262,6 @@ func (s *chatWriterApp) queryMyContent(ctx context.Context, query QueryMyContent
 	return rq, nil
 }
 
-func (s *chatWriterApp) Init(ctx context.Context) error {
-	conn := raft_runner.GetClickhouseConnection(ctx)
-
-	for _, table := range s.tableConfig {
-		ddl := getDDL(table.Name, table.RefSize)
-		err := conn.Exec(ctx, ddl)
-		if err != nil {
-			log.Panic().Msgf("failed to execute DDL for table %v (%v): %v", table.Name, table.RefSize, err)
-		}
-	}
-
-	// get metadata
-	meta, err := raft_runner.GetMetadata(ctx, appName)
-	if err != nil {
-		return err
-	}
-
-	s.state = &state{}
-
-	if len(meta) > 0 {
-		err = json.Unmarshal(meta, s.state)
-		if err != nil {
-			return err
-		}
-	}
-
-	if s.state.EventIndexes == nil {
-		s.state.EventIndexes = make(map[string]*uint64)
-	}
-
-	return nil
-}
-
-// PrepareUpdate prepare the resources for upcoming message
-func (s *chatWriterApp) PrepareUpdate(ctx context.Context) (context.Context, context.CancelFunc, error) {
-	// conn := statemachine.GetClickhouseConnection(ctx)
-
-	// batch, err := conn.PrepareBatch(ctx, DMLWriteChat)
-	// if err != nil {
-	// 	return ctx, err
-	// }
-
-	// return context.WithValue(ctx, chatTableKey, batch), nil
-	return ctx, func() {}, nil
-}
-
-func (s *chatWriterApp) subscribe(ctx context.Context, payload DataWrapper) (raft.OnAfterApply, error) {
-	tableCfg, ok := s.tableConfig[payload.Table]
-	if !ok {
-		return func() (raft.Result, error) {
-			return raft.Result{Value: 1, Data: []byte("invalid table")}, nil
-		}, nil
-	}
-
-	_ = tableCfg
-
-	encResult, err := json.Marshal(map[string]any{
-		"message": "ggwp",
-	})
-	if err != nil {
-		return func() (raft.Result, error) {
-			return raft.Result{Value: 1, Data: []byte(fmt.Sprintf("error marshal: %v", err))}, nil
-		}, nil
-	}
-
-	return func() (raft.Result, error) {
-		return raft.Result{Value: 1, Data: encResult}, nil
-	}, nil
-}
-
 func (s *chatWriterApp) post(ctx context.Context, payload DataWrapper) (raft.OnAfterApply, error) {
 	tableCfg, ok := s.tableConfig[payload.Table]
 	if !ok {
@@ -246,9 +287,22 @@ func (s *chatWriterApp) post(ctx context.Context, payload DataWrapper) (raft.OnA
 		eventIdx = &index
 	}
 
+	const separator = "\\" // TODO: add separator validation on post / make this configurable
+
+	combined := []string{payload.Namespace}
+	combined = append(combined, payload.RefIDs...) // notice no id
+	versionKey := strings.Join(combined, separator)
+	versionIdx, ok := s.state.VersionIndexes[versionKey]
+	if !ok {
+		var index uint64
+		s.state.VersionIndexes[versionKey] = &index
+		versionIdx = &index
+	}
+
 	id, cols, args, tmplt := s.preparePost(
-		tableCfg.RefSize,
+		tableCfg,
 		*eventIdx,
+		strconv.FormatUint(*versionIdx, 10),
 		payload.Namespace,
 		payload.RefIDs,
 		payload.ID,
@@ -269,6 +323,7 @@ func (s *chatWriterApp) post(ctx context.Context, payload DataWrapper) (raft.OnA
 	}
 
 	*s.state.EventIndexes[tableCfg.Name]++
+	*s.state.VersionIndexes[versionKey]++
 
 	payload.ID = id
 	payload.EventID = *eventIdx
@@ -302,6 +357,18 @@ func (s *chatWriterApp) delete(ctx context.Context, payload DataWrapper) (raft.O
 		eventIdx = &index
 	}
 
+	const separator = "\\" // TODO: add separator validation on post / make this configurable
+
+	// combined := []string{payload.Namespace}
+	// combined = append(combined, payload.RefIDs...) // notice no id
+	// versionKey := strings.Join(combined, separator)
+	// versionIdx, ok := s.state.VersionIndexes[versionKey]
+	// if !ok {
+	// 	var index uint64
+	// 	s.state.VersionIndexes[versionKey] = &index
+	// 	versionIdx = &index
+	// }
+
 	prevData, err := s.queryMyContent(ctx, QueryMyContent{
 		Table:     tableCfg.Name,
 		Namespace: payload.Namespace,
@@ -321,8 +388,9 @@ func (s *chatWriterApp) delete(ctx context.Context, payload DataWrapper) (raft.O
 	}
 
 	_, cols, args, tmplt := s.preparePost(
-		tableCfg.RefSize,
+		tableCfg,
 		*eventIdx,
+		toDelete.ID,
 		payload.Namespace,
 		payload.RefIDs,
 		payload.ID,
@@ -342,6 +410,7 @@ func (s *chatWriterApp) delete(ctx context.Context, payload DataWrapper) (raft.O
 	}
 
 	*s.state.EventIndexes[tableCfg.Name]++
+	// *s.state.VersionIndexes[versionKey]++
 
 	encResult, err := json.Marshal(toDelete)
 	if err != nil {
@@ -353,39 +422,6 @@ func (s *chatWriterApp) delete(ctx context.Context, payload DataWrapper) (raft.O
 	return func() (raft.Result, error) {
 		return raft.Result{Value: 0, Data: encResult}, nil
 	}, nil
-}
-
-// OnUpdate updates the object using the specified committed raft entry.
-func (s *chatWriterApp) OnUpdate(ctx context.Context, e raft.Entry) (raft.OnAfterApply, error) {
-	// chatIdx := *s.state.ChatIndex
-
-	payload, err := parseAs[DataWrapper](e.Value)
-	if err != nil {
-		return nil, fmt.Errorf("%w: failed to parse command as JSON (%v)", err, string(e.Value))
-	}
-
-	switch e.Command {
-	case "gratis.desain.mycontent.post":
-		return s.post(ctx, payload)
-	case "gratis.desain.mycontent.delete":
-		return s.delete(ctx, payload)
-	case "gratis.desain.mycontent.subscribe":
-		return s.subscribe(ctx, payload)
-	}
-
-	return nil, fmt.Errorf("raft update %w: %v", raft.ErrUnsupported, e.Command)
-}
-
-// Apply or "Sync". The core of dragonboat's state machine "Update" function.
-func (s *chatWriterApp) Apply(ctx context.Context) error {
-	// save metadata
-	payload, _ := json.Marshal(s.state)
-	err := raft_runner.SetMetadata(ctx, appName, payload)
-	if err != nil {
-		return err
-	}
-
-	return nil
 }
 
 func (s *chatWriterApp) startSubscription(ctx context.Context, _ raft.Entry, rawData json.RawMessage, startIdx uint64) error {
@@ -483,9 +519,9 @@ func getDDL(tableName string, refSize int) string {
 	return buf.String()
 }
 
-func (s *chatWriterApp) preparePost(refSize int, eventID uint64, namespace string, refIDs []string, ID string, data string, meta string, delete bool) (string, []string, []any, []string) {
+func (s *chatWriterApp) preparePost(tableConfig TableConfig, eventID uint64, versionID string, namespace string, refIDs []string, ID string, data string, meta string, delete bool) (string, []string, []any, []string) {
 	// event id column + key columns + data & meta column
-	keyAndContentSize := 1 + 1 + refSize + 1 + 2
+	keyAndContentSize := 1 + 1 + tableConfig.RefSize + 1 + 2
 
 	columns := make([]string, 0, keyAndContentSize)
 	tmplt := make([]string, 0, len(columns))
@@ -494,7 +530,7 @@ func (s *chatWriterApp) preparePost(refSize int, eventID uint64, namespace strin
 	columns = append(columns, `event_id`, `namespace`)
 	args = append(args, eventID, namespace)
 
-	for i := 0; i < refSize; i++ {
+	for i := 0; i < tableConfig.RefSize; i++ {
 		columns = append(columns, `ref_id_`+strconv.Itoa(i+1))
 		args = append(args, refIDs[i])
 	}
@@ -502,6 +538,9 @@ func (s *chatWriterApp) preparePost(refSize int, eventID uint64, namespace strin
 	id := ID
 	if id == "" {
 		id = uuid.NewString()
+	}
+	if tableConfig.IncrementalID {
+		id = versionID
 	}
 
 	columns = append(columns, `id`)
@@ -538,24 +577,30 @@ func (s *chatWriterApp) preparePost(refSize int, eventID uint64, namespace strin
 //
 // )
 // WHERE t.3 = 0;
-func (s *chatWriterApp) prepareGet(tableName string, refSize int, namespace string, refIDs []string, ID string) (string, []any, func() (*scanResult, []any), error) {
-	if len(refIDs) > refSize {
+func (s *chatWriterApp) prepareGet(tableConfig TableConfig, query QueryMyContent, namespace string, refIDs []string, ID string) (string, []any, func() (*scanResult, []any), error) {
+	if len(refIDs) > tableConfig.RefSize {
 		return "", nil, nil, fmt.Errorf(
-			"%w: ref size is greater than expected (got %v, expected %v)", content.ErrInvalidKey, len(refIDs), refSize)
+			"%w: ref size is greater than expected (got %v, expected %v)", content.ErrInvalidKey, len(refIDs), tableConfig.RefSize)
+	}
+
+	if tableConfig.IncrementalID && len(refIDs) != tableConfig.RefSize {
+		// return "", nil, nil, fmt.Errorf(
+		// 	"%w: reference params must be fully specified for 'IncrementalID' table", content.ErrInvalidKey)
+		log.Warn().Msgf("reference params not fully specified for 'IncrementalID' table; result might be not correct because of result limit")
 	}
 
 	buf := bytes.NewBuffer(make([]byte, 0, 100))
 
-	keyCols := make([]string, 0, refSize)
+	keyCols := make([]string, 0, tableConfig.RefSize)
 
-	whereQ, whereArgs, err := s.prepareWhereQuery(refSize, namespace, refIDs, ID)
+	whereQ, whereArgs, err := s.prepareWhereQuery(tableConfig.RefSize, namespace, refIDs, ID)
 	if err != nil {
 		return "", nil, nil, err
 	}
 
 	keyCols = append(keyCols, "namespace") // event id is no longer a key
 
-	for i := range refSize {
+	for i := range tableConfig.RefSize {
 		// TODO: reuse the one inside get DDL function
 		refID := `ref_id_` + strconv.Itoa(i+1)
 		keyCols = append(keyCols, refID)
@@ -570,14 +615,26 @@ func (s *chatWriterApp) prepareGet(tableName string, refSize int, namespace stri
 		`SELECT ` + strings.Join(allCols, ", ") + ` FROM (` +
 			`SELECT ` + strings.Join(keyCols, ", ") + `, ` +
 			`argMax((data, meta, is_deleted, event_id), event_id) AS t ` +
-			`FROM "` + tableName + `" ` +
+			`FROM "` + tableConfig.Name + `" ` +
 			whereQ + ` ` +
 			`GROUP BY ` + strings.Join(keyCols, ", ") +
 			`) ` +
 			`WHERE t.3 = 0`,
 	)
 	if err != nil {
-		return "", nil, nil, err
+		return "", nil, nil, fmt.Errorf("failed to build query: %w", err)
+	}
+
+	// Technically, this is still Key-Value store, so this is "like" a "hack" (not necessarily actual hack)
+	// Querying without a full ref ID will not be defined clearly.
+	if tableConfig.IncrementalID {
+		_, err = buf.WriteString(` ORDER BY event_id DESC `)
+
+		limit := 20
+		if tableConfig.IncrementalIDGetLimit > 0 {
+			limit = int(tableConfig.IncrementalIDGetLimit)
+		}
+		_, err = fmt.Fprintf(buf, `	LIMIT %v`, limit)
 	}
 
 	return buf.String(), whereArgs, func() (*scanResult, []any) {

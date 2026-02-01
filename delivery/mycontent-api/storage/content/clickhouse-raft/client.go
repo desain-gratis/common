@@ -3,17 +3,23 @@ package clickhouseraft
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
-	"github.com/desain-gratis/common/delivery/mycontent-api/storage/content"
 	raft_runner "github.com/desain-gratis/common/lib/raft/runner"
 	"github.com/lni/dragonboat/v4"
 	"github.com/lni/dragonboat/v4/client"
 	"github.com/lni/dragonboat/v4/statemachine"
+
+	"github.com/desain-gratis/common/delivery/mycontent-api/storage/content"
 )
 
 var _ content.Repository = &mycontentClient{}
+
+var (
+	ErrNotReady = errors.New("raft not ready")
+)
 
 type mycontentClient struct {
 	tableName string
@@ -145,8 +151,10 @@ func (c *mycontentClient) publishToRaft(ctx context.Context, msg any) ([]byte, e
 		return nil, fmt.Errorf("failed to marshal msg to raft: %w (%v)", err, string(data))
 	}
 
+	var attempts int
 	var res statemachine.Result
 	for range 3 {
+		attempts++
 		ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		res, err = c.DHost.SyncPropose(ctx, c.Sess, data)
 		if err == nil {
@@ -154,7 +162,11 @@ func (c *mycontentClient) publishToRaft(ctx context.Context, msg any) ([]byte, e
 			break
 		}
 		cancel()
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(500 * time.Millisecond * time.Duration(attempts*2))
+	}
+
+	if attempts >= 3 {
+		return nil, fmt.Errorf("maximum number of attempt (3) reached: %w (%w)", err, ErrNotReady)
 	}
 
 	if res.Value > 0 {
@@ -178,6 +190,10 @@ func (c *mycontentClient) queryLocal(ctx context.Context, msg any) (any, error) 
 		}
 		errg = err
 		cancel()
+		if errors.Is(err, content.ErrInvalidKey) || errors.Is(err, content.ErrNotFound) {
+			return nil, err
+		}
+
 		time.Sleep(500 * time.Millisecond)
 	}
 

@@ -7,21 +7,24 @@ import (
 	"encoding/binary"
 	"hash/fnv"
 	"image"
+	"image/png"
 	"io"
 	"net/http"
 	"os"
 	"path"
 	"time"
 
+	"github.com/disintegration/imaging"
+	"github.com/rs/zerolog/log"
+	"golang.org/x/image/draw"
+
+	// "github.com/kolesa-team/go-webp/webp"
+
 	"github.com/desain-gratis/common/delivery/mycontent-api-client/imageproc"
 	"github.com/desain-gratis/common/delivery/mycontent-api/mycontent"
 	"github.com/desain-gratis/common/types/entity"
 	content "github.com/desain-gratis/common/types/entity"
 	types "github.com/desain-gratis/common/types/http"
-	"github.com/disintegration/imaging"
-	"github.com/kolesa-team/go-webp/webp"
-	"github.com/rs/zerolog/log"
-	"golang.org/x/image/draw"
 )
 
 type SyncStat struct {
@@ -323,7 +326,9 @@ func processImage(dir string, imgRef **entity.Image) ([]byte, string, *types.Com
 
 	// dumps as PNG (later Webp)
 	bbbuf := bytes.NewBuffer(make([]byte, 0))
-	err = webp.Encode(bbbuf, scaled, nil)
+
+	// err = webp.Encode(bbbuf, scaled, nil)
+	err = png.Encode(bbbuf, scaled)
 	if err != nil {
 		return nil, "", &types.CommonError{
 			Errors: []types.Error{
@@ -345,7 +350,8 @@ func processImage(dir string, imgRef **entity.Image) ([]byte, string, *types.Com
 	draw.CatmullRom.Scale(placeholder, placeholder.Bounds(), clean, clean.Bounds(), draw.Over, nil)
 
 	bbbuf2 := bytes.NewBuffer(make([]byte, 0))
-	err = webp.Encode(bbbuf2, placeholder, nil)
+	// err = webp.Encode(bbbuf2, placeholder, nil)
+	err = png.Encode(bbbuf2, placeholder)
 	if err != nil {
 		return data, placeholderEncode, &types.CommonError{
 			Errors: []types.Error{
