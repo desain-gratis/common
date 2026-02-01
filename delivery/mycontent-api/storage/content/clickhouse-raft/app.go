@@ -299,7 +299,7 @@ func (s *chatWriterApp) post(ctx context.Context, payload DataWrapper) (raft.OnA
 		versionIdx = &index
 	}
 
-	id, cols, args, tmplt := s.preparePost(
+	id, cols, args, tmplt, increment := s.preparePost(
 		tableCfg,
 		*eventIdx,
 		strconv.FormatUint(*versionIdx, 10),
@@ -323,7 +323,10 @@ func (s *chatWriterApp) post(ctx context.Context, payload DataWrapper) (raft.OnA
 	}
 
 	*s.state.EventIndexes[tableCfg.Name]++
-	*s.state.VersionIndexes[versionKey]++
+
+	if increment { // create new (not modifying existing version)
+		*s.state.VersionIndexes[versionKey]++
+	}
 
 	payload.ID = id
 	payload.EventID = *eventIdx
@@ -387,7 +390,7 @@ func (s *chatWriterApp) delete(ctx context.Context, payload DataWrapper) (raft.O
 		}, nil
 	}
 
-	_, cols, args, tmplt := s.preparePost(
+	_, cols, args, tmplt, _ := s.preparePost(
 		tableCfg,
 		*eventIdx,
 		toDelete.ID,
@@ -519,7 +522,7 @@ func getDDL(tableName string, refSize int) string {
 	return buf.String()
 }
 
-func (s *chatWriterApp) preparePost(tableConfig TableConfig, eventID uint64, versionID string, namespace string, refIDs []string, ID string, data string, meta string, delete bool) (string, []string, []any, []string) {
+func (s *chatWriterApp) preparePost(tableConfig TableConfig, eventID uint64, versionID string, namespace string, refIDs []string, ID string, data string, meta string, delete bool) (string, []string, []any, []string, bool) {
 	// event id column + key columns + data & meta column
 	keyAndContentSize := 1 + 1 + tableConfig.RefSize + 1 + 2
 
@@ -535,10 +538,13 @@ func (s *chatWriterApp) preparePost(tableConfig TableConfig, eventID uint64, ver
 		args = append(args, refIDs[i])
 	}
 
+	var incrementVersion bool
+
 	id := ID
 	if id == "" {
 		if tableConfig.IncrementalID {
 			id = versionID
+			incrementVersion = true
 		} else {
 			id = uuid.NewString()
 		}
@@ -562,7 +568,7 @@ func (s *chatWriterApp) preparePost(tableConfig TableConfig, eventID uint64, ver
 		tmplt = append(tmplt, `?`)
 	}
 
-	return id, columns, args, tmplt
+	return id, columns, args, tmplt, incrementVersion
 }
 
 // todo: re-organize / move this to clickhouse to share shared query logic
