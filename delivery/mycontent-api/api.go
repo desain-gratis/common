@@ -82,6 +82,7 @@ func (i *service[T]) Post(w http.ResponseWriter, r *http.Request, p httprouter.P
 	var resource T
 	err = json.Unmarshal(payload, &resource)
 	if err != nil {
+		// log.Warn().Msgf("msg: '%v'", string(payload))
 		handleError(
 			w, "BAD_REQUEST", "failed to parse body. Make sure file size does not exceed 200Kb",
 			http.StatusBadRequest, nil)

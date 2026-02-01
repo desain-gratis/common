@@ -537,10 +537,11 @@ func (s *chatWriterApp) preparePost(tableConfig TableConfig, eventID uint64, ver
 
 	id := ID
 	if id == "" {
-		id = uuid.NewString()
-	}
-	if tableConfig.IncrementalID {
-		id = versionID
+		if tableConfig.IncrementalID {
+			id = versionID
+		} else {
+			id = uuid.NewString()
+		}
 	}
 
 	columns = append(columns, `id`)

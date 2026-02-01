@@ -175,6 +175,7 @@ func (i *uploadService) Upload(w http.ResponseWriter, r *http.Request, p httprou
 	attachmentData := &entity.Attachment{}
 	err = json.Unmarshal(_doc, attachmentData)
 	if err != nil {
+		// log.Warn().Msgf("msg: '%v'", string(_doc))
 		handleError(
 			w, "BAD_REQUEST", "failed to parse body. Make sure file size does not exceed 200Kb",
 			http.StatusBadRequest, nil)
