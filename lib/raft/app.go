@@ -12,6 +12,9 @@ type Entry struct {
 	Index   uint64
 	Command string
 	Value   []byte
+
+	// Replica that triggered the update
+	ReplicaID *uint64
 }
 
 var ErrUnsupported = errors.ErrUnsupported

@@ -81,7 +81,9 @@ func (d *baseDiskSM) Lookup(key interface{}) (interface{}, error) {
 type Command struct {
 	Command string          `json:"command"`
 	Value   json.RawMessage `json:"value"`
-	// add more fields below
+
+	// ReplicaID of the requester
+	ReplicaID *uint64 `json:"replica_id,omitempty"`
 }
 
 func (d *baseDiskSM) Update(ents []sm.Entry) ([]sm.Entry, error) {
@@ -117,10 +119,11 @@ func (d *baseDiskSM) Update(ents []sm.Entry) ([]sm.Entry, error) {
 		}
 
 		afterApplys[idx], err = d.app.OnUpdate(ctx, raft.Entry{
-			Entry:   &ents[idx],
-			Index:   ents[idx].Index,
-			Command: msg.Command,
-			Value:   []byte(msg.Value),
+			Entry:     &ents[idx],
+			Index:     ents[idx].Index,
+			Command:   msg.Command,
+			Value:     []byte(msg.Value),
+			ReplicaID: msg.ReplicaID,
 		})
 		if err != nil && errors.Is(err, raft.ErrUnsupported) {
 			afterApplys[idx] = func() (raft.Result, error) {

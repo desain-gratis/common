@@ -273,7 +273,7 @@ func (s *chatWriterApp) post(ctx context.Context, payload DataWrapper) (raft.OnA
 	if len(payload.RefIDs) != tableCfg.RefSize {
 		return func() (raft.Result, error) {
 			return raft.Result{Value: 1, Data: []byte(
-				fmt.Sprintf("unexpected reference count: expected %v got %v", tableCfg.RefSize, len(payload.RefIDs)),
+				fmt.Sprintf("unexpected reference count: expected %v got %v for table '%v'", tableCfg.RefSize, len(payload.RefIDs), tableCfg.Name),
 			)}, nil
 		}, nil
 	}
@@ -289,7 +289,7 @@ func (s *chatWriterApp) post(ctx context.Context, payload DataWrapper) (raft.OnA
 
 	const separator = "\\" // TODO: add separator validation on post / make this configurable
 
-	combined := []string{payload.Namespace}
+	combined := []string{tableCfg.Name, payload.Namespace}
 	combined = append(combined, payload.RefIDs...) // notice no id
 	versionKey := strings.Join(combined, separator)
 	versionIdx, ok := s.state.VersionIndexes[versionKey]
@@ -324,7 +324,7 @@ func (s *chatWriterApp) post(ctx context.Context, payload DataWrapper) (raft.OnA
 
 	*s.state.EventIndexes[tableCfg.Name]++
 
-	if increment { // create new (not modifying existing version)
+	if increment {
 		*s.state.VersionIndexes[versionKey]++
 	}
 
@@ -593,7 +593,6 @@ func (s *chatWriterApp) prepareGet(tableConfig TableConfig, query QueryMyContent
 	if tableConfig.IncrementalID && len(refIDs) != tableConfig.RefSize {
 		// return "", nil, nil, fmt.Errorf(
 		// 	"%w: reference params must be fully specified for 'IncrementalID' table", content.ErrInvalidKey)
-		log.Warn().Msgf("reference params not fully specified for 'IncrementalID' table; result might be not correct because of result limit")
 	}
 
 	buf := bytes.NewBuffer(make([]byte, 0, 100))

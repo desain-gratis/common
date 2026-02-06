@@ -25,6 +25,7 @@ type mycontentClient struct {
 	tableName string
 	DHost     *dragonboat.NodeHost
 	Sess      *client.Session
+	ReplicaID uint64
 }
 
 func NewStorageClient(ctx context.Context, tableName string) *mycontentClient {
@@ -33,6 +34,7 @@ func NewStorageClient(ctx context.Context, tableName string) *mycontentClient {
 		tableName: tableName,
 		DHost:     raftCtx.DHost,
 		Sess:      raftCtx.DHost.GetNoOPSession(raftCtx.ShardID),
+		ReplicaID: raftCtx.ReplicaID,
 	}
 }
 
@@ -60,6 +62,7 @@ func (c *mycontentClient) Post(ctx context.Context, namespace string, refIDs []s
 			Data:      data.Data, // raw json
 			Meta:      data.Meta,
 		},
+		"replica_id": c.ReplicaID,
 	}
 
 	resp, err := c.publishToRaft(ctx, wrap)

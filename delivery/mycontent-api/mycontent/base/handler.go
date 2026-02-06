@@ -22,6 +22,7 @@ func New[T mycontent.Data](
 	repo content.Repository,
 	expectedRefSize int,
 ) *Handler[T] {
+	// TODO: add validation
 	return &Handler[T]{
 		repo:            repo,
 		expectedRefSize: expectedRefSize,

@@ -87,6 +87,7 @@ type Created interface {
 // Secondary indexes of the content, allowing to be queried other than user ID, parent ID, & user ID
 type RefIDs interface {
 	RefIDs() []string
+	// TODO: might use map or more metadata; & inside for each repository
 }
 
 type Validator interface {

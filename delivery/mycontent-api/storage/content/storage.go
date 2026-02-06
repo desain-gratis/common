@@ -23,7 +23,7 @@ type Repository interface {
 	Stream(ctx context.Context, namespace string, refIDs []string, ID string) (<-chan Data, error)
 
 	// TODO: add ref size
-	// RefSize() int
+	// RefSize() int // Map key value for param / metadata
 }
 
 type Data struct {
