@@ -3,6 +3,7 @@ package runner
 import (
 	"context"
 	"database/sql"
+	"errors"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/lni/dragonboat/v4"
@@ -47,7 +48,10 @@ func SetMetadata(ctx context.Context, namespace string, data []byte) error {
 	return batch.Append(namespace, string(data))
 }
 
-func GetRaftContext(ctx context.Context) RaftContext {
-	raftCtx := ctx.Value(contextKey).(RaftContext)
-	return raftCtx
+func GetRaftContext(ctx context.Context) (RaftContext, error) {
+	raftCtx, ok := ctx.Value(contextKey).(RaftContext)
+	if !ok {
+		return RaftContext{}, errors.New("raft context not found")
+	}
+	return raftCtx, nil
 }

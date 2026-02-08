@@ -7,10 +7,12 @@ import (
 	sm "github.com/lni/dragonboat/v4/statemachine"
 )
 
+type Command string
+
 type Entry struct {
 	*sm.Entry
 	Index   uint64
-	Command string
+	Command Command
 	Value   []byte
 
 	// Replica that triggered the update

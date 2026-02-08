@@ -153,7 +153,12 @@ func (i *imageDep[T]) syncImages(dataArr []ImageContext[T]) (stat SyncStat, errU
 
 	// Delete unused remote data
 	for _, data := range toDelete {
-		_, errUC := i.client.Delete(ctx, i.sync.OptConfig.AuthorizationToken, data.Namespace(), toRefsParam(i.client.refsParam, data.RefIds), data.Id)
+		refParam, err := toRefsParam(i.client.refsParam, data.RefIds)
+		if err != nil {
+			log.Err(err).Msgf("bad ref params")
+			continue
+		}
+		_, errUC := i.client.Delete(ctx, i.sync.OptConfig.AuthorizationToken, data.Namespace(), refParam, data.Id)
 		if errUC != nil {
 			log.Error().Msgf("Failed to delete %v %v %v %v %v", i.client.endpoint, data.Namespace(), data.RefIDs(), data.ID(), errUC.Err())
 			continue
@@ -397,7 +402,6 @@ func attachmentToImage(attachment *content.Attachment) *entity.Image {
 
 // attachmentToImage an utility function to map attachment to an entity
 func attachmentToFile(attachment *content.Attachment) *entity.File {
-	log.Info().Msgf("from serva: %+v", attachment.Url)
 	return &entity.File{
 		Id:          attachment.Id,
 		Url:         attachment.Url,

@@ -79,7 +79,7 @@ func (d *baseDiskSM) Lookup(key interface{}) (interface{}, error) {
 
 // Raft Command
 type Command struct {
-	Command string          `json:"command"`
+	Command raft.Command    `json:"command"`
 	Value   json.RawMessage `json:"value"`
 
 	// ReplicaID of the requester
@@ -121,7 +121,7 @@ func (d *baseDiskSM) Update(ents []sm.Entry) ([]sm.Entry, error) {
 		afterApplys[idx], err = d.app.OnUpdate(ctx, raft.Entry{
 			Entry:     &ents[idx],
 			Index:     ents[idx].Index,
-			Command:   msg.Command,
+			Command:   raft.Command(msg.Command),
 			Value:     []byte(msg.Value),
 			ReplicaID: msg.ReplicaID,
 		})

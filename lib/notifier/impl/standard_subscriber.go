@@ -37,6 +37,13 @@ type standardSubscriber struct {
 	receiveCh chan any
 }
 
+func NoOp(a any) bool {
+	return false
+}
+
+// Use t to make sure you have topic before you can subscribe!
+// Need to find a way to make sure this one have TOPIC!!
+// maybe add param or receiver later...
 func NewStandardSubscriber(filterOutFn func(any) bool) notifier.CreateSubscription {
 	return func(ctx context.Context, id string) notifier.Subscription {
 		c := &standardSubscriber{
@@ -46,9 +53,7 @@ func NewStandardSubscriber(filterOutFn func(any) bool) notifier.CreateSubscripti
 		}
 
 		if filterOutFn == nil {
-			filterOutFn = func(a any) bool {
-				return false
-			}
+			filterOutFn = NoOp
 		}
 
 		log.Info().Msgf("subscription member: created %v", id)

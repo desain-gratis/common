@@ -118,7 +118,13 @@ func (i *fileDep[T]) syncFiles(dataArr []FileContext[T]) (stat SyncStat, errUC *
 
 	// Delete unused remote data
 	for _, data := range toDelete {
-		_, errUC := i.client.Delete(ctx, i.sync.OptConfig.AuthorizationToken, data.Namespace(), toRefsParam(i.client.refsParam, data.RefIds), data.Id)
+		refParam, err := toRefsParam(i.client.refsParam, data.RefIds)
+		if err != nil {
+			log.Err(err).Msgf("bad ref params")
+			continue
+		}
+
+		_, errUC := i.client.Delete(ctx, i.sync.OptConfig.AuthorizationToken, data.Namespace(), refParam, data.Id)
 		if errUC != nil {
 			log.Error().Msgf("Failed to delete %v %v %v %v %v", i.client.endpoint, data.Namespace(), data.RefIDs(), data.ID(), errUC.Err())
 			continue

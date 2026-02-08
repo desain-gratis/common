@@ -140,7 +140,10 @@ func Run(ctx context.Context, app raft.Application) error {
 	dhost := replica.DHost()
 
 	cfg := replica.GetConfig()
-	raftCtx := GetRaftContext(ctx)
+	raftCtx, err := GetRaftContext(ctx)
+	if err != nil {
+		return err
+	}
 
 	database := fmt.Sprintf("%v_%v_%v", raftCtx.ID, raftCtx.ShardID, raftCtx.ReplicaID)
 
@@ -155,7 +158,7 @@ func Run(ctx context.Context, app raft.Application) error {
 
 	join := len(target) == 0
 
-	err := dhost.StartOnDiskReplica(target, join, fn, config.Config{
+	err = dhost.StartOnDiskReplica(target, join, fn, config.Config{
 		ShardID:            raftCtx.ShardID,
 		ReplicaID:          raftCtx.ReplicaID,
 		HeartbeatRTT:       1,

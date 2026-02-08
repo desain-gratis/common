@@ -8,6 +8,7 @@ type CreateSubscription func(ctx context.Context, id string) Subscription
 
 // Topic implementation
 type Topic interface {
+	// TODO: find new pattern, maybe CreateSubscription can be leftout?
 	Subscribe(ctx context.Context, fn CreateSubscription) (Subscription, error)
 	GetSubscription(id string) (Subscription, error)
 	RemoveSubscription(id string) error
