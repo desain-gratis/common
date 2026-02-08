@@ -29,7 +29,7 @@ type mycontentClient struct {
 }
 
 func NewStorageClient(ctx context.Context, tableName string) *mycontentClient {
-	raftCtx := raft_runner.GetRaftContext(ctx)
+	raftCtx, _ := raft_runner.GetRaftContext(ctx)
 	return &mycontentClient{
 		tableName: tableName,
 		DHost:     raftCtx.DHost,
@@ -134,18 +134,49 @@ func (c *mycontentClient) Delete(ctx context.Context, namespace string, refIDs [
 		return content.Data{}, fmt.Errorf("failed to publish delete message to raft: %w", err)
 	}
 
-	var parsedRaft content.Data
+	var parsedRaft DataWrapper
 	err = json.Unmarshal(resp, &parsedRaft)
 	if err != nil {
 		return content.Data{}, fmt.Errorf("failed to parse message from raft: %w (%v)", err, string(resp))
 	}
 
-	return parsedRaft, nil
+	return content.Data{
+		Namespace: parsedRaft.Namespace,
+		RefIDs:    parsedRaft.RefIDs,
+		ID:        parsedRaft.ID,
+		Data:      parsedRaft.Data,
+		Meta:      parsedRaft.Meta,
+		EventID:   parsedRaft.EventID,
+	}, nil
 }
 
 // Stream Get data
 func (c *mycontentClient) Stream(ctx context.Context, namespace string, refIDs []string, ID string) (<-chan content.Data, error) {
-	return nil, fmt.Errorf("not implemented yet")
+	resp, err := c.queryLocal(ctx, QueryMyContent{
+		Table:     c.tableName,
+		Namespace: namespace,
+		RefIDs:    refIDs,
+		ID:        ID,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	chanResp, ok := resp.(QueryMyContentResponse)
+	if !ok {
+		return nil, fmt.Errorf("server error: not query my content response: %T %v", resp, resp)
+	}
+
+	// for get, we store them all into memory
+	result := make(chan content.Data)
+	go func() {
+		defer close(result)
+		for data := range chanResp {
+			result <- *data
+		}
+	}()
+
+	return result, nil
 }
 
 func (c *mycontentClient) publishToRaft(ctx context.Context, msg any) ([]byte, error) {

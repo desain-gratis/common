@@ -14,13 +14,15 @@ import (
 var _ mycontent.Usecase[mycontent.Data] = &Handler[mycontent.Data]{}
 
 type Handler[T mycontent.Data] struct {
-	repo            content.Repository
+	repo content.Repository
+
+	// DEPRECATED
 	expectedRefSize int // TODO: change to just size (eg. expected refIDs size)
 }
 
 func New[T mycontent.Data](
 	repo content.Repository,
-	expectedRefSize int,
+	expectedRefSize int, // DEPRECATED
 ) *Handler[T] {
 	// TODO: add validation
 	return &Handler[T]{
@@ -41,6 +43,7 @@ func (c *Handler[T]) Post(ctx context.Context, data T, meta any) (T, error) {
 		return t, fmt.Errorf("%w: namespace cannot be empty", mycontent.ErrValidation)
 	}
 
+	// TODO: validate if there is empty value in not appropriate place
 	if !isValid(data.RefIDs()) && len(filterEmpty(data.RefIDs())) != c.expectedRefSize {
 		return t, fmt.Errorf("%w: complete reference must be provided during post", mycontent.ErrValidation)
 	}
@@ -85,7 +88,7 @@ func (c *Handler[T]) Post(ctx context.Context, data T, meta any) (T, error) {
 
 	parsedResult, err := Parse[T](result.Data)
 	if err != nil {
-		return t, err
+		return t, fmt.Errorf("err unmarshal: %w data: %v", err, string(result.Data))
 	}
 
 	parsedResult.WithID(result.ID)
@@ -99,7 +102,7 @@ func (c *Handler[T]) get(ctx context.Context, namespace string, refIDs []string,
 	if ID != "" {
 		if !isValid(refIDs) || len(filterEmpty(refIDs)) != c.expectedRefSize {
 			return nil, fmt.Errorf(
-				"%w: when ID is specified, all reference must be specified", mycontent.ErrValidation)
+				"%w: when ID is specified, all reference must be specified. found: %+v expected ref: %+v", mycontent.ErrValidation, refIDs, c.expectedRefSize)
 		}
 
 		ds, err := c.repo.Get(ctx, namespace, refIDs, ID)
@@ -158,13 +161,46 @@ func (c *Handler[T]) Get(ctx context.Context, namespace string, refIDs []string,
 	return result, nil
 }
 
+// TODO: move to interface
+type Pair[T mycontent.Data] struct {
+	Data T
+	Meta []byte
+}
+
+// TODO: get meta
+func (c *Handler[T]) GetWithMeta(ctx context.Context, namespace string, refIDs []string, ID string) ([]Pair[T], error) {
+	ds, err := c.get(ctx, namespace, refIDs, ID)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]Pair[T], 0, len(ds))
+	for _, d := range ds {
+		parsedResult, err := Parse[T](d.Data)
+		if err != nil {
+			log.Error().Msgf("Should not happend")
+			continue
+		}
+
+		// repository responsble to specify it inside their ID
+		parsedResult.WithID(d.ID)
+
+		result = append(result, Pair[T]{
+			Data: parsedResult,
+			Meta: d.Meta,
+		})
+	}
+
+	return result, nil
+}
+
 // TODO: implement properly
 func (c *Handler[T]) Stream(ctx context.Context, namespace string, refIDs []string, ID string) (<-chan T, error) {
 	// 1. check if there is ID
 	if ID != "" {
 		if !isValid(refIDs) || len(filterEmpty(refIDs)) != c.expectedRefSize {
 			return nil, fmt.Errorf(
-				"%w: when ID is specified, all reference must be specified", mycontent.ErrValidation)
+				"%w: when ID is specified, all reference must be specified. found: %+v expected ref: %+v", mycontent.ErrValidation, refIDs, c.expectedRefSize)
 		}
 
 		d, err := c.repo.Get(ctx, namespace, refIDs, ID)

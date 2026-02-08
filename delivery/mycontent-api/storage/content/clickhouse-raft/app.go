@@ -11,13 +11,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/rs/zerolog/log"
+
 	"github.com/desain-gratis/common/delivery/mycontent-api/storage/content"
 	"github.com/desain-gratis/common/lib/notifier"
 	"github.com/desain-gratis/common/lib/raft"
 	notifierhelper "github.com/desain-gratis/common/lib/raft/notifier-helper"
 	raft_runner "github.com/desain-gratis/common/lib/raft/runner"
-	"github.com/google/uuid"
-	"github.com/rs/zerolog/log"
 )
 
 const (
@@ -26,7 +27,7 @@ const (
 	TopicChatLog = "chat_log"
 )
 
-var _ raft.Application = &chatWriterApp{}
+var _ raft.Application = &ContentApp{}
 
 type QueryMyContent struct {
 	Table     string   `json:"table"`
@@ -52,7 +53,7 @@ type DataWrapper struct {
 // happySM to isolate all business logic from the state machine technicality
 // because this is an OLAP usecase,  writing to DB, choosing the appropriate DB & indexes are tightly coupled.
 // will not try to abstract away
-type chatWriterApp struct {
+type ContentApp struct {
 	state       *state
 	topicReg    notifierhelper.TopicRegistry
 	tableConfig map[string]TableConfig
@@ -65,7 +66,7 @@ type TableConfig struct {
 	IncrementalIDGetLimit uint8
 }
 
-func New(topic notifier.Topic, tableConfig ...TableConfig) *chatWriterApp {
+func New(topic notifier.Topic, tableConfig ...TableConfig) *ContentApp {
 	nh := notifierhelper.NewTopicRegistry(map[string]notifier.Topic{
 		TopicChatLog: topic,
 	})
@@ -82,13 +83,26 @@ func New(topic notifier.Topic, tableConfig ...TableConfig) *chatWriterApp {
 		}
 	}
 
-	return &chatWriterApp{
+	return &ContentApp{
 		topicReg:    nh,
 		tableConfig: tableConfigMap,
 	}
 }
 
-func (s *chatWriterApp) Init(ctx context.Context) error {
+// GetRepository offers the usual mycontent.Usecase interface for code *inside* raft.Application
+func (s *ContentApp) GetStorage(tableName string) (content.Repository, error) {
+	tableCfg, ok := s.tableConfig[tableName]
+	if !ok {
+		return nil, errors.New("table not found")
+	}
+
+	return &repository{
+		base:        s,
+		tableConfig: tableCfg,
+	}, nil
+}
+
+func (s *ContentApp) Init(ctx context.Context) error {
 	conn := raft_runner.GetClickhouseConnection(ctx)
 
 	for _, table := range s.tableConfig {
@@ -127,7 +141,7 @@ func (s *chatWriterApp) Init(ctx context.Context) error {
 	return nil
 }
 
-func (s *chatWriterApp) Lookup(ctx context.Context, query interface{}) (interface{}, error) {
+func (s *ContentApp) Lookup(ctx context.Context, query interface{}) (interface{}, error) {
 	if query == nil {
 		return nil, fmt.Errorf("empty query")
 	}
@@ -145,7 +159,7 @@ func (s *chatWriterApp) Lookup(ctx context.Context, query interface{}) (interfac
 }
 
 // PrepareUpdate prepare the resources for upcoming message
-func (s *chatWriterApp) PrepareUpdate(ctx context.Context) (context.Context, context.CancelFunc, error) {
+func (s *ContentApp) PrepareUpdate(ctx context.Context) (context.Context, context.CancelFunc, error) {
 	// conn := statemachine.GetClickhouseConnection(ctx)
 
 	// batch, err := conn.PrepareBatch(ctx, DMLWriteChat)
@@ -158,7 +172,7 @@ func (s *chatWriterApp) PrepareUpdate(ctx context.Context) (context.Context, con
 }
 
 // OnUpdate updates the object using the specified committed raft entry.
-func (s *chatWriterApp) OnUpdate(ctx context.Context, e raft.Entry) (raft.OnAfterApply, error) {
+func (s *ContentApp) OnUpdate(ctx context.Context, e raft.Entry) (raft.OnAfterApply, error) {
 	// chatIdx := *s.state.ChatIndex
 
 	payload, err := parseAs[DataWrapper](e.Value)
@@ -168,9 +182,39 @@ func (s *chatWriterApp) OnUpdate(ctx context.Context, e raft.Entry) (raft.OnAfte
 
 	switch e.Command {
 	case "gratis.desain.mycontent.post":
-		return s.post(ctx, payload)
+		result, err := s.post(ctx, payload)
+		if err != nil {
+			return nil, err
+		}
+
+		encResult, err := json.Marshal(*result)
+		if err != nil {
+			return func() (raft.Result, error) {
+				return raft.Result{Value: 1, Data: []byte(fmt.Sprintf("error marshal: %v", err))}, nil
+			}, nil
+		}
+
+		return func() (raft.Result, error) {
+			return raft.Result{Value: 0, Data: encResult}, nil
+		}, nil
+
 	case "gratis.desain.mycontent.delete":
-		return s.delete(ctx, payload)
+		result, err := s.delete(ctx, payload)
+		if err != nil {
+			return nil, err
+		}
+
+		encResult, err := json.Marshal(*result)
+		if err != nil {
+			return func() (raft.Result, error) {
+				return raft.Result{Value: 1, Data: []byte(fmt.Sprintf("error marshal: %v", err))}, nil
+			}, nil
+		}
+
+		return func() (raft.Result, error) {
+			return raft.Result{Value: 0, Data: encResult}, nil
+		}, nil
+
 	case "gratis.desain.mycontent.subscribe":
 		return s.subscribe(ctx, payload)
 	}
@@ -179,7 +223,7 @@ func (s *chatWriterApp) OnUpdate(ctx context.Context, e raft.Entry) (raft.OnAfte
 }
 
 // Apply or "Sync". The core of dragonboat's state machine "Update" function.
-func (s *chatWriterApp) Apply(ctx context.Context) error {
+func (s *ContentApp) Apply(ctx context.Context) error {
 	// save metadata
 	payload, _ := json.Marshal(s.state)
 	err := raft_runner.SetMetadata(ctx, appName, payload)
@@ -190,7 +234,7 @@ func (s *chatWriterApp) Apply(ctx context.Context) error {
 	return nil
 }
 
-func (s *chatWriterApp) subscribe(ctx context.Context, payload DataWrapper) (raft.OnAfterApply, error) {
+func (s *ContentApp) subscribe(_ context.Context, payload DataWrapper) (raft.OnAfterApply, error) {
 	tableCfg, ok := s.tableConfig[payload.Table]
 	if !ok {
 		return func() (raft.Result, error) {
@@ -214,7 +258,7 @@ func (s *chatWriterApp) subscribe(ctx context.Context, payload DataWrapper) (raf
 	}, nil
 }
 
-func (s *chatWriterApp) queryMyContent(ctx context.Context, query QueryMyContent) (QueryMyContentResponse, error) {
+func (s *ContentApp) queryMyContent(ctx context.Context, query QueryMyContent) (QueryMyContentResponse, error) {
 	tableCfg, ok := s.tableConfig[query.Table]
 	if !ok {
 		return nil, fmt.Errorf("table not found: %v", query.Table)
@@ -262,20 +306,27 @@ func (s *chatWriterApp) queryMyContent(ctx context.Context, query QueryMyContent
 	return rq, nil
 }
 
-func (s *chatWriterApp) post(ctx context.Context, payload DataWrapper) (raft.OnAfterApply, error) {
+func (s *ContentApp) post(ctx context.Context, payload DataWrapper) (*DataWrapper, error) {
 	tableCfg, ok := s.tableConfig[payload.Table]
 	if !ok {
-		return func() (raft.Result, error) {
-			return raft.Result{Value: 1, Data: []byte("invalid table")}, nil
-		}, nil
+		return nil, errors.New("invalid table")
 	}
 
 	if len(payload.RefIDs) != tableCfg.RefSize {
-		return func() (raft.Result, error) {
-			return raft.Result{Value: 1, Data: []byte(
-				fmt.Sprintf("unexpected reference count: expected %v got %v for table '%v'", tableCfg.RefSize, len(payload.RefIDs), tableCfg.Name),
-			)}, nil
-		}, nil
+		return nil, fmt.Errorf("unexpected reference count: expected %v got %v for table '%v'", tableCfg.RefSize, len(payload.RefIDs), tableCfg.Name)
+	}
+
+	var validate map[string]any
+	err := json.Unmarshal(payload.Data, &validate)
+	if err != nil {
+		// opinionated
+		return nil, fmt.Errorf("expected json mycontent data payload: %v", string(payload.Data))
+	}
+
+	err = json.Unmarshal(payload.Meta, &validate)
+	if err != nil {
+		// opinionated
+		return nil, fmt.Errorf("expected json mycontent meta payload: %v", string(payload.Meta))
 	}
 
 	conn := raft_runner.GetClickhouseConnection(ctx)
@@ -315,11 +366,9 @@ func (s *chatWriterApp) post(ctx context.Context, payload DataWrapper) (raft.OnA
 	VALUES (` + strings.Join(tmplt, ",") + `);
 	`
 
-	err := conn.Exec(ctx, q, args...)
+	err = conn.Exec(ctx, q, args...)
 	if err != nil {
-		return func() (raft.Result, error) {
-			return raft.Result{Value: 1, Data: []byte(fmt.Sprintf("error writing to table: %v", err))}, nil
-		}, nil
+		return nil, fmt.Errorf("error writing to table: %v", err)
 	}
 
 	*s.state.EventIndexes[tableCfg.Name]++
@@ -328,27 +377,18 @@ func (s *chatWriterApp) post(ctx context.Context, payload DataWrapper) (raft.OnA
 		*s.state.VersionIndexes[versionKey]++
 	}
 
-	payload.ID = id
-	payload.EventID = *eventIdx
+	finalResult := payload
 
-	encResult, err := json.Marshal(payload)
-	if err != nil {
-		return func() (raft.Result, error) {
-			return raft.Result{Value: 1, Data: []byte(fmt.Sprintf("error marshal: %v", err))}, nil
-		}, nil
-	}
+	finalResult.ID = id
+	finalResult.EventID = *eventIdx
 
-	return func() (raft.Result, error) {
-		return raft.Result{Value: 0, Data: encResult}, nil
-	}, nil
+	return &finalResult, nil
 }
 
-func (s *chatWriterApp) delete(ctx context.Context, payload DataWrapper) (raft.OnAfterApply, error) {
+func (s *ContentApp) delete(ctx context.Context, payload DataWrapper) (*DataWrapper, error) {
 	tableCfg, ok := s.tableConfig[payload.Table]
 	if !ok {
-		return func() (raft.Result, error) {
-			return raft.Result{Value: 1, Data: []byte("invalid table")}, nil
-		}, nil
+		return nil, errors.New("invalid table")
 	}
 
 	conn := raft_runner.GetClickhouseConnection(ctx)
@@ -385,9 +425,7 @@ func (s *chatWriterApp) delete(ctx context.Context, payload DataWrapper) (raft.O
 	}
 
 	if toDelete == nil {
-		return func() (raft.Result, error) {
-			return raft.Result{Value: 1, Data: []byte("not found")}, nil // todo: decide behaviour (return error or not)
-		}, nil
+		return nil, errors.New("not found")
 	}
 
 	_, cols, args, tmplt, _ := s.preparePost(
@@ -407,28 +445,21 @@ func (s *chatWriterApp) delete(ctx context.Context, payload DataWrapper) (raft.O
 
 	err = conn.Exec(ctx, q, args...)
 	if err != nil {
-		return func() (raft.Result, error) {
-			return raft.Result{Value: 1, Data: []byte(fmt.Sprintf("error writing to table: %v", err))}, nil
-		}, nil
+		return nil, fmt.Errorf("error writing to table: %v %w", tableCfg.Name, err)
 	}
 
 	*s.state.EventIndexes[tableCfg.Name]++
 	// *s.state.VersionIndexes[versionKey]++
 
-	encResult, err := json.Marshal(toDelete)
-	if err != nil {
-		return func() (raft.Result, error) {
-			return raft.Result{Value: 1, Data: []byte(fmt.Sprintf("error marshal: %v", err))}, nil
-		}, nil
-	}
+	// which is the same..
+	payload.ID = toDelete.ID
+	payload.EventID = toDelete.EventID
 
-	return func() (raft.Result, error) {
-		return raft.Result{Value: 0, Data: encResult}, nil
-	}, nil
+	return &payload, nil
 }
 
-func (s *chatWriterApp) startSubscription(ctx context.Context, _ raft.Entry, rawData json.RawMessage, startIdx uint64) error {
-	raftCtx := raft_runner.GetRaftContext(ctx)
+func (s *ContentApp) startSubscription(ctx context.Context, _ raft.Entry, rawData json.RawMessage, startIdx uint64) error {
+	raftCtx, _ := raft_runner.GetRaftContext(ctx)
 	var data notifierhelper.StartSubscriptionRequest
 	_ = json.Unmarshal(rawData, &data)
 	err := s.topicReg.StartSubscription(raftCtx.ReplicaID, startIdx, data)
@@ -522,7 +553,7 @@ func getDDL(tableName string, refSize int) string {
 	return buf.String()
 }
 
-func (s *chatWriterApp) preparePost(tableConfig TableConfig, eventID uint64, versionID string, namespace string, refIDs []string, ID string, data string, meta string, delete bool) (string, []string, []any, []string, bool) {
+func (s *ContentApp) preparePost(tableConfig TableConfig, eventID uint64, versionID string, namespace string, refIDs []string, ID string, data string, meta string, delete bool) (string, []string, []any, []string, bool) {
 	// event id column + key columns + data & meta column
 	keyAndContentSize := 1 + 1 + tableConfig.RefSize + 1 + 2
 
@@ -584,7 +615,7 @@ func (s *chatWriterApp) preparePost(tableConfig TableConfig, eventID uint64, ver
 //
 // )
 // WHERE t.3 = 0;
-func (s *chatWriterApp) prepareGet(tableConfig TableConfig, query QueryMyContent, namespace string, refIDs []string, ID string) (string, []any, func() (*scanResult, []any), error) {
+func (s *ContentApp) prepareGet(tableConfig TableConfig, query QueryMyContent, namespace string, refIDs []string, ID string) (string, []any, func() (*scanResult, []any), error) {
 	if len(refIDs) > tableConfig.RefSize {
 		return "", nil, nil, fmt.Errorf(
 			"%w: ref size is greater than expected (got %v, expected %v)", content.ErrInvalidKey, len(refIDs), tableConfig.RefSize)
@@ -679,7 +710,7 @@ type scanResult struct {
 	eventID uint64
 }
 
-func (s *chatWriterApp) prepareWhereQuery(refSize int, namespace string, refIDs []string, ID string) (string, []any, error) {
+func (s *ContentApp) prepareWhereQuery(refSize int, namespace string, refIDs []string, ID string) (string, []any, error) {
 	// keys consist of (namespace, ...refIDs, ID)
 	keySize := len(refIDs) + 2
 
@@ -738,7 +769,7 @@ func (s *chatWriterApp) prepareWhereQuery(refSize int, namespace string, refIDs 
 	return buf.String(), args, nil
 }
 
-func (s *chatWriterApp) convertScanResult(sr *scanResult) *content.Data {
+func (s *ContentApp) convertScanResult(sr *scanResult) *content.Data {
 	return &content.Data{
 		Namespace: sr.keys[0],
 		RefIDs:    sr.keys[1 : len(sr.keys)-1],

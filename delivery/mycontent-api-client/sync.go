@@ -2,6 +2,7 @@ package mycontentapiclient
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/desain-gratis/common/delivery/mycontent-api/mycontent"
@@ -131,7 +132,8 @@ func (s *sync[T]) Execute(ctx context.Context) error {
 		if _, ok := remoteEntitiesMap[key]; !ok && localEntity.ID() == "" {
 			synced, errUC := s.client.Post(ctx, s.OptConfig.AuthorizationToken, localEntity)
 			if errUC != nil {
-				log.Error().Msgf("Failed to create entity of type %T with key %v", localEntity, key)
+				log.Error().Msgf("Failed to create entity of type %T with key %v: %v", localEntity, key, errUC)
+				continue
 			}
 			localEntity.WithID(synced.ID())
 		}
@@ -150,7 +152,12 @@ func (s *sync[T]) Execute(ctx context.Context) error {
 		}
 		remoteID := getKey2(remoteEntity)
 		if _, ok := localEntitiesMap[remoteID]; !ok {
-			_, errUC := s.client.Delete(ctx, s.OptConfig.AuthorizationToken, remoteEntity.Namespace(), toRefsParam(s.client.refsParam, remoteEntity.RefIDs()), remoteEntity.ID())
+			refParam, err := toRefsParam(s.client.refsParam, remoteEntity.RefIDs())
+			if err != nil {
+				log.Err(err).Msgf("bad ref params")
+				continue
+			}
+			_, errUC := s.client.Delete(ctx, s.OptConfig.AuthorizationToken, remoteEntity.Namespace(), refParam, remoteEntity.ID())
 			if errUC != nil {
 				log.Error().Msgf("Failed to delete remote entity with id: %v err: %v", remoteID, errUC)
 			}
@@ -222,16 +229,16 @@ func attachmentToThumbnails(input map[string]*content.Attachment) map[string]*en
 	return result
 }
 
-func toRefsParam(refsParam []string, refIDs []string) map[string]string {
+func toRefsParam(refsParam []string, refIDs []string) (map[string]string, error) {
 	if len(refsParam) != len(refIDs) {
-		log.Fatal().Msgf("Parameter not matching! expected: %v got: %v", refsParam, refIDs)
+		return nil, fmt.Errorf("Parameter not matching! expected: %v got: %v", refsParam, refIDs)
 	}
 	result := make(map[string]string, len(refsParam))
 	for i := range refIDs {
 		result[refsParam[i]] = refIDs[i]
 	}
 
-	return result
+	return result, nil
 }
 
 // for checking differences within connection
