@@ -51,6 +51,7 @@ func (b *builder[T]) WithData(data []T) *builder[T] {
 
 func (b *builder[T]) WithAuth(token string) *builder[T] {
 	b.syncer.OptConfig.AuthorizationToken = token
+	b.syncer.client.authToken = token
 	return b
 }
 
@@ -93,6 +94,7 @@ func (b *builder[T]) WithImages(extract ExtractImages[T], relPath string, params
 				endpoint:  imageEndpoint.String(),
 				refsParam: append(b.syncer.client.refsParam, params...), // parent refs param
 				httpc:     b.syncer.client.httpc,
+				authToken: b.syncer.client.authToken,
 			},
 		},
 		sync:       b.syncer,
@@ -117,6 +119,7 @@ func (b *builder[T]) WithFiles(extract ExtractFiles[T], relPath string, params .
 				endpoint:  filesEndpoint.String(),
 				refsParam: append(b.syncer.client.refsParam, params...), // parent refs param;
 				httpc:     b.syncer.client.httpc,
+				authToken: b.syncer.client.authToken,
 			},
 		},
 		sync:       b.syncer,

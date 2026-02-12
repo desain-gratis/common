@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -12,9 +14,13 @@ import (
 	types "github.com/desain-gratis/common/types/http"
 )
 
+// TODO: follow this interface
+var _ mycontent.Usecase[mycontent.Data] = &client[mycontent.Data]{}
+
 type client[T mycontent.Data] struct {
 	endpoint  string
 	refsParam []string
+	authToken string
 
 	httpc *http.Client
 }
@@ -23,15 +29,57 @@ func New[T mycontent.Data](
 	httpc *http.Client,
 	endpoint string,
 	refsParam []string,
+	authToken string,
 ) *client[T] {
 	return &client[T]{
 		httpc:     httpc,
 		endpoint:  endpoint,
 		refsParam: refsParam, // TODO: ADD validation immediately to improve DevX
+		authToken: authToken,
 	}
 }
 
-func (c *client[T]) Delete(ctx context.Context, authToken string, namespace string, refIDs map[string]string, ID string) (result T, errUC *types.CommonError) {
+// Post (create new or overwrite) resource here
+func (c *client[T]) Post(ctx context.Context, data T, _ any) (T, error) {
+	// for client, meta is ignored
+	return c.post(ctx, c.authToken, data)
+}
+
+// Get all of your resource for your user ID here
+func (c *client[T]) Get(ctx context.Context, namespace string, refIDs []string, ID string) ([]T, error) {
+	params, err := toRefsParamGet(c.refsParam, refIDs)
+	if err != nil {
+		return nil, fmt.Errorf("get: %w", err)
+	}
+
+	return c.get(ctx, c.authToken, namespace, params, ID)
+}
+
+// Stream response
+func (c *client[T]) Stream(ctx context.Context, namespace string, refIDs []string, ID string) (<-chan T, error) {
+	// params := map[string]string{}
+	// for idx := range refIDs {
+	// 	key := c.refsParam[idx]
+	// 	value := refIDs[idx]
+	// 	params[key] = value
+	// }
+	// TODO
+	return nil, errors.New("not implemented yet") // TODO
+}
+
+// Delete your resource here
+// the implementation can check whether there are linked resource or not
+func (c *client[T]) Delete(ctx context.Context, namespace string, refIDs []string, ID string) (T, error) {
+	params, err := toRefsParam(c.refsParam, refIDs)
+	if err != nil {
+		var t T
+		return t, fmt.Errorf("delete: %w", err)
+	}
+
+	return c.delete(ctx, c.authToken, namespace, params, ID)
+}
+
+func (c *client[T]) delete(ctx context.Context, authToken string, namespace string, refIDs map[string]string, ID string) (result T, errUC error) {
 	wer, err := url.Parse(c.endpoint)
 	if err != nil {
 		return result, &types.CommonError{
@@ -101,7 +149,7 @@ func (c *client[T]) Delete(ctx context.Context, authToken string, namespace stri
 	return cr.Success, nil
 }
 
-func (c *client[T]) Get(ctx context.Context, authToken string, namespace string, refIDs map[string]string, ID string) (result []T, errUC *types.CommonError) {
+func (c *client[T]) get(ctx context.Context, authToken string, namespace string, refIDs map[string]string, ID string) (result []T, errUC error) {
 	wer, err := url.Parse(c.endpoint)
 	if err != nil {
 		return result, &types.CommonError{
@@ -158,7 +206,7 @@ func (c *client[T]) Get(ctx context.Context, authToken string, namespace string,
 		}
 	}
 	if resp.StatusCode > 200 {
-		var commer types.CommonResponseTyped[*types.CommonError]
+		var commer types.CommonResponseTyped[error]
 		_ = json.Unmarshal(body, &commer)
 		return result, commer.Error
 	}
@@ -179,10 +227,9 @@ func (c *client[T]) Get(ctx context.Context, authToken string, namespace string,
 	}
 
 	return cr.Success, nil
-
 }
 
-func (c *client[T]) Post(ctx context.Context, authToken string, data T) (result T, errUC *types.CommonError) {
+func (c *client[T]) post(ctx context.Context, authToken string, data T) (result T, errUC error) {
 	var t T
 	payload, err := json.Marshal(data)
 	if err != nil {
@@ -243,4 +290,25 @@ func (c *client[T]) Post(ctx context.Context, authToken string, data T) (result 
 	}
 
 	return cr.Success, nil
+}
+
+func toRefsParam(refsParam []string, refIDs []string) (map[string]string, error) {
+	if len(refsParam) != len(refIDs) {
+		return nil, fmt.Errorf("Parameter not matching! expected: %v got: %v", refsParam, refIDs)
+	}
+	result := make(map[string]string, len(refsParam))
+	for i := range refIDs {
+		result[refsParam[i]] = refIDs[i]
+	}
+
+	return result, nil
+}
+
+func toRefsParamGet(refsParam []string, refIDs []string) (map[string]string, error) {
+	result := make(map[string]string, len(refsParam))
+	for i := range refIDs {
+		result[refsParam[i]] = refIDs[i]
+	}
+
+	return result, nil
 }

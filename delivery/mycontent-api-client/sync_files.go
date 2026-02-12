@@ -53,10 +53,10 @@ func (i *fileDep[T]) syncFiles(dataArr []FileContext[T]) (stat SyncStat, errUC *
 
 	stat.LocalCountError = len(errUCs1)
 
-	_remoteAttachments, errUC := i.client.Get(context.Background(), i.sync.OptConfig.AuthorizationToken, i.sync.namespace, nil, "") // "*" for all namespace
-	if errUC != nil {
-		log.Error().Msgf("%+v", errUC)
-		return stat, errUC
+	_remoteAttachments, err := i.client.Get(context.Background(), i.sync.namespace, nil, "") // "*" for all namespace
+	if err != nil {
+		log.Error().Msgf("%+v", err)
+		return stat, &types.CommonError{Errors: []types.Error{{Message: err.Error()}}}
 	}
 	remoteAttachments := attachmentToMap(_remoteAttachments)
 
@@ -118,15 +118,9 @@ func (i *fileDep[T]) syncFiles(dataArr []FileContext[T]) (stat SyncStat, errUC *
 
 	// Delete unused remote data
 	for _, data := range toDelete {
-		refParam, err := toRefsParam(i.client.refsParam, data.RefIds)
+		_, err := i.client.Delete(ctx, data.Namespace(), data.RefIds, data.Id)
 		if err != nil {
-			log.Err(err).Msgf("bad ref params")
-			continue
-		}
-
-		_, errUC := i.client.Delete(ctx, i.sync.OptConfig.AuthorizationToken, data.Namespace(), refParam, data.Id)
-		if errUC != nil {
-			log.Error().Msgf("Failed to delete %v %v %v %v %v", i.client.endpoint, data.Namespace(), data.RefIDs(), data.ID(), errUC.Err())
+			log.Error().Msgf("Failed to delete %v %v %v %v %v", i.client.endpoint, data.Namespace(), data.RefIDs(), data.ID(), err)
 			continue
 		}
 	}

@@ -2,13 +2,13 @@ package mycontentapiclient
 
 import (
 	"context"
-	"fmt"
 	"strings"
+
+	"github.com/rs/zerolog/log"
 
 	"github.com/desain-gratis/common/delivery/mycontent-api/mycontent"
 	"github.com/desain-gratis/common/types/entity"
 	content "github.com/desain-gratis/common/types/entity"
-	"github.com/rs/zerolog/log"
 )
 
 type ImageContext[T mycontent.Data] struct {
@@ -93,11 +93,11 @@ func (s *sync[T]) WithFiles(client *attachmentClient, extract ExtractFiles[T], u
 
 func (s *sync[T]) Execute(ctx context.Context) error {
 	// 1. get all main entity from remote, for all namespace
-	remoteEntities, errUC := s.client.Get(ctx, s.OptConfig.AuthorizationToken, s.namespace, nil, "") // "*" special namespace to get all namespace
+	remoteEntities, err := s.client.Get(ctx, s.namespace, nil, "") // "*" special namespace to get all namespace
 	remoteEntitiesMap := make(map[string]T)
-	if errUC != nil {
-		log.Error().Msgf("%+v", errUC)
-		return errUC
+	if err != nil {
+		log.Error().Msgf("%+v", err)
+		return err
 	}
 	for _, remoteEntity := range remoteEntities {
 		remoteID := getKey2(remoteEntity)
@@ -130,9 +130,9 @@ func (s *sync[T]) Execute(ctx context.Context) error {
 	for _, localEntity := range localEntities {
 		key := getKey2(localEntity)
 		if _, ok := remoteEntitiesMap[key]; !ok && localEntity.ID() == "" {
-			synced, errUC := s.client.Post(ctx, s.OptConfig.AuthorizationToken, localEntity)
-			if errUC != nil {
-				log.Error().Msgf("Failed to create entity of type %T with key %v: %v", localEntity, key, errUC)
+			synced, err := s.client.Post(ctx, localEntity, nil)
+			if err != nil {
+				log.Error().Msgf("Failed to create entity of type %T with key %v: %v", localEntity, key, err)
 				continue
 			}
 			localEntity.WithID(synced.ID())
@@ -152,14 +152,9 @@ func (s *sync[T]) Execute(ctx context.Context) error {
 		}
 		remoteID := getKey2(remoteEntity)
 		if _, ok := localEntitiesMap[remoteID]; !ok {
-			refParam, err := toRefsParam(s.client.refsParam, remoteEntity.RefIDs())
+			_, err := s.client.Delete(ctx, remoteEntity.Namespace(), remoteEntity.RefIDs(), remoteEntity.ID())
 			if err != nil {
-				log.Err(err).Msgf("bad ref params")
-				continue
-			}
-			_, errUC := s.client.Delete(ctx, s.OptConfig.AuthorizationToken, remoteEntity.Namespace(), refParam, remoteEntity.ID())
-			if errUC != nil {
-				log.Error().Msgf("Failed to delete remote entity with id: %v err: %v", remoteID, errUC)
+				log.Error().Msgf("Failed to delete remote entity with id: %v err: %v", remoteID, err)
 			}
 		}
 	}
@@ -205,9 +200,9 @@ func (s *sync[T]) Execute(ctx context.Context) error {
 	// Sync back the project since the data in localProjects have been already modified
 	for _, localEntity := range localEntities {
 		// TODO: calculate hash or compare directly to optimize upload
-		_, errUC = s.client.Post(ctx, s.OptConfig.AuthorizationToken, localEntity)
-		if errUC != nil {
-			log.Error().Msgf("Failed to update project definition %+v", errUC)
+		_, err = s.client.Post(ctx, localEntity, nil)
+		if err != nil {
+			log.Error().Msgf("Failed to update project definition %+v", err)
 		}
 	}
 
@@ -227,18 +222,6 @@ func attachmentToThumbnails(input map[string]*content.Attachment) map[string]*en
 		}
 	}
 	return result
-}
-
-func toRefsParam(refsParam []string, refIDs []string) (map[string]string, error) {
-	if len(refsParam) != len(refIDs) {
-		return nil, fmt.Errorf("Parameter not matching! expected: %v got: %v", refsParam, refIDs)
-	}
-	result := make(map[string]string, len(refsParam))
-	for i := range refIDs {
-		result[refsParam[i]] = refIDs[i]
-	}
-
-	return result, nil
 }
 
 // for checking differences within connection
