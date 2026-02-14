@@ -65,7 +65,7 @@ func main() {
 		// spawn topic for each replica instance
 		topicAPI := notifier_api.NewTopicAPI(chatTopic, parseTable)
 
-		raftCtx := raft_runner.GetRaftContext(ctx)
+		raftCtx, _ := raft_runner.GetRaftContext(ctx)
 		router.GET("/happy/"+raftCtx.ID, topicAPI.Metrics)
 		router.POST("/happy/"+raftCtx.ID, topicAPI.Publish)
 		router.GET("/happy/"+raftCtx.ID+"/tail", topicAPI.Tail)

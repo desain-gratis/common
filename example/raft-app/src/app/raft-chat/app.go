@@ -104,7 +104,7 @@ func (s *chatWriterApp) PrepareUpdate(ctx context.Context) (context.Context, con
 }
 
 // OnUpdate updates the object using the specified committed raft entry.
-func (s *chatWriterApp) OnUpdate(ctx context.Context, e raft.Entry) raft.OnAfterApply {
+func (s *chatWriterApp) OnUpdate(ctx context.Context, e raft.Entry) (raft.OnAfterApply, error) {
 	var cmd UpdateRequest
 	err := json.Unmarshal(e.Cmd, &cmd)
 	if err != nil {
@@ -113,7 +113,7 @@ func (s *chatWriterApp) OnUpdate(ctx context.Context, e raft.Entry) raft.OnAfter
 		})
 		return func() (raft.Result, error) {
 			return raft.Result{Data: resp}, nil
-		}
+		}, nil
 	}
 
 	chatIdx := *s.state.ChatIndex
@@ -125,7 +125,7 @@ func (s *chatWriterApp) OnUpdate(ctx context.Context, e raft.Entry) raft.OnAfter
 				Value: uint64(len(e.Cmd)),
 				Data:  []byte("yes"),
 			}, nil
-		}
+		}, nil
 	case Command_StartSubscription:
 		return func() (raft.Result, error) {
 			err := s.startSubscription(ctx, e, cmd.Data, chatIdx)
@@ -140,7 +140,7 @@ func (s *chatWriterApp) OnUpdate(ctx context.Context, e raft.Entry) raft.OnAfter
 			})
 
 			return raft.Result{Value: chatIdx, Data: resp}, nil
-		}
+		}, nil
 	case Command_NotifyOnline, Command_NotifyOffline:
 		return func() (raft.Result, error) {
 			err := s.topicReg[TopicChatLog].Broadcast(context.Background(), Event{
@@ -153,7 +153,7 @@ func (s *chatWriterApp) OnUpdate(ctx context.Context, e raft.Entry) raft.OnAfter
 			}
 
 			return raft.Result{Value: chatIdx, Data: []byte("success!")}, nil
-		}
+		}, nil
 	case Command_PublishMessage:
 		// what we store is what we publish
 		serverTimestamp := time.Now()
@@ -196,7 +196,7 @@ func (s *chatWriterApp) OnUpdate(ctx context.Context, e raft.Entry) raft.OnAfter
 			}
 
 			return raft.Result{Value: chat.EvtID, Data: []byte("success!")}, nil
-		}
+		}, nil
 	}
 
 	log.Info().Msgf("unknown command: %v", cmd.CmdName)
@@ -206,7 +206,7 @@ func (s *chatWriterApp) OnUpdate(ctx context.Context, e raft.Entry) raft.OnAfter
 
 	return func() (raft.Result, error) {
 		return raft.Result{Data: resp}, nil
-	}
+	}, nil
 }
 
 // Apply or "Sync". The core of dragonboat's state machine "Update" function.
@@ -237,7 +237,7 @@ func (s *chatWriterApp) Apply(ctx context.Context) error {
 }
 
 func (s *chatWriterApp) startSubscription(ctx context.Context, _ raft.Entry, rawData json.RawMessage, startIdx uint64) error {
-	raftCtx := raft_runner.GetRaftContext(ctx)
+	raftCtx, _ := raft_runner.GetRaftContext(ctx)
 	var data notifierhelper.StartSubscriptionRequest
 	_ = json.Unmarshal(rawData, &data)
 	err := s.topicReg.StartSubscription(raftCtx.ReplicaID, startIdx, data)
