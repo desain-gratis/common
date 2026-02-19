@@ -43,29 +43,37 @@ func (c *api) Metrics(w http.ResponseWriter, r *http.Request, p httprouter.Param
 // 2. if we open multiple, they do not create new (it seems reusing the old connection?)
 // .   WORKAROUND: add random values to the URL param
 func (c *api) Tail(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		http.Error(w, "streaming not supported", http.StatusInternalServerError)
-		return
-	}
+	c.TailFilterOut(nil)(w, r, p)
+}
 
-	subs, err := c.topic.Subscribe(r.Context(), impl.NewStandardSubscriber(nil))
-	if err != nil {
-		http.Error(w, "failed to subscribe to topic", http.StatusInternalServerError)
-		return
-	}
-
-	subs.Start()
-
-	for msg := range subs.Listen() {
-		if c.transform != nil {
-			msg = c.transform(msg)
-		}
-		_, err := fmt.Fprintf(w, "%v\n", msg)
-		if err != nil {
+func (c *api) TailFilterOut(filterFunc func(msg any) bool) func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+	return func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			http.Error(w, "streaming not supported", http.StatusInternalServerError)
 			return
 		}
-		flusher.Flush() // can use ticker to flush every x millis...
+
+		subs, err := c.topic.Subscribe(r.Context(), impl.NewStandardSubscriber(filterFunc))
+		if err != nil {
+			http.Error(w, "failed to subscribe to topic", http.StatusInternalServerError)
+			return
+		}
+
+		subs.Start()
+
+		for msg := range subs.Listen() {
+			if c.transform != nil {
+				msg = c.transform(msg)
+			}
+
+			_, err := fmt.Fprintf(w, "%v\n", msg)
+			if err != nil {
+				return
+			}
+
+			flusher.Flush() // can use ticker to flush every x millis...
+		}
 	}
 }
 
