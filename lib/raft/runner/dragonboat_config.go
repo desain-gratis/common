@@ -1,4 +1,4 @@
-package replica
+package runner
 
 import (
 	"context"
@@ -77,13 +77,13 @@ type HostConfig struct {
 	Peer         map[int]string   `mapstructure:"peer"`
 }
 
-type ReplicaConfig struct {
-	ShardID   uint64
-	ReplicaID uint64
+// type ReplicaConfig struct {
+// 	ShardID   uint64
+// 	ReplicaID uint64
 
-	Bootstrap bool   `mapstructure:"bootstrap"`
-	ID        string `mapstructure:"id"`
-	Alias     string `mapstructure:"alias"`
-	Type      string `mapstructure:"type"`
-	Config    string `mapstructure:"config"`
-}
+// 	Bootstrap bool   `mapstructure:"bootstrap"`
+// 	ID        string `mapstructure:"id"`
+// 	Alias     string `mapstructure:"alias"`
+// 	Type      string `mapstructure:"type"`
+// 	Config    string `mapstructure:"config"`
+// }

@@ -1,10 +1,9 @@
-package replica
+package runner
 
 import (
 	"context"
 	"encoding/json"
 	"strconv"
-	"time"
 
 	"github.com/lni/dragonboat/v4"
 	"github.com/lni/dragonboat/v4/config"
@@ -44,14 +43,12 @@ type config3 struct {
 	replicaByID map[string]ReplicaConfig
 }
 
-// Deprecated. Use runner package instead
 func Init() error {
 	cfgFile := "/etc/dragonboat.yaml"
 	return InitWithConfigFile(cfgFile)
 }
 
-// Deprecated. Use runner package instead
-func Run(replicaID uint64, nhConfig config.NodeHostConfig) error {
+func _Run(replicaID uint64, nhConfig config.NodeHostConfig) error {
 	nhost, err := dragonboat.NewNodeHost(nhConfig)
 	if err != nil {
 		return err
@@ -129,37 +126,11 @@ func notifyLeader(dhost *dragonboat.NodeHost, shardID uint64, replicaID uint64) 
 		if info.LeaderID == replicaID {
 			a, i, u, e := dhost.GetLeaderID(shardID)
 			log.Info().Msgf("i'm the leader for shard: %v | %v %v %v %v", shardID, a, i, u, e)
-			log.Info().Msgf("proposing to the state machine...")
-
-			info, _ := json.Marshal(info)
-			d, _ := json.Marshal(UpdateRequest{
-				CmdName: Command_UpdateLeader,
-				CmdVer:  0,
-				Data:    info,
-			})
-
-			sess := dhost.GetNoOPSession(shardID)
-			ctx, c := context.WithTimeout(context.Background(), 5*time.Second)
-			res, err := dhost.SyncPropose(ctx, sess, d)
-			c()
-			if err != nil {
-				log.Error().Msgf("error propose: %v", err)
-				return
-			}
-
-			l, _ := dhost.GetLogReader(1)
-			l.NodeState()
-
-			log.Info().Msgf("result: %v", string(res.Data))
-
-			return
-		} else {
-			// sync propose as well..
 		}
 	}
 }
 
-type Command string
+// type Command string
 
 const Command_UpdateLeader = "update-leader"
 

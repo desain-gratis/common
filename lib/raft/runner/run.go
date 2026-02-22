@@ -6,15 +6,14 @@ import (
 	"fmt"
 
 	"github.com/desain-gratis/common/lib/raft"
-	"github.com/desain-gratis/common/lib/raft/replica"
 	"github.com/lni/dragonboat/v4"
 	"github.com/lni/dragonboat/v4/config"
 	"github.com/rs/zerolog/log"
 )
 
 type ReplicaConfig struct {
-	shardID   uint64
-	replicaID uint64
+	ShardID   uint64
+	ReplicaID uint64
 
 	Bootstrap bool   `yaml:"bootstrap"`
 	ID        string `yaml:"id"`
@@ -23,26 +22,8 @@ type ReplicaConfig struct {
 	Config    string `yaml:"config"`
 }
 
-type Config[T any] struct {
-	internal *replica.ReplicaConfig // TODO: move config
-
-	Host      *dragonboat.NodeHost
-	ShardID   uint64
-	ReplicaID uint64
-
-	ID               string
-	Alias            string
-	Type             string
-	ClickHouseConfig replica.ClickHouseConfig // TODO: move config
-	AppConfig        T
-}
-
-type ClickHouseConfig struct {
-	Address string `yaml:"address"`
-}
-
 func Context[T any](ctx context.Context, appID string) (context.Context, error) {
-	cfg := replica.GetConfig()
+	cfg := GetConfig()
 
 	sc, ok := cfg.ReplicaByID[appID]
 	if !ok {
@@ -62,7 +43,7 @@ func Context[T any](ctx context.Context, appID string) (context.Context, error) 
 		ReplicaID: sc.ReplicaID,
 		Type:      sc.Type,
 		AppConfig: t,
-		DHost:     replica.DHost(),
+		DHost:     DHost(),
 
 		// internal state
 		isBootstrap: sc.Bootstrap,
@@ -74,7 +55,7 @@ func Context[T any](ctx context.Context, appID string) (context.Context, error) 
 }
 
 func RunReplica[T any](ctx context.Context, appID string, app raft.Application) (context.Context, error) {
-	cfg := replica.GetConfig()
+	cfg := GetConfig()
 
 	sc, ok := cfg.ReplicaByID[appID]
 	if !ok {
@@ -84,7 +65,7 @@ func RunReplica[T any](ctx context.Context, appID string, app raft.Application) 
 	shardID := sc.ShardID
 	replicaID := cfg.Host.ReplicaID
 
-	replica.SusbcribeLeadershipEvent(shardID, replicaID)
+	SusbcribeLeadershipEvent(shardID, replicaID)
 
 	ctx, err := Context[T](ctx, appID)
 	if err != nil {
@@ -95,7 +76,7 @@ func RunReplica[T any](ctx context.Context, appID string, app raft.Application) 
 }
 
 func ForEachReplica[T any](appType string, f func(ctx context.Context) error) {
-	cfg := replica.GetConfig()
+	cfg := GetConfig()
 
 	for _, sc := range cfg.Replica {
 		if sc.Type != appType {
@@ -105,7 +86,7 @@ func ForEachReplica[T any](appType string, f func(ctx context.Context) error) {
 		shardID := sc.ShardID
 		replicaID := cfg.Host.ReplicaID
 
-		replica.SusbcribeLeadershipEvent(shardID, replicaID)
+		SusbcribeLeadershipEvent(shardID, replicaID)
 
 		var t T
 		err := json.Unmarshal([]byte(sc.Config), &t)
@@ -121,7 +102,7 @@ func ForEachReplica[T any](appType string, f func(ctx context.Context) error) {
 			ReplicaID: sc.ReplicaID,
 			Type:      sc.Type,
 			AppConfig: t,
-			DHost:     replica.DHost(),
+			DHost:     DHost(),
 
 			// internal state
 			isBootstrap: sc.Bootstrap,
@@ -137,9 +118,9 @@ func ForEachReplica[T any](appType string, f func(ctx context.Context) error) {
 }
 
 func Run(ctx context.Context, app raft.Application) error {
-	dhost := replica.DHost()
+	dhost := DHost()
 
-	cfg := replica.GetConfig()
+	cfg := GetConfig()
 	raftCtx, err := GetRaftContext(ctx)
 	if err != nil {
 		return err
