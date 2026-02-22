@@ -26,8 +26,8 @@ func NewTopicAPI(topic notifier.Topic) *api {
 	return &api{topic: topic}
 }
 
-func (c *api) Metrics(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	stat, ok := c.topic.(notifier.Metric)
+func (a *api) Metrics(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+	stat, ok := a.topic.(notifier.Metric)
 	if !ok {
 		http.Error(w, "topic implementation does not support metric query", http.StatusInternalServerError)
 		return
@@ -47,11 +47,11 @@ func (c *api) Metrics(w http.ResponseWriter, r *http.Request, p httprouter.Param
 // 1. if we not yet press enter, already started the connection.
 // 2. if we open multiple, they do not create new (it seems reusing the old connection?)
 // .   WORKAROUND: add random values to the URL param
-func (c *api) Tail(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	c.TailTransform(nil)(w, r, p)
+func (a *api) Tail(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+	a.TailTransform(nil)(w, r, p)
 }
 
-func (c *api) TailTransform(filterFunc func(msg any) bool, transform ...func(any) any) func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+func (a *api) TailTransform(filterFunc func(msg any) bool, transform ...func(any) any) func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	return func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 		flusher, ok := w.(http.Flusher)
 		if !ok {
@@ -59,7 +59,7 @@ func (c *api) TailTransform(filterFunc func(msg any) bool, transform ...func(any
 			return
 		}
 
-		subs, err := c.topic.Subscribe(r.Context(), impl.NewStandardSubscriber(filterFunc))
+		subs, err := a.topic.Subscribe(r.Context(), impl.NewStandardSubscriber(filterFunc))
 		if err != nil {
 			http.Error(w, "failed to subscribe to topic", http.StatusInternalServerError)
 			return
@@ -84,14 +84,14 @@ func (c *api) TailTransform(filterFunc func(msg any) bool, transform ...func(any
 
 // http util helper to publish directly
 // for debugging only, only support consumer inside the same process
-func (c *api) Publish(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+func (a *api) Publish(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	b, err := io.ReadAll(r.Body)
 	if err != nil {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 
-	c.topic.Broadcast(r.Context(), b)
+	a.topic.Broadcast(r.Context(), b)
 }
 
 // originPatterns:
@@ -102,7 +102,7 @@ func (c *api) Publish(w http.ResponseWriter, r *http.Request, p httprouter.Param
 //		"https://dxb-keenan.tailnet-ee99.ts.net",
 //		"https://mb.desain.gratis",
 //	}
-func (apii *api) Websocket(appCtx context.Context, originPatterns []string, filterFunc func(msg any) bool, transform ...func(any) any) func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+func (a *api) Websocket(appCtx context.Context, originPatterns []string, filterFunc func(msg any) bool, transform ...func(any) any) func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	// TODO: later you can create your own hander;
 	// this one is just for convenience
 	return func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
@@ -177,7 +177,7 @@ func (apii *api) Websocket(appCtx context.Context, originPatterns []string, filt
 			}
 		}()
 
-		subscription, err := apii.topic.Subscribe(subscribeCtx, impl.NewStandardSubscriber(filterFunc))
+		subscription, err := a.topic.Subscribe(subscribeCtx, impl.NewStandardSubscriber(filterFunc))
 		if err != nil {
 			return
 		}
