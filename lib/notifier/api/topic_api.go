@@ -19,12 +19,11 @@ import (
 )
 
 type api struct {
-	topic     notifier.Topic
-	transform func(v any) any
+	topic notifier.Topic
 }
 
-func NewTopicAPI(topic notifier.Topic, transform func(v any) any) *api {
-	return &api{topic: topic, transform: transform}
+func NewTopicAPI(topic notifier.Topic) *api {
+	return &api{topic: topic}
 }
 
 func (c *api) Metrics(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
@@ -49,10 +48,10 @@ func (c *api) Metrics(w http.ResponseWriter, r *http.Request, p httprouter.Param
 // 2. if we open multiple, they do not create new (it seems reusing the old connection?)
 // .   WORKAROUND: add random values to the URL param
 func (c *api) Tail(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	c.TailFilterOut(nil)(w, r, p)
+	c.TailTransform(nil)(w, r, p)
 }
 
-func (c *api) TailFilterOut(filterFunc func(msg any) bool) func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+func (c *api) TailTransform(filterFunc func(msg any) bool, transform ...func(any) any) func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	return func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 		flusher, ok := w.(http.Flusher)
 		if !ok {
@@ -69,8 +68,8 @@ func (c *api) TailFilterOut(filterFunc func(msg any) bool) func(w http.ResponseW
 		subs.Start()
 
 		for msg := range subs.Listen() {
-			if c.transform != nil {
-				msg = c.transform(msg)
+			for _, f := range transform {
+				msg = f(msg)
 			}
 
 			_, err := fmt.Fprintf(w, "%v\n", msg)
@@ -103,7 +102,7 @@ func (c *api) Publish(w http.ResponseWriter, r *http.Request, p httprouter.Param
 //		"https://dxb-keenan.tailnet-ee99.ts.net",
 //		"https://mb.desain.gratis",
 //	}
-func (apii *api) Websocket(appCtx context.Context, originPatterns []string, filterFunc func(msg any) bool) func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+func (apii *api) Websocket(appCtx context.Context, originPatterns []string, filterFunc func(msg any) bool, transform ...func(any) any) func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	// TODO: later you can create your own hander;
 	// this one is just for convenience
 	return func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
@@ -186,6 +185,10 @@ func (apii *api) Websocket(appCtx context.Context, originPatterns []string, filt
 		for anymsg := range subscription.Listen() {
 			if pctx.Err() != nil {
 				break
+			}
+
+			for _, f := range transform {
+				anymsg = f(anymsg)
 			}
 
 			err = publishTextToWebsocket(pctx, c, anymsg)
