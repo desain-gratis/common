@@ -72,7 +72,8 @@ func (a *api) TailTransform(filterFunc func(msg any) bool, transform ...func(any
 				msg = f(msg)
 			}
 
-			_, err := fmt.Fprintf(w, "%v\n", msg)
+			payload, _ := json.Marshal(msg)
+			_, err := fmt.Fprintf(w, "%v\n", string(payload))
 			if err != nil {
 				return
 			}
@@ -181,6 +182,8 @@ func (a *api) Websocket(appCtx context.Context, originPatterns []string, filterF
 		if err != nil {
 			return
 		}
+
+		subscription.Start()
 
 		for anymsg := range subscription.Listen() {
 			if pctx.Err() != nil {
