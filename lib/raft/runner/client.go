@@ -17,7 +17,7 @@ import (
 
 var (
 	ErrRaftContextNotFound = errors.New("raft context not found")
-	ErrNotReady            = errors.New("raft not ready")
+	ErrRaft                = errors.New("raft error") // generic raft error
 )
 
 type Client struct {
@@ -57,7 +57,7 @@ func (c *Client) Publish(ctx context.Context, command raft.Command, msg any) ([]
 
 	var attempts int
 	var res statemachine.Result
-	for range 3 {
+	for range 2 {
 		attempts++
 		ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		res, err = c.dHost.SyncPropose(ctx, c.sess, data)
@@ -66,11 +66,11 @@ func (c *Client) Publish(ctx context.Context, command raft.Command, msg any) ([]
 			break
 		}
 		cancel()
-		time.Sleep(500 * time.Millisecond * time.Duration(attempts*2))
+		time.Sleep(500 * time.Millisecond * time.Duration(1<<attempts))
 	}
 
 	if attempts >= 3 {
-		return nil, 1, fmt.Errorf("maximum number of attempt (3) reached: %w (%w)", err, ErrNotReady)
+		return nil, 1, fmt.Errorf("maximum number of attempt (3) reached: %w (%w)", err, ErrRaft)
 	}
 
 	// TODO: consider move this error handling to specific usecase (outside of the library)
