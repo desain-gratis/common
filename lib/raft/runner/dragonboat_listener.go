@@ -1,25 +1,21 @@
 package runner
 
 import (
+	"context"
+
 	"github.com/lni/dragonboat/v4/raftio"
-	"github.com/rs/zerolog/log"
+
+	"github.com/desain-gratis/common/lib/raft"
 )
 
 var _ raftio.IRaftEventListener = &raftListener{}
 
-type raftListener struct {
-	ShardListener map[uint64]func(info raftio.LeaderInfo)
-}
+type raftListener struct{}
 
 func (r *raftListener) LeaderUpdated(info raftio.LeaderInfo) {
 	if info.LeaderID == 0 || info.ShardID == 0 {
 		return
 	}
 
-	cb, ok := r.ShardListener[info.ShardID]
-	if ok {
-		cb(info)
-	} else {
-		log.Info().Msgf("why not found? %+v", info)
-	}
+	topic.Broadcast(context.Background(), raft.EventLeaderUpdate(info))
 }

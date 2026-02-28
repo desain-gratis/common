@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/lni/dragonboat/v4/raftio"
 	sm "github.com/lni/dragonboat/v4/statemachine"
 )
 
@@ -19,7 +20,10 @@ type Entry struct {
 	ReplicaID *uint64
 }
 
-var ErrUnsupported = errors.ErrUnsupported
+var (
+	ErrUnsupported = errors.ErrUnsupported
+	ErrTermZero    = errors.New("Term zero")
+)
 
 type Result sm.Result
 
@@ -45,3 +49,5 @@ type Application interface {
 	// Lookup
 	Lookup(ctx context.Context, key interface{}) (interface{}, error)
 }
+
+type EventLeaderUpdate raftio.LeaderInfo

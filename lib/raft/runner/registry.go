@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"strconv"
 
+	"github.com/desain-gratis/common/lib/notifier"
+	noifier_impl "github.com/desain-gratis/common/lib/notifier/impl"
 	"github.com/lni/dragonboat/v4"
 	"github.com/lni/dragonboat/v4/config"
 	"github.com/lni/dragonboat/v4/raftio"
@@ -32,9 +34,8 @@ type ClickHouseConfig struct {
 var dhost *dragonboat.NodeHost
 var cfg config2
 var cfg3 config3
-var listener = &raftListener{
-	ShardListener: make(map[uint64]func(info raftio.LeaderInfo)),
-}
+
+var topic notifier.Topic
 
 type config3 struct {
 	nhConfig    config.NodeHostConfig
@@ -44,29 +45,9 @@ type config3 struct {
 }
 
 func Init() error {
+	topic = noifier_impl.NewStandardTopic()
 	cfgFile := "/etc/dragonboat.yaml"
 	return InitWithConfigFile(cfgFile)
-}
-
-func _Run(replicaID uint64, nhConfig config.NodeHostConfig) error {
-	nhost, err := dragonboat.NewNodeHost(nhConfig)
-	if err != nil {
-		return err
-	}
-
-	dhost = nhost
-	cfg3.host = nhost
-	cfg3.nhConfig = nhConfig
-
-	return nil
-}
-
-func ConfigureReplica(replica map[uint64]ReplicaConfig) {
-	for shardID, shardConfig := range replica {
-		cfg3.replica[shardID].ShardID = shardID
-		// cfg3.replica[shardID].ReplicaID = cfg3.nhConfig.
-		cfg3.replicaByID[shardConfig.ID] = replica[shardID]
-	}
 }
 
 func InitWithConfigFile(cfgFile string) error {
@@ -108,17 +89,19 @@ func InitWithConfigFile(cfgFile string) error {
 	return nil
 }
 
+func ConfigureReplica(replica map[uint64]ReplicaConfig) {
+	for shardID, shardConfig := range replica {
+		cfg3.replica[shardID].ShardID = shardID
+		cfg3.replicaByID[shardConfig.ID] = replica[shardID]
+	}
+}
+
 func GetConfig() DragonboatConfig2 {
 	return DragonboatConfig2(cfg)
 }
 
 func DHost() *dragonboat.NodeHost {
 	return dhost
-}
-
-func SusbcribeLeadershipEvent(shardID, replicaID uint64) {
-	// todo: add lock etc.
-	listener.ShardListener[shardID] = notifyLeader(dhost, shardID, replicaID)
 }
 
 func notifyLeader(dhost *dragonboat.NodeHost, shardID uint64, replicaID uint64) func(raftio.LeaderInfo) {

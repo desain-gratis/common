@@ -55,18 +55,6 @@ func Context[T any](ctx context.Context, appID string) (context.Context, error) 
 }
 
 func RunReplica[T any](ctx context.Context, appID string, app raft.Application) (context.Context, error) {
-	cfg := GetConfig()
-
-	sc, ok := cfg.ReplicaByID[appID]
-	if !ok {
-		return nil, fmt.Errorf("replica config not found for app ID: %v", appID)
-	}
-
-	shardID := sc.ShardID
-	replicaID := cfg.Host.ReplicaID
-
-	SusbcribeLeadershipEvent(shardID, replicaID)
-
 	ctx, err := Context[T](ctx, appID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build raft replica context: %v", err)
@@ -82,11 +70,6 @@ func ForEachReplica[T any](appType string, f func(ctx context.Context) error) {
 		if sc.Type != appType {
 			continue
 		}
-
-		shardID := sc.ShardID
-		replicaID := cfg.Host.ReplicaID
-
-		SusbcribeLeadershipEvent(shardID, replicaID)
 
 		var t T
 		err := json.Unmarshal([]byte(sc.Config), &t)
