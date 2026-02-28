@@ -106,7 +106,7 @@ func (s *standardTopic) Broadcast(ctx context.Context, message any) error {
 	for key, listener := range s.listener {
 		err := listener.Publish(message)
 		if err != nil && !errors.Is(err, ErrNotStarted) {
-			log.Err(err).Msgf("error during publish.. I delete: %v", key)
+			log.Err(err).Msgf("error during publish.. I delete: %v msg: %v", key, message)
 		}
 	}
 
