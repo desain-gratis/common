@@ -18,10 +18,18 @@ var (
 	ErrNotFound = errors.New("not found")
 )
 
+type Meta struct {
+	CreatedAt             time.Time `json:"created_at"` // server time
+	OptimisticLockVersion *uint64   `json:"optimistic_lock_version,omitempty"`
+
+	// Can add more here later
+}
+
 type UsecaseAttachment[T any] interface {
 	Usecase[T]
 	Attachable[T]
 }
+
 type Usecase[T any] interface {
 	// Post (create new or overwrite) resource here
 	Post(ctx context.Context, data T, meta any) (T, error)

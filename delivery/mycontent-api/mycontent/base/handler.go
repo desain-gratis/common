@@ -36,17 +36,18 @@ func (c *Handler[T]) Post(ctx context.Context, data T, meta any) (T, error) {
 	var t T
 	err := data.Validate()
 	if err != nil {
-		return t, err
+		return t, fmt.Errorf("error %w: %w", mycontent.ErrValidation, err)
 	}
 
 	if data.Namespace() == "" {
-		return t, fmt.Errorf("%w: namespace cannot be empty", mycontent.ErrValidation)
+		return t, fmt.Errorf("error %w: namespace cannot be empty", mycontent.ErrValidation)
 	}
 
 	// TODO: validate if there is empty value in not appropriate place
-	if !isValid(data.RefIDs()) && len(filterEmpty(data.RefIDs())) != c.expectedRefSize {
-		return t, fmt.Errorf("%w: complete reference must be provided during post", mycontent.ErrValidation)
-	}
+	// TODO: better at storage layer.
+	// if !isValid(data.RefIDs()) && len(filterEmpty(data.RefIDs())) != c.expectedRefSize {
+	// 	return t, fmt.Errorf("%w: complete reference must be provided during post", mycontent.ErrValidation)
+	// }
 
 	// delivery --- up to here -----
 
@@ -74,7 +75,7 @@ func (c *Handler[T]) Post(ctx context.Context, data T, meta any) (T, error) {
 	if meta != nil {
 		metaPayload, errMarshal = json.Marshal(meta)
 		if errMarshal != nil {
-			return t, fmt.Errorf("failed to marshall meta")
+			return t, errMarshal
 		}
 	}
 

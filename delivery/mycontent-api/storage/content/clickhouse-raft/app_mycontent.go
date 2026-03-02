@@ -45,7 +45,7 @@ func (r *repository) Get(ctx context.Context, namespace string, refIDs []string,
 		Namespace: namespace,
 		RefIDs:    refIDs,
 		ID:        ID,
-	})
+	}, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -92,7 +92,7 @@ func (r *repository) Stream(ctx context.Context, namespace string, refIDs []stri
 		Namespace: namespace,
 		RefIDs:    refIDs,
 		ID:        ID,
-	})
+	}, 0)
 	if err != nil {
 		return nil, err
 	}

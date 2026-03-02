@@ -52,6 +52,7 @@ func (c *mycontentClient) Post(ctx context.Context, namespace string, refIDs []s
 		return content.Data{}, fmt.Errorf("expected json mycontent meta payload: %v", string(data.Meta))
 	}
 
+	// forward one more layer to raft
 	wrap := map[string]any{
 		"command": "gratis.desain.mycontent.post",
 		"value": DataWrapper{

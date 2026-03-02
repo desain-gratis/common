@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -24,10 +25,11 @@ const maximumRequestLength = 1 << 20
 const maximumRequestLengthAttachment = 100 << 20
 
 type service[T mycontent.Data] struct {
-	uc              mycontent.Usecase[T]
-	refParams       []string
-	whitelistParams map[string]struct{}
-	postProcess     []PostProcess[T]
+	uc                   mycontent.Usecase[T]
+	refParams            []string
+	whitelistParams      map[string]struct{}
+	postProcess          []PostProcess[T]
+	enableOptimisticLock bool
 }
 
 type PostProcess[T mycontent.Data] func(t T)
@@ -82,32 +84,41 @@ func (i *service[T]) Post(w http.ResponseWriter, r *http.Request, p httprouter.P
 	var resource T
 	err = json.Unmarshal(payload, &resource)
 	if err != nil {
-		// log.Warn().Msgf("msg: '%v'", string(payload))
 		handleError(
 			w, "BAD_REQUEST", "failed to parse body. Make sure file size does not exceed 200Kb",
 			http.StatusBadRequest, nil)
 		return
 	}
 
-	err = resource.Validate()
+	// already there inside usecase
+	// err = resource.Validate()
+	// if err != nil {
+	// 	handleError(
+	// 		w, "BAD_REQUEST", fmt.Sprintf("validation errors: %v.", err),
+	// 		http.StatusBadRequest, nil)
+	// 	return
+	// }
+
+	meta := &mycontent.Meta{
+		CreatedAt: time.Now(),
+	}
+
+	// Forward optimistic lock information for any supported storage
+	// If storage not support this, can safely ignore the meta
+	err = captureOptimisticLock(meta, r.Header.Get("DG-Optimistic-Lock-Version"), i.enableOptimisticLock)
 	if err != nil {
 		handleError(
-			w, "BAD_REQUEST", fmt.Sprintf("validation errors: %v.", err),
-			http.StatusBadRequest, nil)
+			w, "BAD_REQUEST",
+			err.Error(),
+			http.StatusBadRequest,
+			nil)
 		return
 	}
 
-	result, err := i.uc.Post(r.Context(), resource, map[string]string{
-		"created_at": time.Now().Format(time.RFC3339),
-	})
+	result, err := i.uc.Post(r.Context(), resource, meta)
 	if err != nil {
 		handlePostError(w, err)
 		return
-	}
-
-	// post-process
-	for _, pp := range i.postProcess {
-		pp(result)
 	}
 
 	// since we wrap using types.CommonResponse, it cannot use protojson to unmarshal
@@ -202,7 +213,7 @@ func (i *service[T]) Delete(w http.ResponseWriter, r *http.Request, p httprouter
 		refIDs = append(refIDs, r.URL.Query().Get(param))
 	}
 
-	// Get the data first.
+	// Get the data first. TODO: REMOVE THIS; handle in storage layer instead
 	getBeforeDeleteResult, err := i.uc.Get(r.Context(), namespace, refIDs, ID)
 	if err != nil {
 		handleGetError(w, err)
@@ -319,4 +330,20 @@ func handleError(w http.ResponseWriter, code, msg string, httpStatus int, err er
 	})
 
 	w.Write(message)
+}
+
+func captureOptimisticLock(meta *mycontent.Meta, lockVersionStr string, required bool) error {
+	if lockVersionStr != "" {
+		lockVersion, err := strconv.ParseUint(lockVersionStr, 10, 64)
+		if err != nil {
+			return fmt.Errorf("optimistic lock version specified, but with invalid value %v :%v", lockVersionStr, err)
+		}
+		meta.OptimisticLockVersion = &lockVersion
+	}
+
+	if required && meta.OptimisticLockVersion == nil {
+		return fmt.Errorf("optimistic lock required. please specify DG-Optimistic-Lock-Version header")
+	}
+
+	return nil
 }

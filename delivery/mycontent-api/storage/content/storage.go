@@ -26,6 +26,7 @@ type Repository interface {
 	// RefSize() int // Map key value for param / metadata
 }
 
+// TODO: change naming, since not only data but also other
 type Data struct {
 	// Incremental value for "log" storage for OLAP maxxing
 	EventID uint64

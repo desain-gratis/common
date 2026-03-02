@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 
+	"github.com/desain-gratis/common/delivery/mycontent-api/mycontent"
 	"github.com/desain-gratis/common/delivery/mycontent-api/storage/content"
 	"github.com/desain-gratis/common/lib/notifier"
 	"github.com/desain-gratis/common/lib/raft"
@@ -60,10 +61,11 @@ type ContentApp struct {
 }
 
 type TableConfig struct {
-	Name                  string
-	RefSize               int
-	IncrementalID         bool
-	IncrementalIDGetLimit uint8
+	Name                       string
+	RefSize                    int
+	Versioned                  bool
+	VersionedGetLimit          uint8
+	VersionedUseOptimisticLock bool
 }
 
 func New(topic notifier.Topic, tableConfig ...TableConfig) *ContentApp {
@@ -152,7 +154,8 @@ func (s *ContentApp) Lookup(ctx context.Context, query interface{}) (interface{}
 		log.Info().Msgf("I WANT TO SUBSCRIBE: %T %+v", q, q)
 		return s.topicReg[q.Topic], nil
 	case QueryMyContent:
-		return s.queryMyContent(ctx, q)
+		// todo can accept limit (but later)
+		return s.queryMyContent(ctx, q, 0)
 	}
 
 	return nil, errors.New("unsupported query")
@@ -181,7 +184,7 @@ func (s *ContentApp) OnUpdate(ctx context.Context, e raft.Entry) (raft.OnAfterAp
 	}
 
 	switch e.Command {
-	case "gratis.desain.mycontent.post":
+	case "gratis.desain.mycontent.post": //TODO use command type
 		result, err := s.post(ctx, payload)
 		if err != nil {
 			return nil, err
@@ -258,14 +261,14 @@ func (s *ContentApp) subscribe(_ context.Context, payload DataWrapper) (raft.OnA
 	}, nil
 }
 
-func (s *ContentApp) queryMyContent(ctx context.Context, query QueryMyContent) (QueryMyContentResponse, error) {
+func (s *ContentApp) queryMyContent(ctx context.Context, query QueryMyContent, limit int) (QueryMyContentResponse, error) {
 	tableCfg, ok := s.tableConfig[query.Table]
 	if !ok {
 		return nil, fmt.Errorf("table not found: %v", query.Table)
 	}
 
 	conn := raft_runner.GetClickhouseConnection(ctx)
-	q, args, scanFn, err := s.prepareGet(tableCfg, query, query.Namespace, query.RefIDs, query.ID)
+	q, args, scanFn, err := s.prepareGet(tableCfg, query, query.Namespace, query.RefIDs, query.ID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -323,19 +326,11 @@ func (s *ContentApp) post(ctx context.Context, payload DataWrapper) (*DataWrappe
 		return nil, fmt.Errorf("expected json mycontent data payload: %v", string(payload.Data))
 	}
 
-	err = json.Unmarshal(payload.Meta, &validate)
+	var meta mycontent.Meta
+	err = json.Unmarshal(payload.Meta, &meta)
 	if err != nil {
 		// opinionated
 		return nil, fmt.Errorf("expected json mycontent meta payload: %v", string(payload.Meta))
-	}
-
-	conn := raft_runner.GetClickhouseConnection(ctx)
-
-	eventIdx, ok := s.state.EventIndexes[tableCfg.Name]
-	if !ok {
-		var index uint64
-		s.state.EventIndexes[tableCfg.Name] = &index
-		eventIdx = &index
 	}
 
 	const separator = "\\" // TODO: add separator validation on post / make this configurable
@@ -349,6 +344,34 @@ func (s *ContentApp) post(ctx context.Context, payload DataWrapper) (*DataWrappe
 		s.state.VersionIndexes[versionKey] = &index
 		versionIdx = &index
 	}
+
+	eventIdx, ok := s.state.EventIndexes[tableCfg.Name]
+	if !ok {
+		var index uint64
+		s.state.EventIndexes[tableCfg.Name] = &index
+		eventIdx = &index
+	}
+
+	// For "new" version (my content data specified without ID) of versioned data, we support optimistic lock
+	// TODO refactor
+	newData := tableCfg.Versioned && payload.ID == ""
+	if newData && tableCfg.VersionedUseOptimisticLock {
+		if meta.OptimisticLockVersion == nil {
+			if *eventIdx > 0 {
+				return nil, fmt.Errorf("no optimistic lock version specified, and there is already data inside")
+			}
+			lockVer := uint64(0)
+			meta.OptimisticLockVersion = &lockVer
+		}
+
+		if *versionIdx != *meta.OptimisticLockVersion {
+			return nil, fmt.Errorf("optimistic lock version mismatch, expected %v got %v", *versionIdx, *meta.OptimisticLockVersion)
+		}
+	}
+
+	// For versioned table, you can also enforce immutability here by disabling post by ID;
+	// But I will not, since you can turn it off on API level;
+	// This allows server side code to still modify it. (design choice)
 
 	id, cols, args, tmplt, increment := s.preparePost(
 		tableCfg,
@@ -365,6 +388,8 @@ func (s *ContentApp) post(ctx context.Context, payload DataWrapper) (*DataWrappe
 	q := `INSERT INTO ` + tableCfg.Name + `(` + strings.Join(cols, ",") + `) 
 	VALUES (` + strings.Join(tmplt, ",") + `);
 	`
+
+	conn := raft_runner.GetClickhouseConnection(ctx)
 
 	err = conn.Exec(ctx, q, args...)
 	if err != nil {
@@ -417,7 +442,7 @@ func (s *ContentApp) delete(ctx context.Context, payload DataWrapper) (*DataWrap
 		Namespace: payload.Namespace,
 		RefIDs:    payload.RefIDs,
 		ID:        payload.ID,
-	})
+	}, 1)
 
 	var toDelete *content.Data
 	for d := range prevData {
@@ -535,6 +560,7 @@ func getDDL(tableName string, refSize int) string {
 
 	keyCols = append(keyCols, "id")
 
+	// TODO: consider using actual delete without is_deleted column
 	_, err = buf.WriteString(
 		`		id String,
 		data String,
@@ -573,7 +599,7 @@ func (s *ContentApp) preparePost(tableConfig TableConfig, eventID uint64, versio
 
 	id := ID
 	if id == "" {
-		if tableConfig.IncrementalID {
+		if tableConfig.Versioned {
 			id = versionID
 			incrementVersion = true
 		} else {
@@ -615,13 +641,14 @@ func (s *ContentApp) preparePost(tableConfig TableConfig, eventID uint64, versio
 //
 // )
 // WHERE t.3 = 0;
-func (s *ContentApp) prepareGet(tableConfig TableConfig, query QueryMyContent, namespace string, refIDs []string, ID string) (string, []any, func() (*scanResult, []any), error) {
+func (s *ContentApp) prepareGet(tableConfig TableConfig, _ QueryMyContent, namespace string, refIDs []string, ID string, limit int) (string, []any, func() (*scanResult, []any), error) {
 	if len(refIDs) > tableConfig.RefSize {
 		return "", nil, nil, fmt.Errorf(
 			"%w: ref size is greater than expected (got %v, expected %v)", content.ErrInvalidKey, len(refIDs), tableConfig.RefSize)
 	}
 
-	if tableConfig.IncrementalID && len(refIDs) != tableConfig.RefSize {
+	if tableConfig.Versioned && len(refIDs) != tableConfig.RefSize {
+		// TODO!!
 		// return "", nil, nil, fmt.Errorf(
 		// 	"%w: reference params must be fully specified for 'IncrementalID' table", content.ErrInvalidKey)
 	}
@@ -664,14 +691,20 @@ func (s *ContentApp) prepareGet(tableConfig TableConfig, query QueryMyContent, n
 
 	// Technically, this is still Key-Value store, so this is "like" a "hack" (not necessarily actual hack)
 	// Querying without a full ref ID will not be defined clearly.
-	if tableConfig.IncrementalID {
-		_, err = buf.WriteString(` ORDER BY event_id DESC `)
+	if tableConfig.Versioned {
+		_, err = buf.WriteString(` ORDER BY id DESC `) // (previously was event_id, just to make it consistent now is ID)
 
-		limit := 20
-		if tableConfig.IncrementalIDGetLimit > 0 {
-			limit = int(tableConfig.IncrementalIDGetLimit)
+		finalLimit := 20
+
+		if tableConfig.VersionedGetLimit > 0 {
+			finalLimit = int(tableConfig.VersionedGetLimit)
 		}
-		_, err = fmt.Fprintf(buf, `	LIMIT %v`, limit)
+
+		if limit > 0 {
+			finalLimit = int(limit)
+		}
+
+		_, err = fmt.Fprintf(buf, `	LIMIT %v`, finalLimit)
 	}
 
 	return buf.String(), whereArgs, func() (*scanResult, []any) {
