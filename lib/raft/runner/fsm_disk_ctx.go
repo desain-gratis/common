@@ -7,12 +7,13 @@ import (
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/lni/dragonboat/v4"
+	"github.com/rs/zerolog/log"
 )
 
 const (
-	chConnKey        ContextKey = "clickhouse-conn"
-	metadataBatchKey ContextKey = "metadata-batch"
-	contextKey       ContextKey = "context-key"
+	chConnKey   ContextKey = "clickhouse-conn"
+	metadataKey ContextKey = "metadata-key"
+	contextKey  ContextKey = "context-key"
 )
 
 type ContextKey string
@@ -44,8 +45,14 @@ func GetMetadata(ctx context.Context, namespace string) ([]byte, error) {
 }
 
 func SetMetadata(ctx context.Context, namespace string, data []byte) error {
-	batch := ctx.Value(metadataBatchKey).(driver.Batch)
-	return batch.Append(namespace, string(data))
+	metamap, ok := ctx.Value(metadataKey).(map[string][]byte)
+	if !ok {
+		log.Panic().Msgf("not a metadata map")
+	}
+	// TODO: use more efficient DS
+	metamap[namespace] = data
+
+	return nil
 }
 
 func GetRaftContext(ctx context.Context) (RaftContext, error) {

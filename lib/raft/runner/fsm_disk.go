@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 
+	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/desain-gratis/common/lib/raft"
 	"github.com/rs/zerolog/log"
@@ -89,13 +90,7 @@ type Command struct {
 func (d *baseDiskSM) Update(ents []sm.Entry) ([]sm.Entry, error) {
 	ctx := context.WithValue(context.Background(), chConnKey, d.conn)
 	ctx = context.WithValue(ctx, contextKey, d.raftContext)
-
-	metadataBatch, err := d.conn.PrepareBatch(ctx, `INSERT INTO metadata (namespace, data)`)
-	if err != nil {
-		log.Panic().Msgf("failed to apply metadata batch: %v", err)
-	}
-
-	ctx = context.WithValue(ctx, metadataBatchKey, metadataBatch)
+	ctx = context.WithValue(ctx, metadataKey, make(map[string][]byte)) // since map is ref type, other can modify
 
 	ctx, cleanup, err := d.app.PrepareUpdate(ctx)
 	if err != nil {
@@ -147,19 +142,26 @@ func (d *baseDiskSM) Update(ents []sm.Entry) ([]sm.Entry, error) {
 
 	*d.smMetadata.AppliedIndex = ents[len(ents)-1].Index
 
-	err = d.saveMetadata(metadataBatch)
+	metadataCtx := clickhouse.Context(ctx, clickhouse.WithStdAsync(true))
+
+	// Update our own metadata asynchronously
+	smeta, err := serializeMetadata(d.smMetadata)
 	if err != nil {
-		log.Panic().Msgf("base save metadata failed %v", err)
+		log.Panic().Msgf("failed to serialize metadata: %v", err)
 	}
 
-	err = metadataBatch.Send()
+	err = d.conn.AsyncInsert(metadataCtx, `INSERT INTO metadata (namespace, data) VALUES (?, ?)`, true, "default", string(smeta))
 	if err != nil {
-		log.Panic().Msgf("base save metadata failed send %v", err)
+		log.Panic().Msgf("base save metadata failed: %v", err)
 	}
 
-	err = metadataBatch.Close()
-	if err != nil {
-		log.Panic().Msgf("base save metadata failed close %v", err)
+	// Update other metadata asynchronously
+	metas, _ := ctx.Value(metadataKey).(map[string][]byte)
+	for ns, meta := range metas {
+		err = d.conn.AsyncInsert(metadataCtx, `INSERT INTO metadata (namespace, data) VALUES (?, ?)`, true, ns, string(meta))
+		if err != nil {
+			log.Panic().Msgf("save other metadata failed (ns: :%v): %v", ns, err)
+		}
 	}
 
 	// Execute function after successful apply

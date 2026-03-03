@@ -228,13 +228,12 @@ func (s *ContentApp) OnUpdate(ctx context.Context, e raft.Entry) (raft.OnAfterAp
 // Apply or "Sync". The core of dragonboat's state machine "Update" function.
 func (s *ContentApp) Apply(ctx context.Context) error {
 	// save metadata
-	payload, _ := json.Marshal(s.state)
-	err := raft_runner.SetMetadata(ctx, appName, payload)
+	payload, err := json.Marshal(s.state)
 	if err != nil {
 		return err
 	}
 
-	return nil
+	return raft_runner.SetMetadata(ctx, appName, payload)
 }
 
 func (s *ContentApp) subscribe(_ context.Context, payload DataWrapper) (raft.OnAfterApply, error) {
