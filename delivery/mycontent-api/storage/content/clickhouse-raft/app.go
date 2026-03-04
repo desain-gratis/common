@@ -108,7 +108,7 @@ func (s *ContentApp) Init(ctx context.Context) error {
 	conn := raft_runner.GetClickhouseConnection(ctx)
 
 	for _, table := range s.tableConfig {
-		ddl := getDDL(table.Name, table.RefSize)
+		ddl := getDDL(table.Name, table.RefSize, table.Versioned)
 		err := conn.Exec(ctx, ddl)
 		if err != nil {
 			log.Panic().Msgf("failed to execute DDL for table %v (%v): %v", table.Name, table.RefSize, err)
@@ -297,7 +297,7 @@ func (s *ContentApp) queryMyContent(ctx context.Context, query QueryMyContent, l
 				continue
 			}
 
-			rowData := s.convertScanResult(scanResult)
+			rowData := s.convertScanResult(scanResult, tableCfg.Versioned)
 			out <- rowData
 		}
 	}()
@@ -372,13 +372,32 @@ func (s *ContentApp) post(ctx context.Context, payload DataWrapper) (*DataWrappe
 	// But I will not, since you can turn it off on API level;
 	// This allows server side code to still modify it. (design choice)
 
-	id, cols, args, tmplt, increment := s.preparePost(
+	var id any
+	var increment bool
+	if tableCfg.Versioned { // TODO: REFACTOR
+		if payload.ID == "" {
+			id = *versionIdx
+			increment = true
+		} else {
+			idUint, err := strconv.ParseUint(payload.ID, 10, 64)
+			if err != nil {
+				return nil, fmt.Errorf("invalid ID value for versioned table (%v): %v", tableCfg.Name, payload.ID)
+			}
+			id = idUint
+		}
+	} else {
+		id = payload.ID
+		if payload.ID == "" {
+			id = uuid.NewString()
+		}
+	}
+
+	cols, args, tmplt := s.preparePost(
 		tableCfg,
 		*eventIdx,
-		strconv.FormatUint(*versionIdx, 10),
 		payload.Namespace,
 		payload.RefIDs,
-		payload.ID,
+		id,
 		string(payload.Data),
 		string(payload.Meta),
 		false,
@@ -397,13 +416,21 @@ func (s *ContentApp) post(ctx context.Context, payload DataWrapper) (*DataWrappe
 
 	*s.state.EventIndexes[tableCfg.Name]++
 
-	if increment {
+	if increment { // after exec todo: refactormaxxing
 		*s.state.VersionIndexes[versionKey]++
 	}
 
 	finalResult := payload
 
-	finalResult.ID = id
+	var fID string
+	if ids, ok := id.(string); ok {
+		fID = ids
+	}
+	if ids, ok := id.(uint64); ok { // versioned todo: refactor
+		fID = strconv.FormatUint(ids, 10)
+	}
+
+	finalResult.ID = fID
 	finalResult.EventID = *eventIdx
 
 	return &finalResult, nil
@@ -452,10 +479,9 @@ func (s *ContentApp) delete(ctx context.Context, payload DataWrapper) (*DataWrap
 		return nil, errors.New("not found")
 	}
 
-	_, cols, args, tmplt, _ := s.preparePost(
+	cols, args, tmplt := s.preparePost(
 		tableCfg,
 		*eventIdx,
-		toDelete.ID,
 		payload.Namespace,
 		payload.RefIDs,
 		payload.ID,
@@ -537,7 +563,7 @@ func getDDLLogType(tableName string, refSize int) string {
 // might need to disable background merge "SYSTEM STOP MERGES db.table" if want to retain historical data
 // or another implementation strategy is combined this with above log type table and do a double write
 // maybe can optimize get by using the ordered event id also
-func getDDL(tableName string, refSize int) string {
+func getDDL(tableName string, refSize int, incrementalID bool) string {
 	buf := bytes.NewBuffer(make([]byte, 0, 100))
 
 	_, err := buf.WriteString(`CREATE TABLE IF NOT EXISTS ` + tableName + ` (
@@ -560,9 +586,22 @@ func getDDL(tableName string, refSize int) string {
 	keyCols = append(keyCols, "id")
 
 	// TODO: consider using actual delete without is_deleted column
+	// TODO: refactor
+	if !incrementalID {
+		_, err = buf.WriteString(
+			`		id String,`,
+		)
+	} else {
+		_, err = buf.WriteString(
+			`		id UInt64,`,
+		)
+	}
+	if err != nil {
+		log.Panic().Msgf("error write string buffer in getDDL: %v", err)
+	}
+
 	_, err = buf.WriteString(
-		`		id String,
-		data String,
+		`data String,
 		meta String,
 		server_time DateTime,
 		is_deleted UInt8
@@ -578,7 +617,7 @@ func getDDL(tableName string, refSize int) string {
 	return buf.String()
 }
 
-func (s *ContentApp) preparePost(tableConfig TableConfig, eventID uint64, versionID string, namespace string, refIDs []string, ID string, data string, meta string, delete bool) (string, []string, []any, []string, bool) {
+func (s *ContentApp) preparePost(tableConfig TableConfig, eventID uint64, namespace string, refIDs []string, ID any, data string, meta string, delete bool) ([]string, []any, []string) {
 	// event id column + key columns + data & meta column
 	keyAndContentSize := 1 + 1 + tableConfig.RefSize + 1 + 2
 
@@ -594,20 +633,8 @@ func (s *ContentApp) preparePost(tableConfig TableConfig, eventID uint64, versio
 		args = append(args, refIDs[i])
 	}
 
-	var incrementVersion bool
-
-	id := ID
-	if id == "" {
-		if tableConfig.Versioned {
-			id = versionID
-			incrementVersion = true
-		} else {
-			id = uuid.NewString()
-		}
-	}
-
 	columns = append(columns, `id`)
-	args = append(args, id)
+	args = append(args, ID)
 
 	if !delete {
 		columns = append(columns, `data`, `meta`)
@@ -624,7 +651,7 @@ func (s *ContentApp) preparePost(tableConfig TableConfig, eventID uint64, versio
 		tmplt = append(tmplt, `?`)
 	}
 
-	return id, columns, args, tmplt, incrementVersion
+	return columns, args, tmplt
 }
 
 // todo: re-organize / move this to clickhouse to share shared query logic
@@ -640,7 +667,7 @@ func (s *ContentApp) preparePost(tableConfig TableConfig, eventID uint64, versio
 //
 // )
 // WHERE t.3 = 0;
-func (s *ContentApp) prepareGet(tableConfig TableConfig, _ QueryMyContent, namespace string, refIDs []string, ID string, limit int) (string, []any, func() (*scanResult, []any), error) {
+func (s *ContentApp) prepareGet(tableConfig TableConfig, _ QueryMyContent, namespace string, refIDs []string, ID any, limit int) (string, []any, func() (*scanResult, []any), error) {
 	if len(refIDs) > tableConfig.RefSize {
 		return "", nil, nil, fmt.Errorf(
 			"%w: ref size is greater than expected (got %v, expected %v)", content.ErrInvalidKey, len(refIDs), tableConfig.RefSize)
@@ -708,7 +735,7 @@ func (s *ContentApp) prepareGet(tableConfig TableConfig, _ QueryMyContent, names
 
 	return buf.String(), whereArgs, func() (*scanResult, []any) {
 		sr := &scanResult{
-			keys: make([]string, len(keyCols)),
+			keys: make([]string, len(keyCols)-1), // keyCols without ID
 		}
 
 		scanAny := make([]any, len(allCols))
@@ -717,6 +744,15 @@ func (s *ContentApp) prepareGet(tableConfig TableConfig, _ QueryMyContent, names
 		var idx int
 		for range sr.keys {
 			scanAny[idx] = &sr.keys[idx]
+			idx++
+		}
+
+		// the ID
+		if !tableConfig.Versioned {
+			scanAny[idx] = &sr.id
+			idx++
+		} else {
+			scanAny[idx] = &sr.idVersioned
 			idx++
 		}
 
@@ -736,13 +772,17 @@ func (s *ContentApp) prepareGet(tableConfig TableConfig, _ QueryMyContent, names
 }
 
 type scanResult struct {
-	keys    []string
+	keys []string
+
+	id          string
+	idVersioned uint64
+
 	data    string
 	meta    string
 	eventID uint64
 }
 
-func (s *ContentApp) prepareWhereQuery(refSize int, namespace string, refIDs []string, ID string) (string, []any, error) {
+func (s *ContentApp) prepareWhereQuery(refSize int, namespace string, refIDs []string, ID any) (string, []any, error) {
 	// keys consist of (namespace, ...refIDs, ID)
 	keySize := len(refIDs) + 2
 
@@ -793,19 +833,29 @@ func (s *ContentApp) prepareWhereQuery(refSize int, namespace string, refIDs []s
 		return buf.String(), args, nil
 	}
 
-	if ID != "" {
+	if id, ok := ID.(string); ok && id != "" {
 		buf.WriteString(` AND id = ?`)
-		args = append(args, ID)
+		args = append(args, id)
+	} else if id, ok := ID.(uint64); ok && id == 0 {
+		buf.WriteString(` AND id = ?`)
+		args = append(args, id)
 	}
 
 	return buf.String(), args, nil
 }
 
-func (s *ContentApp) convertScanResult(sr *scanResult) *content.Data {
+func (s *ContentApp) convertScanResult(sr *scanResult, isVersioned bool) *content.Data {
+	var id string
+	if isVersioned {
+		id = strconv.FormatUint(sr.idVersioned, 10)
+	} else {
+		id = sr.id
+	}
+
 	return &content.Data{
 		Namespace: sr.keys[0],
-		RefIDs:    sr.keys[1 : len(sr.keys)-1],
-		ID:        sr.keys[len(sr.keys)-1],
+		RefIDs:    sr.keys[1:len(sr.keys)],
+		ID:        id,
 		Data:      []byte(sr.data),
 		Meta:      []byte(sr.meta),
 		EventID:   sr.eventID,
