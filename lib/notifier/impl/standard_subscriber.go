@@ -17,7 +17,7 @@ const (
 	// usually it is fast, but recently I've experienced cloudflare re-routing
 	// causing high latency.. and making this operation timed out
 	// http://cloudflarestatus.com
-	listenTimeOut   = 5000 * time.Millisecond
+	listenTimeOut   = 50000 * time.Millisecond
 	listenQueueSize = 24000
 )
 
