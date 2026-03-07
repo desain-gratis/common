@@ -35,7 +35,7 @@ var dhost *dragonboat.NodeHost
 var cfg config2
 var cfg3 config3
 
-var topic notifier.Topic
+var topic notifier.Topic = noifier_impl.NewStandardTopic()
 
 type config3 struct {
 	nhConfig    config.NodeHostConfig
@@ -45,7 +45,6 @@ type config3 struct {
 }
 
 func Init() error {
-	topic = noifier_impl.NewStandardTopic()
 	cfgFile := "/etc/dragonboat.yaml"
 	return InitWithConfigFile(cfgFile)
 }
