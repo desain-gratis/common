@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/desain-gratis/common/lib/raft"
 	"github.com/lni/dragonboat/v4"
 	"github.com/lni/dragonboat/v4/config"
@@ -22,7 +23,7 @@ type ReplicaConfig struct {
 	Config    string `yaml:"config"`
 }
 
-func Context[T any](ctx context.Context, appID string) (context.Context, error) {
+func withContext[T any](ctx context.Context, conn driver.Conn, appID string) (context.Context, error) {
 	cfg := GetConfig()
 
 	sc, ok := cfg.ReplicaByID[appID]
@@ -46,7 +47,9 @@ func Context[T any](ctx context.Context, appID string) (context.Context, error) 
 		DHost:     DHost(),
 
 		// internal state
-		isBootstrap: sc.Bootstrap,
+		isBootstrap:    sc.Bootstrap,
+		ClickhouseConn: conn,
+		namespace:      namespace,
 
 		// can add more as required
 	})
@@ -55,7 +58,11 @@ func Context[T any](ctx context.Context, appID string) (context.Context, error) 
 }
 
 func RunReplica[T any](ctx context.Context, appID string, app raft.Application) (context.Context, error) {
-	ctx, err := Context[T](ctx, appID)
+	if globalClickhouse == nil {
+		log.Fatal().Msgf("please call WithClickhouseStorage() first to configure replica store")
+	}
+
+	ctx, err := withContext[T](ctx, globalClickhouse, appID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build raft replica context: %v", err)
 	}
@@ -64,6 +71,10 @@ func RunReplica[T any](ctx context.Context, appID string, app raft.Application) 
 }
 
 func ForEachReplica[T any](appType string, f func(ctx context.Context) error) {
+	if globalClickhouse == nil {
+		log.Fatal().Msgf("please call WithClickhouseStorage() first to configure replica store")
+	}
+
 	cfg := GetConfig()
 
 	for _, sc := range cfg.Replica {
@@ -90,6 +101,9 @@ func ForEachReplica[T any](appType string, f func(ctx context.Context) error) {
 			// internal state
 			isBootstrap: sc.Bootstrap,
 
+			ClickhouseConn: globalClickhouse,
+			namespace:      namespace,
+
 			// can add more as required
 		})
 
@@ -109,11 +123,11 @@ func Run(ctx context.Context, app raft.Application) error {
 		return err
 	}
 
-	database := fmt.Sprintf("%v_%v_%v", raftCtx.ID, raftCtx.ShardID, raftCtx.ReplicaID)
-
-	createClickhouseDB(cfg.Host.ClickHouse.Address, database)
-
-	fn := newBaseDiskSM(cfg.Host.ClickHouse.Address, database, app)
+	fn := newBaseDiskClickhouseSM(
+		cfg,
+		raftCtx.ClickhouseConn,
+		app,
+	)
 
 	var target map[uint64]dragonboat.Target
 	if raftCtx.isBootstrap {
@@ -133,7 +147,7 @@ func Run(ctx context.Context, app raft.Application) error {
 	})
 
 	if err != nil {
-		log.Panic().Msgf("start replica: %v", err)
+		log.Fatal().Msgf("start replica: %v", err)
 	}
 
 	return nil

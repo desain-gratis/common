@@ -19,22 +19,16 @@ type DragonboatConfig struct {
 }
 
 type shardConfig struct {
-	ShardID    uint64           `json:"shard_id"`
-	ReplicaID  uint64           `json:"replica_id"`
-	Alias      string           `json:"alias"`
-	Name       string           `json:"name"`
-	Type       string           `json:"type"`
-	Config     json.RawMessage  `json:"config"`
-	ClickHouse ClickHouseConfig `json:"clickhouse"`
-	Bootstrap  map[int]string   `json:"bootstrap"`
+	ShardID   uint64          `json:"shard_id"`
+	ReplicaID uint64          `json:"replica_id"`
+	Alias     string          `json:"alias"`
+	Name      string          `json:"name"`
+	Type      string          `json:"type"`
+	Config    json.RawMessage `json:"config"`
+	Bootstrap map[int]string  `json:"bootstrap"`
 }
 
 func initDragonboatConfigWithFile(_ context.Context, cfgFile string) (cfg config2, err error) {
-	dc := os.Getenv("DC")
-	if dc != "" {
-		cfgFile = dc
-	}
-
 	f, err := os.Open(cfgFile)
 	if err != nil {
 		log.Panic().Msgf("failed to open file %v", cfgFile)
@@ -68,13 +62,12 @@ type config2 struct {
 type DragonboatConfig2 config2
 
 type HostConfig struct {
-	ReplicaID    uint64           `mapstructure:"replica_id"`
-	RaftAddress  string           `mapstructure:"raft_address"`
-	WALDir       string           `mapstructure:"wal_dir"`
-	NodehostDir  string           `mapstructure:"nodehost_dir"`
-	DeploymentID uint64           `mapstructure:"deployment_id"`
-	ClickHouse   ClickHouseConfig `mapstructure:"clickhouse"`
-	Peer         map[int]string   `mapstructure:"peer"`
+	ReplicaID    uint64         `mapstructure:"replica_id"`
+	RaftAddress  string         `mapstructure:"raft_address"`
+	WALDir       string         `mapstructure:"wal_dir"`
+	NodehostDir  string         `mapstructure:"nodehost_dir"`
+	DeploymentID uint64         `mapstructure:"deployment_id"`
+	Peer         map[int]string `mapstructure:"peer"`
 }
 
 // type ReplicaConfig struct {

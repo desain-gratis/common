@@ -26,8 +26,11 @@ type RaftContext struct {
 	AppConfig any
 	DHost     *dragonboat.NodeHost
 
+	ClickhouseConn driver.Conn
+
 	// internal state
 	isBootstrap bool
+	namespace   string
 }
 
 func GetClickhouseConnection(ctx context.Context) driver.Conn {

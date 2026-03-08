@@ -16,9 +16,7 @@ import (
 
 	"github.com/desain-gratis/common/delivery/mycontent-api/mycontent"
 	"github.com/desain-gratis/common/delivery/mycontent-api/storage/content"
-	"github.com/desain-gratis/common/lib/notifier"
 	"github.com/desain-gratis/common/lib/raft"
-	notifierhelper "github.com/desain-gratis/common/lib/raft/notifier-helper"
 	raft_runner "github.com/desain-gratis/common/lib/raft/runner"
 )
 
@@ -56,7 +54,6 @@ type DataWrapper struct {
 // will not try to abstract away
 type ContentApp struct {
 	state       *state
-	topicReg    notifierhelper.TopicRegistry
 	tableConfig map[string]TableConfig
 }
 
@@ -68,11 +65,7 @@ type TableConfig struct {
 	VersionedUseOptimisticLock bool
 }
 
-func New(topic notifier.Topic, tableConfig ...TableConfig) *ContentApp {
-	nh := notifierhelper.NewTopicRegistry(map[string]notifier.Topic{
-		TopicChatLog: topic,
-	})
-
+func New(tableConfig ...TableConfig) *ContentApp {
 	if len(tableConfig) == 0 {
 		log.Panic().Msgf("empty table config")
 	}
@@ -86,7 +79,6 @@ func New(topic notifier.Topic, tableConfig ...TableConfig) *ContentApp {
 	}
 
 	return &ContentApp{
-		topicReg:    nh,
 		tableConfig: tableConfigMap,
 	}
 }
@@ -149,10 +141,6 @@ func (s *ContentApp) Lookup(ctx context.Context, query interface{}) (interface{}
 	}
 
 	switch q := query.(type) {
-	case Subscribe:
-		// subscribe to real time event for log update
-		log.Info().Msgf("I WANT TO SUBSCRIBE: %T %+v", q, q)
-		return s.topicReg[q.Topic], nil
 	case QueryMyContent:
 		// todo can accept limit (but later)
 		return s.queryMyContent(ctx, q, 0)
@@ -240,7 +228,9 @@ func (s *ContentApp) subscribe(_ context.Context, payload DataWrapper) (raft.OnA
 	tableCfg, ok := s.tableConfig[payload.Table]
 	if !ok {
 		return func() (raft.Result, error) {
-			return raft.Result{Value: 1, Data: []byte("invalid table")}, nil
+			errMsg := fmt.Errorf("table %v not found", payload.Table)
+
+			return raft.Result{Value: 1, Data: []byte(errMsg.Error())}, nil
 		}, nil
 	}
 
@@ -311,7 +301,7 @@ func (s *ContentApp) queryMyContent(ctx context.Context, query QueryMyContent, l
 func (s *ContentApp) post(ctx context.Context, payload DataWrapper) (*DataWrapper, error) {
 	tableCfg, ok := s.tableConfig[payload.Table]
 	if !ok {
-		return nil, errors.New("invalid table")
+		return nil, fmt.Errorf("table %v not found", payload.Table)
 	}
 
 	if len(payload.RefIDs) != tableCfg.RefSize {
@@ -439,7 +429,7 @@ func (s *ContentApp) post(ctx context.Context, payload DataWrapper) (*DataWrappe
 func (s *ContentApp) delete(ctx context.Context, payload DataWrapper) (*DataWrapper, error) {
 	tableCfg, ok := s.tableConfig[payload.Table]
 	if !ok {
-		return nil, errors.New("invalid table")
+		return nil, fmt.Errorf("table %v not found", payload.Table)
 	}
 
 	conn := raft_runner.GetClickhouseConnection(ctx)
@@ -506,18 +496,6 @@ func (s *ContentApp) delete(ctx context.Context, payload DataWrapper) (*DataWrap
 	payload.EventID = toDelete.EventID
 
 	return &payload, nil
-}
-
-func (s *ContentApp) startSubscription(ctx context.Context, _ raft.Entry, rawData json.RawMessage, startIdx uint64) error {
-	raftCtx, _ := raft_runner.GetRaftContext(ctx)
-	var data notifierhelper.StartSubscriptionRequest
-	_ = json.Unmarshal(rawData, &data)
-	err := s.topicReg.StartSubscription(raftCtx.ReplicaID, startIdx, data)
-	if err != nil {
-		return err
-	}
-
-	return nil
 }
 
 // getDDLLogType sort key only "event_id"

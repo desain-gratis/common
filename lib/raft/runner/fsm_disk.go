@@ -22,18 +22,17 @@ type baseDiskSM struct {
 	smMetadata     *Metadata
 	initialApplied uint64
 	app            raft.Application
-	database       string
-	clickhouseAddr string
 	raftContext    RaftContext
+	config         DragonboatConfig2
 }
 
-func newBaseDiskSM(address, database string, app raft.Application) func(shardID uint64, replicaID uint64) sm.IOnDiskStateMachine {
+func newBaseDiskClickhouseSM(cfg DragonboatConfig2, conn driver.Conn, app raft.Application) func(shardID uint64, replicaID uint64) sm.IOnDiskStateMachine {
 	return func(shardID uint64, replicaID uint64) sm.IOnDiskStateMachine {
 		return &baseDiskSM{
-			clickhouseAddr: address,
-			database:       database,
-			app:            app,
-			raftContext:    RaftContext{ShardID: shardID, ReplicaID: replicaID},
+			config:      cfg,
+			app:         app,
+			conn:        conn,
+			raftContext: RaftContext{ShardID: shardID, ReplicaID: replicaID},
 		}
 	}
 }
@@ -43,18 +42,16 @@ func newBaseDiskSM(address, database string, app raft.Application) func(shardID 
 func (d *baseDiskSM) Open(stopc <-chan struct{}) (uint64, error) {
 	ctx := context.Background()
 
-	d.conn = Connect(d.clickhouseAddr, d.database)
-
 	ctx = context.WithValue(ctx, chConnKey, d.conn)
 
 	err := prepareSchema(ctx, d.conn)
 	if err != nil {
-		log.Fatal().Msgf("failed to prepare schema: %v err: %v", d.clickhouseAddr, err)
+		log.Fatal().Msgf("failed to prepare raft database schema err: %v", err)
 	}
 
 	metadata, err := d.loadMetadata(ctx)
 	if err != nil {
-		log.Fatal().Msgf("failed to load metadata to clickhouse: %v err: %v", d.clickhouseAddr, err)
+		log.Fatal().Msgf("failed to load metadata to raft replica err: %v", err)
 	}
 
 	d.smMetadata = metadata

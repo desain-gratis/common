@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"strconv"
 
+	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/desain-gratis/common/lib/notifier"
 	noifier_impl "github.com/desain-gratis/common/lib/notifier/impl"
 	"github.com/lni/dragonboat/v4"
@@ -20,15 +21,10 @@ type Config[T any] struct {
 	ShardID   uint64
 	ReplicaID uint64
 
-	ID               string
-	Alias            string
-	Type             string
-	ClickHouseConfig ClickHouseConfig
-	AppConfig        T
-}
-
-type ClickHouseConfig struct {
-	Address string `yaml:"address"`
+	ID        string
+	Alias     string
+	Type      string
+	AppConfig T
 }
 
 var dhost *dragonboat.NodeHost
@@ -36,6 +32,9 @@ var cfg config2
 var cfg3 config3
 
 var topic notifier.Topic = noifier_impl.NewStandardTopic()
+
+var globalClickhouse driver.Conn
+var namespace string
 
 type config3 struct {
 	nhConfig    config.NodeHostConfig
@@ -86,6 +85,22 @@ func InitWithConfigFile(cfgFile string) error {
 	}
 
 	return nil
+}
+
+// TODO: refactor maxxing replica runner API
+
+func WithClickhouseStorage(
+	address, username, password, database string) {
+
+	conn := Connect(address, username, password, "")
+	defer conn.Close()
+	namespace = database
+
+	if err := conn.Exec(context.Background(), "CREATE DATABASE IF NOT EXISTS `"+database+"`"); err != nil {
+		log.Fatal().Msgf("failed to create replica DB in clickhouse err: %v", err)
+	}
+
+	globalClickhouse = Connect(address, username, password, database)
 }
 
 func ConfigureReplica(replica map[uint64]ReplicaConfig) {
