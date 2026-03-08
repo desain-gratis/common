@@ -227,7 +227,7 @@ func (d *baseDiskSM) Close() error {
 
 func prepareSchema(ctx context.Context, conn driver.Conn) error {
 	// prepare raft metadata table
-	if err := conn.Exec(ctx, DDLRaftMetadata); err != nil {
+	if err := conn.Exec(ctx, DDLRaftMetadata(ctx)); err != nil {
 		return err
 	}
 
@@ -236,7 +236,7 @@ func prepareSchema(ctx context.Context, conn driver.Conn) error {
 
 func (s *baseDiskSM) loadMetadata(ctx context.Context) (*Metadata, error) {
 	var payload string
-	if err := s.conn.QueryRow(ctx, DQLReadRaftMetadata, "default").
+	if err := s.conn.QueryRow(ctx, DQLReadRaftMetadata(ctx), "default").
 		Scan(&payload); err != nil && err != sql.ErrNoRows {
 		return nil, err
 	}

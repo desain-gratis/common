@@ -1,27 +1,34 @@
 package runner
 
-const (
-	// DDLRaftMetadata used to store raft metadata such as last applied index
-	DDLRaftMetadata = `
-CREATE TABLE IF NOT EXISTS metadata (
+import (
+	"context"
+	"fmt"
+)
+
+func DDLRaftMetadata(ctx context.Context) string {
+	raftCtx, _ := GetRaftContext(ctx)
+	return fmt.Sprintf(`
+CREATE TABLE IF NOT EXISTS %s_metadata (
 	namespace String,
 	data String,
 )
 ENGINE = ReplacingMergeTree
-ORDER BY namespace;
-`
-)
+ORDER BY namespace;	`, raftCtx.ID)
 
-const (
-	// DQLReadRaftMetadata is used to query the raft metadata
-	DQLReadRaftMetadata = `
-SELECT data FROM metadata FINAL WHERE namespace=?;
-	`
-)
+}
 
-const (
-	// DMLSaveRaftMetadata write metadata
-	DMLWriteRaftMetadata = `
-INSERT INTO metadata (namespace, data) VALUES (?, ?);
-	`
-)
+// TODO: REFACTOR MAXXING
+
+func DQLReadRaftMetadata(ctx context.Context) string {
+	raftCtx, _ := GetRaftContext(ctx)
+	return fmt.Sprintf(`
+SELECT data FROM %s_metadata FINAL WHERE namespace=?;
+	`, raftCtx.ID)
+}
+
+func DMLWriteRaftMetadata(ctx context.Context) string {
+	raftCtx, _ := GetRaftContext(ctx)
+	return fmt.Sprintf(`
+SELECT data FROM %v_metadata FINAL WHERE namespace=?;
+	`, raftCtx.ID)
+}

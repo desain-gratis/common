@@ -40,7 +40,7 @@ func GetClickhouseConnection(ctx context.Context) driver.Conn {
 func GetMetadata(ctx context.Context, namespace string) ([]byte, error) {
 	conn := GetClickhouseConnection(ctx)
 	var payload string
-	if err := conn.QueryRow(ctx, DQLReadRaftMetadata, namespace).Scan(&payload); err != nil && err != sql.ErrNoRows {
+	if err := conn.QueryRow(ctx, DQLReadRaftMetadata(ctx), namespace).Scan(&payload); err != nil && err != sql.ErrNoRows {
 		return nil, err
 	}
 
