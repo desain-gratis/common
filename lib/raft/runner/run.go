@@ -125,7 +125,7 @@ func Run(ctx context.Context, app raft.Application) error {
 
 	fn := newBaseDiskClickhouseSM(
 		cfg,
-		raftCtx.ClickhouseConn,
+		raftCtx,
 		app,
 	)
 

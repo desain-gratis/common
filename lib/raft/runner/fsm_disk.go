@@ -26,13 +26,13 @@ type baseDiskSM struct {
 	config         DragonboatConfig2
 }
 
-func newBaseDiskClickhouseSM(cfg DragonboatConfig2, conn driver.Conn, app raft.Application) func(shardID uint64, replicaID uint64) sm.IOnDiskStateMachine {
+func newBaseDiskClickhouseSM(cfg DragonboatConfig2, raftCtx RaftContext, app raft.Application) func(shardID uint64, replicaID uint64) sm.IOnDiskStateMachine {
 	return func(shardID uint64, replicaID uint64) sm.IOnDiskStateMachine {
 		return &baseDiskSM{
 			config:      cfg,
 			app:         app,
-			conn:        conn,
-			raftContext: RaftContext{ShardID: shardID, ReplicaID: replicaID},
+			conn:        raftCtx.ClickhouseConn,
+			raftContext: raftCtx,
 		}
 	}
 }
@@ -43,6 +43,7 @@ func (d *baseDiskSM) Open(stopc <-chan struct{}) (uint64, error) {
 	ctx := context.Background()
 
 	ctx = context.WithValue(ctx, chConnKey, d.conn)
+	ctx = context.WithValue(ctx, contextKey, d.raftContext)
 
 	err := prepareSchema(ctx, d.conn)
 	if err != nil {
@@ -147,7 +148,7 @@ func (d *baseDiskSM) Update(ents []sm.Entry) ([]sm.Entry, error) {
 		log.Panic().Msgf("failed to serialize metadata: %v", err)
 	}
 
-	err = d.conn.AsyncInsert(metadataCtx, `INSERT INTO metadata (namespace, data) VALUES (?, ?)`, true, "default", string(smeta))
+	err = d.conn.AsyncInsert(metadataCtx, DMLWriteRaftMetadataAsync(ctx), true, "default", string(smeta))
 	if err != nil {
 		log.Panic().Msgf("base save metadata failed: %v", err)
 	}
@@ -155,7 +156,7 @@ func (d *baseDiskSM) Update(ents []sm.Entry) ([]sm.Entry, error) {
 	// Update other metadata asynchronously
 	metas, _ := ctx.Value(metadataKey).(map[string][]byte)
 	for ns, meta := range metas {
-		err = d.conn.AsyncInsert(metadataCtx, `INSERT INTO metadata (namespace, data) VALUES (?, ?)`, true, ns, string(meta))
+		err = d.conn.AsyncInsert(metadataCtx, DMLWriteRaftMetadataAsync(ctx), true, ns, string(meta))
 		if err != nil {
 			log.Panic().Msgf("save other metadata failed (ns: :%v): %v", ns, err)
 		}
