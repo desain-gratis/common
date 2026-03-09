@@ -328,7 +328,7 @@ func (s *ContentApp) post(ctx context.Context, payload DataWrapper) (*DataWrappe
 	combined = append(combined, payload.RefIDs...) // notice no id
 	versionKey := strings.Join(combined, separator)
 	versionIdx, ok := s.state.VersionIndexes[versionKey]
-	if !ok {
+	if !ok && tableCfg.Versioned {
 		var index uint64
 		s.state.VersionIndexes[versionKey] = &index
 		versionIdx = &index
