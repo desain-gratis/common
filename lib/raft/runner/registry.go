@@ -48,6 +48,19 @@ func Init() error {
 	return InitWithConfigFile(cfgFile)
 }
 
+func Close() error {
+	if dhost != nil {
+		defer dhost.Close()
+		for _, repl := range cfg.Replica {
+			err := dhost.StopShard(repl.ShardID)
+			if err != nil {
+				log.Warn().Msgf("error stopping shard %v: %v", repl.ShardID, err)
+			}
+		}
+	}
+	return nil
+}
+
 func InitWithConfigFile(cfgFile string) error {
 	ncfg, err := initDragonboatConfigWithFile(context.Background(), cfgFile)
 	if err != nil {
