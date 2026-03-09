@@ -28,6 +28,8 @@ type baseDiskSM struct {
 
 func newBaseDiskClickhouseSM(cfg DragonboatConfig2, raftCtx RaftContext, app raft.Application) func(shardID uint64, replicaID uint64) sm.IOnDiskStateMachine {
 	return func(shardID uint64, replicaID uint64) sm.IOnDiskStateMachine {
+		raftCtx.ShardID = shardID
+		raftCtx.ReplicaID = replicaID
 		return &baseDiskSM{
 			config:      cfg,
 			app:         app,
