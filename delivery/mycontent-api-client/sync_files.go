@@ -82,7 +82,7 @@ func (i *fileDep[T]) syncFiles(dataArr []FileContext[T]) (stat SyncStat, errUC *
 
 	for _, remoteAttachment := range remoteAttachments {
 		remoteID := getKey((*remoteAttachment).RefIds, (*remoteAttachment).Id)
-		if _, ok := localData[remoteID]; ok {
+		if _, ok := localData[remoteID]; ok || !i.sync.OptConfig.Hard {
 			continue
 		}
 		toDelete[remoteID] = remoteAttachment
