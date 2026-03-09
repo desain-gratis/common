@@ -188,20 +188,21 @@ func (c *mycontentClient) publishToRaft(ctx context.Context, msg any) ([]byte, e
 
 	var attempts int
 	var res statemachine.Result
-	for range 3 {
+	maxAttempts := 10
+	for range maxAttempts {
 		attempts++
-		ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		waitDuration := 500 * time.Millisecond * time.Duration(attempts*2)
+		ctx, cancel := context.WithTimeout(ctx, waitDuration)
 		res, err = c.DHost.SyncPropose(ctx, c.Sess, data)
 		if err == nil {
 			cancel()
 			break
 		}
 		cancel()
-		time.Sleep(500 * time.Millisecond * time.Duration(attempts*2))
 	}
 
-	if attempts >= 3 {
-		return nil, fmt.Errorf("maximum number of attempt (3) reached: %w (%w)", err, ErrNotReady)
+	if attempts >= maxAttempts {
+		return nil, fmt.Errorf("maximum number of attempt (%v) reached: %w (%w)", maxAttempts, err, ErrNotReady)
 	}
 
 	if res.Value > 0 {
