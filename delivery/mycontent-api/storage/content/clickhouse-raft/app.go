@@ -683,7 +683,7 @@ func (s *ContentApp) prepareGet(tableConfig TableConfig, _ QueryMyContent, names
 		`SELECT ` + strings.Join(allCols, ", ") + ` FROM (` +
 			`SELECT ` + strings.Join(keyCols, ", ") + `, ` +
 			`argMax((data, meta, is_deleted, event_id), event_id) AS t ` +
-			`FROM "` + tableConfig.Name + `" ` +
+			`FROM "` + tableConfig.Name + `" FINAL ` +
 			whereQ + ` ` +
 			`GROUP BY ` + strings.Join(keyCols, ", ") +
 			`) ` +
