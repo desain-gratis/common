@@ -188,7 +188,7 @@ func (c *mycontentClient) publishToRaft(ctx context.Context, msg any) ([]byte, e
 
 	var attempts int
 	var res statemachine.Result
-	maxAttempts := 0
+	maxAttempts := 1
 
 	// TODO: check raft readiness
 	// And then we do not retry
