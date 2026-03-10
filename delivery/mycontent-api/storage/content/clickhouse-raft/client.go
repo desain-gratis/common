@@ -205,7 +205,7 @@ func (c *mycontentClient) publishToRaft(ctx context.Context, msg any) ([]byte, e
 		cancel()
 	}
 
-	if attempts >= maxAttempts {
+	if attempts > maxAttempts {
 		return nil, fmt.Errorf("maximum number of attempt (%v) reached: %w (%w)", maxAttempts, err, ErrNotReady)
 	}
 
