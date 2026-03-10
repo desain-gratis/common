@@ -188,10 +188,14 @@ func (c *mycontentClient) publishToRaft(ctx context.Context, msg any) ([]byte, e
 
 	var attempts int
 	var res statemachine.Result
-	maxAttempts := 10
+	maxAttempts := 3
+
+	// TODO: check raft readiness
+	// And then we do not retry
+
 	for range maxAttempts {
 		attempts++
-		waitDuration := 500 * time.Millisecond * time.Duration(attempts*2)
+		waitDuration := 10 * time.Second * time.Duration(attempts*2)
 		ctx, cancel := context.WithTimeout(ctx, waitDuration)
 		res, err = c.DHost.SyncPropose(ctx, c.Sess, data)
 		if err == nil {
