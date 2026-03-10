@@ -66,10 +66,6 @@ type TableConfig struct {
 }
 
 func New(tableConfig ...TableConfig) *ContentApp {
-	if len(tableConfig) == 0 {
-		log.Panic().Msgf("empty table config")
-	}
-
 	tableConfigMap := make(map[string]TableConfig)
 	for _, c := range tableConfig {
 		tableConfigMap[c.Name] = c
