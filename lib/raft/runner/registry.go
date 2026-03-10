@@ -74,6 +74,7 @@ func InitWithConfigFile(cfgFile string) error {
 		RTTMillisecond:    100,
 		DeploymentID:      ncfg.Host.DeploymentID,
 		RaftEventListener: &raftListener{},
+		NotifyCommit:      true,
 	})
 	if err != nil {
 		log.Panic().Msgf("init nodehost %v", err)
