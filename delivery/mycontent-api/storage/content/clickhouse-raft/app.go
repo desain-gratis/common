@@ -61,7 +61,7 @@ type TableConfig struct {
 	Name                       string
 	RefSize                    int
 	Versioned                  bool
-	VersionedGetLimit          uint8
+	VersionedGetLimit          uint32
 	VersionedUseOptimisticLock bool
 }
 

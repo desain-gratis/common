@@ -35,7 +35,7 @@ type service[T mycontent.Data] struct {
 type PostProcess[T mycontent.Data] func(t T)
 
 func NewFromStorage[T mycontent.Data](baseURL string, refParams []string, store content.Repository, refSize int) *service[T] {
-	base := mycontent_base.New[T](store, refSize) // todo use refSize from store
+	base := mycontent_base.New[T](store) // todo use refSize from store
 	return New(base, baseURL, refParams)
 }
 
@@ -64,6 +64,13 @@ func New[T mycontent.Data](
 			FormatURL[T](baseURL, refParams),
 		},
 	}
+}
+
+// TODO: use better pattern
+// similar to e.g Stream DSL .map() / .reduce() / etc.
+func (i *service[T]) WithPostProcess(t PostProcess[T]) *service[T] {
+	i.postProcess = append(i.postProcess, t)
+	return i
 }
 
 func (i *service[T]) Post(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
@@ -211,18 +218,6 @@ func (i *service[T]) Delete(w http.ResponseWriter, r *http.Request, p httprouter
 	refIDs := make([]string, 0, len(i.refParams))
 	for _, param := range i.refParams {
 		refIDs = append(refIDs, r.URL.Query().Get(param))
-	}
-
-	// Get the data first. TODO: REMOVE THIS; handle in storage layer instead
-	getBeforeDeleteResult, err := i.uc.Get(r.Context(), namespace, refIDs, ID)
-	if err != nil {
-		handleGetError(w, err)
-		return
-	}
-
-	if len(getBeforeDeleteResult) != 1 {
-		handleError(w, "BAD_REQUEST", "not found", http.StatusNotFound, nil)
-		return
 	}
 
 	// Do the actual deletion

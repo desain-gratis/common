@@ -20,8 +20,7 @@ func NewVersioned[T mycontent.VersionedData](
 ) *VersionedHandler[T] {
 	return &VersionedHandler[T]{
 		Handler: &Handler[T]{
-			repo:            repo,
-			expectedRefSize: expectedRefSize,
+			repo: repo,
 		},
 	}
 }

@@ -15,19 +15,14 @@ var _ mycontent.Usecase[mycontent.Data] = &Handler[mycontent.Data]{}
 
 type Handler[T mycontent.Data] struct {
 	repo content.Repository
-
-	// DEPRECATED
-	expectedRefSize int // TODO: change to just size (eg. expected refIDs size)
 }
 
 func New[T mycontent.Data](
 	repo content.Repository,
-	expectedRefSize int, // DEPRECATED
 ) *Handler[T] {
 	// TODO: add validation
 	return &Handler[T]{
-		repo:            repo,
-		expectedRefSize: expectedRefSize,
+		repo: repo,
 	}
 }
 
@@ -42,29 +37,6 @@ func (c *Handler[T]) Post(ctx context.Context, data T, meta any) (T, error) {
 	if data.Namespace() == "" {
 		return t, fmt.Errorf("error %w: namespace cannot be empty", mycontent.ErrValidation)
 	}
-
-	// TODO: validate if there is empty value in not appropriate place
-	// TODO: better at storage layer.
-	// if !isValid(data.RefIDs()) && len(filterEmpty(data.RefIDs())) != c.expectedRefSize {
-	// 	return t, fmt.Errorf("%w: complete reference must be provided during post", mycontent.ErrValidation)
-	// }
-
-	// delivery --- up to here -----
-
-	// if create new and no id, assign new id
-	// TODO: enforce this behaviour on repository layer
-	// id := data.ID()
-	// if id == "" {
-	// 	_id := uuid.New()
-	// 	id = _id.String()
-	// }
-	// data.WithID(id)
-
-	// created that empty, assign new created date
-	// date := data.CreatedTime()
-	// if date.Equal(time.Time{}) {
-	// 	data.WithCreatedTime(time.Now())
-	// }
 
 	payload, errMarshal := json.Marshal(data)
 	if errMarshal != nil {
@@ -101,9 +73,9 @@ func (c *Handler[T]) Post(ctx context.Context, data T, meta any) (T, error) {
 func (c *Handler[T]) get(ctx context.Context, namespace string, refIDs []string, ID string) ([]content.Data, error) {
 	// 1. check if there is ID
 	if ID != "" {
-		if !isValid(refIDs) || len(filterEmpty(refIDs)) != c.expectedRefSize {
+		if !isValid(refIDs) {
 			return nil, fmt.Errorf(
-				"%w: when ID is specified, all reference must be specified. found: %+v expected ref: %+v", mycontent.ErrValidation, refIDs, c.expectedRefSize)
+				"%w: when ID is specified, all reference must be specified. found: %+v", mycontent.ErrValidation, refIDs)
 		}
 
 		ds, err := c.repo.Get(ctx, namespace, refIDs, ID)
@@ -199,9 +171,9 @@ func (c *Handler[T]) GetWithMeta(ctx context.Context, namespace string, refIDs [
 func (c *Handler[T]) Stream(ctx context.Context, namespace string, refIDs []string, ID string) (<-chan T, error) {
 	// 1. check if there is ID
 	if ID != "" {
-		if !isValid(refIDs) || len(filterEmpty(refIDs)) != c.expectedRefSize {
+		if !isValid(refIDs) {
 			return nil, fmt.Errorf(
-				"%w: when ID is specified, all reference must be specified. found: %+v expected ref: %+v", mycontent.ErrValidation, refIDs, c.expectedRefSize)
+				"%w: when ID is specified, all reference must be specified. found: %+v", mycontent.ErrValidation, refIDs)
 		}
 
 		d, err := c.repo.Get(ctx, namespace, refIDs, ID)
@@ -278,7 +250,7 @@ func (c *Handler[T]) Stream(ctx context.Context, namespace string, refIDs []stri
 // Delete your resource here
 // the implementation can check whether there are linked resource or not
 func (c *Handler[T]) Delete(ctx context.Context, namespace string, refIDs []string, ID string) (t T, err error) {
-	if !isValid(refIDs) && len(filterEmpty(refIDs)) != c.expectedRefSize {
+	if !isValid(refIDs) {
 		return t, fmt.Errorf("%w: complete reference must be provided during delete", mycontent.ErrValidation)
 	}
 

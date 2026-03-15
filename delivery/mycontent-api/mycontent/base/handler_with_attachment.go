@@ -38,7 +38,7 @@ func NewAttachment(
 ) *HandlerWithAttachment {
 
 	return &HandlerWithAttachment{
-		Handler:   New[*entity.Attachment](repo, refSize),
+		Handler:   New[*entity.Attachment](repo),
 		blobRepo:  blobRepo,
 		hideUrl:   hideUrl,
 		namespace: blobNamespace,
