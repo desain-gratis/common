@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/binary"
+	"fmt"
 	"hash/fnv"
 	"image"
 	"image/png"
@@ -78,15 +79,15 @@ func (i *imageDep[T]) syncImages(dataArr []ImageContext[T]) (stat SyncStat, errU
 
 	uploadDir := i.uploadDir
 
-	localHash, errUCs1 := i.computeImageConfigHashMulti(uploadDir, localData)
-	if len(errUCs1) > 0 {
-		for _, errUC := range errUCs1 {
-			log.Warn().Msgf("\n%v %+v", errUC.Code, errUC.Message)
+	localHash, errs := i.computeImageConfigHashMulti(uploadDir, localData)
+	if len(errs) > 0 {
+		for _, err := range errs {
+			log.Warn().Msgf("\n%v", err)
 		}
 		log.Warn().Msgf(" images with error will be ignored. Please fix the error")
 	}
 
-	stat.LocalCountError = len(errUCs1)
+	stat.LocalCountError = len(errs)
 
 	_remoteAttachments, err := i.client.Get(context.Background(), i.sync.namespace, nil, "") // "*" for all namespace
 	if err != nil {
@@ -198,23 +199,21 @@ func (i *imageDep[T]) syncImages(dataArr []ImageContext[T]) (stat SyncStat, errU
 
 }
 
-func (i *imageDep[T]) computeImageConfigHashMulti(dir string, images map[string]ImageContext[T]) (map[string]string, []*types.Error) {
+func (i *imageDep[T]) computeImageConfigHashMulti(dir string, images map[string]ImageContext[T]) (map[string]string, []error) {
 	id2hash := make(map[string]string)
-	errUC := make([]*types.Error, 0)
+	errs := make([]error, 0)
 	log.Info().Msgf("Read image path: %v", dir)
 	for _, image := range images {
 		newdir := i.customDir(dir, image.Base)
 		imgHash, err := computeImageConfigHash(newdir, *image.Image)
 		if err != nil {
-			errUC = append(errUC, &types.Error{
-				HTTPCode: http.StatusBadRequest, Code: "CLIENT_ERROR", Message: "Cannot open image '" + (*image.Image).Url + "' or compute its hash.\n Make sure you entered a valid image at that path.\n error: " + err.Error(),
-			})
+			errs = append(errs, fmt.Errorf("Cannot open image '%v' or compute its hash. error: %w", (*image.Image).Url, err))
 			continue
 		}
 		id2hash[completeImageUploadPath(newdir, image.Image)] = imgHash
 	}
 
-	return id2hash, errUC
+	return id2hash, errs
 }
 
 func computeFileConfigHash(dir string, file *entity.File) (string, error) {

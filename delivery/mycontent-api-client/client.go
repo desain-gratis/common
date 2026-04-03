@@ -82,11 +82,7 @@ func (c *client[T]) Delete(ctx context.Context, namespace string, refIDs []strin
 func (c *client[T]) delete(ctx context.Context, authToken string, namespace string, refIDs map[string]string, ID string) (result T, errUC error) {
 	wer, err := url.Parse(c.endpoint)
 	if err != nil {
-		return result, &types.CommonError{
-			Errors: []types.Error{
-				{Code: "CLIENT_ERROR", Message: "invalid URL " + err.Error()},
-			},
-		}
+		return result, fmt.Errorf("delete: invalid url: %w", err)
 	}
 
 	v := wer.Query()
@@ -100,11 +96,7 @@ func (c *client[T]) delete(ctx context.Context, authToken string, namespace stri
 
 	req, err := http.NewRequest(http.MethodDelete, wer.String(), nil)
 	if err != nil {
-		return result, &types.CommonError{
-			Errors: []types.Error{
-				{Code: "CLIENT_ERROR", Message: "new request " + err.Error()},
-			},
-		}
+		return result, fmt.Errorf("delete: new request: %w", err)
 	}
 
 	req = req.WithContext(ctx)
@@ -115,35 +107,22 @@ func (c *client[T]) delete(ctx context.Context, authToken string, namespace stri
 
 	resp, err := c.httpc.Do(req)
 	if err != nil {
-		return result, &types.CommonError{
-			Errors: []types.Error{
-				{Code: "CLIENT_ERROR", Message: "do " + err.Error()},
-			},
-		}
+		return result, fmt.Errorf("delete: do: %w", err)
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return result, &types.CommonError{
-			Errors: []types.Error{
-				{Code: "CLIENT_ERROR", Message: "read body " + err.Error()},
-			},
-		}
+		return result, fmt.Errorf("delete: read body: %w", err)
 	}
 
 	var cr types.CommonResponseTyped[T]
-
 	err = json.Unmarshal(body, &cr)
 	if err != nil {
-		return result, &types.CommonError{
-			Errors: []types.Error{
-				{Code: "CLIENT_ERROR", Message: "unmarshal" + err.Error()},
-			},
-		}
+		return result, fmt.Errorf("delete: parse data from server: %w | %v", err, string(body))
 	}
 
 	if cr.Error != nil {
-		return result, cr.Error
+		return result, fmt.Errorf("delete: from server: %w", parseError(cr.Error))
 	}
 
 	return cr.Success, nil
@@ -152,11 +131,7 @@ func (c *client[T]) delete(ctx context.Context, authToken string, namespace stri
 func (c *client[T]) get(ctx context.Context, authToken string, namespace string, refIDs map[string]string, ID string) (result []T, errUC error) {
 	wer, err := url.Parse(c.endpoint)
 	if err != nil {
-		return result, &types.CommonError{
-			Errors: []types.Error{
-				{Code: "CLIENT_ERROR", Message: "invalid URL " + err.Error()},
-			},
-		}
+		return result, fmt.Errorf("get: %w", err)
 	}
 
 	v := wer.Query()
@@ -172,11 +147,7 @@ func (c *client[T]) get(ctx context.Context, authToken string, namespace string,
 
 	req, err := http.NewRequest(http.MethodGet, wer.String(), nil)
 	if err != nil {
-		return result, &types.CommonError{
-			Errors: []types.Error{
-				{Code: "CLIENT_ERROR", Message: "new request " + err.Error()},
-			},
-		}
+		return result, fmt.Errorf("get: new request error: %w", err)
 	}
 
 	req = req.WithContext(ctx)
@@ -190,63 +161,46 @@ func (c *client[T]) get(ctx context.Context, authToken string, namespace string,
 
 	resp, err := c.httpc.Do(req)
 	if err != nil {
-		return result, &types.CommonError{
-			Errors: []types.Error{
-				{Code: "CLIENT_ERROR", Message: "do " + err.Error()},
-			},
-		}
+		return result, fmt.Errorf("get: do error: %w", err)
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return result, &types.CommonError{
-			Errors: []types.Error{
-				{Code: "CLIENT_ERROR", Message: "read body " + err.Error()},
-			},
-		}
+		return result, fmt.Errorf("get: read body: %w", err)
 	}
-	if resp.StatusCode > 200 {
+	if resp.StatusCode != 200 {
 		var commer types.CommonResponseTyped[error]
-		_ = json.Unmarshal(body, &commer)
-		return result, commer.Error
+		err = json.Unmarshal(body, &commer)
+		if err != nil {
+			return result, fmt.Errorf("get: parse data from server: %w | %v", err, string(body))
+		}
+
+		return result, parseError(commer.Error)
 	}
 
 	var cr types.CommonResponseTyped[[]T]
 
 	err = json.Unmarshal(body, &cr)
 	if err != nil {
-		return result, &types.CommonError{
-			Errors: []types.Error{
-				{Code: "CLIENT_ERROR", Message: "unmarshal" + err.Error() + string(body)},
-			},
-		}
+		return result, fmt.Errorf("get: parse server response: %w", err)
 	}
 
 	if cr.Error != nil {
-		return result, cr.Error
+		return result, fmt.Errorf("get: from server: %w", parseError(cr.Error))
 	}
 
 	return cr.Success, nil
 }
 
 func (c *client[T]) post(ctx context.Context, authToken string, data T) (result T, errUC error) {
-	var t T
 	payload, err := json.Marshal(data)
 	if err != nil {
-		return t, &types.CommonError{
-			Errors: []types.Error{
-				{Code: "CLIENT_ERROR", Message: "new request " + err.Error()},
-			},
-		}
+		return result, fmt.Errorf("post: marshal data: %w", err)
 	}
 
 	req, err := http.NewRequest(http.MethodPost, c.endpoint, bytes.NewReader(payload))
 	if err != nil {
-		return t, &types.CommonError{
-			Errors: []types.Error{
-				{Code: "CLIENT_ERROR", Message: "new request " + err.Error()},
-			},
-		}
+		return result, fmt.Errorf("post: new request: %w", err)
 	}
 
 	req = req.WithContext(ctx)
@@ -259,34 +213,22 @@ func (c *client[T]) post(ctx context.Context, authToken string, data T) (result 
 
 	resp, err := c.httpc.Do(req)
 	if err != nil {
-		return t, &types.CommonError{
-			Errors: []types.Error{
-				{Code: "CLIENT_ERROR", Message: "do " + err.Error()},
-			},
-		}
+		return result, fmt.Errorf("post: do: %w", err)
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return t, &types.CommonError{
-			Errors: []types.Error{
-				{Code: "CLIENT_ERROR", Message: "read body " + err.Error()},
-			},
-		}
+		return result, fmt.Errorf("post: read body: %w", err)
 	}
 
 	var cr types.CommonResponseTyped[T]
 	err = json.Unmarshal(body, &cr)
 	if err != nil {
-		return t, &types.CommonError{
-			Errors: []types.Error{
-				{Code: "CLIENT_ERROR", Message: "unmarshal" + err.Error()},
-			},
-		}
+		return result, fmt.Errorf("post: parse data from server: %w | %v", err, string(body))
 	}
 
 	if cr.Error != nil {
-		return t, cr.Error
+		return result, fmt.Errorf("post: from server: %w", parseError(cr.Error))
 	}
 
 	return cr.Success, nil
@@ -311,4 +253,16 @@ func toRefsParamGet(refsParam []string, refIDs []string) (map[string]string, err
 	}
 
 	return result, nil
+}
+
+func parseError(err *types.CommonError) error {
+	if err == nil || err.Errors == nil {
+		return nil
+	}
+	var errs error
+	for _, err := range err.Errors {
+		errs = errors.Join(errs, fmt.Errorf("%v: %v", err.Code, err.Message))
+	}
+
+	return errs
 }

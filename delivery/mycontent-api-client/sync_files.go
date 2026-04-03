@@ -2,16 +2,15 @@ package mycontentapiclient
 
 import (
 	"context"
-	"net/http"
+	"fmt"
 	"path"
 	"time"
 
 	content "github.com/desain-gratis/common/types/entity"
-	types "github.com/desain-gratis/common/types/http"
 	"github.com/rs/zerolog/log"
 )
 
-func (i *fileDep[T]) syncFiles(dataArr []FileContext[T]) (stat SyncStat, errUC *types.CommonError) {
+func (i *fileDep[T]) syncFiles(dataArr []FileContext[T]) (stat SyncStat, errUC error) {
 	ctx := context.Background()
 
 	// 0. filter local entities inplace based on namespace
@@ -43,20 +42,20 @@ func (i *fileDep[T]) syncFiles(dataArr []FileContext[T]) (stat SyncStat, errUC *
 
 	uploadDir := i.uploadDir
 
-	localHash, errUCs1 := i.computeFileConfigHashMulti(uploadDir, localData)
-	if len(errUCs1) > 0 {
-		for _, errUC := range errUCs1 {
-			log.Warn().Msgf("\n%v %+v", errUC.Code, errUC.Message)
+	localHash, errs := i.computeFileConfigHashMulti(uploadDir, localData)
+	if len(errs) > 0 {
+		for _, err := range errs {
+			log.Warn().Msgf("\n%v", err)
 		}
 		log.Warn().Msgf(" images with error will be ignored. Please fix the error")
 	}
 
-	stat.LocalCountError = len(errUCs1)
+	stat.LocalCountError = len(errs)
 
 	_remoteAttachments, err := i.client.Get(context.Background(), i.sync.namespace, nil, "") // "*" for all namespace
 	if err != nil {
-		log.Error().Msgf("%+v", err)
-		return stat, &types.CommonError{Errors: []types.Error{{Message: err.Error()}}}
+		log.Error().Msgf("get remote %+v", err)
+		return stat, err
 	}
 	remoteAttachments := attachmentToMap(_remoteAttachments)
 
@@ -163,22 +162,20 @@ func (i *fileDep[T]) syncFiles(dataArr []FileContext[T]) (stat SyncStat, errUC *
 
 }
 
-func (i *fileDep[T]) computeFileConfigHashMulti(dir string, files map[string]FileContext[T]) (map[string]string, []*types.Error) {
+func (i *fileDep[T]) computeFileConfigHashMulti(dir string, files map[string]FileContext[T]) (map[string]string, []error) {
 	id2hash := make(map[string]string)
-	errUC := make([]*types.Error, 0)
+	var errs []error
 	for _, file := range files {
 		newdir := i.customDir(dir, file.Base)
 		imgHash, err := computeFileConfigHash(newdir, *file.File)
 		if err != nil {
-			errUC = append(errUC, &types.Error{
-				HTTPCode: http.StatusBadRequest, Code: "CLIENT_ERROR", Message: "Cannot open file '" + (*file.File).Url + "' or compute its hash.\n Make sure you entered a valid image at that path.\n error: " + err.Error(),
-			})
+			errs = append(errs, fmt.Errorf("Cannot open file '%v' or compute its hash. error: %w", (*file.File).Url, err))
 			continue
 		}
 		id2hash[completeUploadPath(newdir, (**file.File).Url)] = imgHash
 	}
 
-	return id2hash, errUC
+	return id2hash, errs
 }
 
 func (i *fileDep[T]) customDir(dir string, base T) string {
