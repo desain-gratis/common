@@ -31,7 +31,6 @@ type HandlerWithAttachment struct {
 // Whether this is private or not will mostly be depended by the blob repository
 func NewAttachment(
 	repo content.Repository,
-	refSize int,
 	blobRepo blob.Repository,
 	hideUrl bool,
 	blobNamespace string,
