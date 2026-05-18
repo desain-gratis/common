@@ -72,6 +72,11 @@ func (i *imageDep[T]) WithCustomPath(pathFun func(T) string) *imageDep[T] {
 	return i
 }
 
+func (i *imageDep[T]) WithImagePlaceholder(enable bool) *imageDep[T] {
+	i.placeholder = enable
+	return i
+}
+
 func (i *fileDep[T]) WithUploadDirectory(dir string) *fileDep[T] {
 	i.uploadDir = dir
 	return i

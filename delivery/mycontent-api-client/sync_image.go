@@ -40,11 +40,12 @@ type SyncStat struct {
 }
 
 type imageDep[T mycontent.Data] struct {
-	sync       *sync[T]
-	client     *attachmentClient
-	extract    ExtractImages[T]
-	uploadDir  string
-	customPath func(T) string
+	sync        *sync[T]
+	client      *attachmentClient
+	extract     ExtractImages[T]
+	uploadDir   string
+	customPath  func(T) string
+	placeholder bool
 }
 
 func (i *imageDep[T]) syncImages(dataArr []ImageContext[T]) (stat SyncStat, errUC *types.CommonError) {
@@ -170,6 +171,10 @@ func (i *imageDep[T]) syncImages(dataArr []ImageContext[T]) (stat SyncStat, errU
 		if errUC != nil {
 			log.Error().Msgf("  failed to process image '%+v', msg: %+v", key, errUC)
 			continue
+		}
+
+		if !i.placeholder {
+			placeholder = ""
 		}
 
 		payload := &content.Attachment{
@@ -342,7 +347,7 @@ func processImage(dir string, imgRef **entity.Image) ([]byte, string, *types.Com
 	// for image_data_url (placeholder) ; notice, only 32px bounding rectangle
 	placeholderEncode := ""
 	newWidth, newHeight = scaleParam(&entity.Image{
-		ScalePx:        128, // scale very small for blur placeholder
+		ScalePx:        32, // scale very small for blur placeholder
 		ScaleDirection: entity.SCALE_DIRECTION_HORIZONTAL,
 	}, clean)
 	placeholder := image.NewRGBA(image.Rect(0, 0, newWidth, newHeight))
