@@ -197,6 +197,47 @@ func (i *service[T]) Get(w http.ResponseWriter, r *http.Request, p httprouter.Pa
 	w.Write(payload)
 }
 
+func (i *service[T]) Stream(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+	namespace := r.Header.Get("X-Namespace")
+	if namespace == "" {
+		handleError(
+			w, "BAD_REQUEST", "'X-Namespace' header is empty",
+			http.StatusBadRequest, nil)
+		return
+	}
+
+	invalidParams := validateParams(i.whitelistParams, r.URL.Query())
+	if len(invalidParams) > 0 {
+		handleError(
+			w, "BAD_REQUEST", "invalid parameter(s): "+strings.Join(invalidParams, ","),
+			http.StatusBadRequest, nil)
+		return
+	}
+
+	ID := r.URL.Query().Get("id")
+	refIDs := make([]string, 0, len(i.refParams))
+	for _, param := range i.refParams {
+		refIDs = append(refIDs, r.URL.Query().Get(param))
+	}
+
+	// Actually get the data
+	result, err := i.uc.Stream(r.Context(), namespace, refIDs, ID)
+	if err != nil {
+		handleGetError(w, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+
+	for res := range result {
+		for _, pp := range i.postProcess {
+			pp(res)
+			payload, _ := json.Marshal(res)
+			fmt.Fprintln(w, string(payload))
+		}
+	}
+}
+
 func (i *service[T]) Delete(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	namespace := r.Header.Get("X-Namespace")
 	if namespace == "" {
