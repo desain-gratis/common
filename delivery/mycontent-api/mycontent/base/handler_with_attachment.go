@@ -124,9 +124,10 @@ func (c *HandlerWithAttachment) Attach(ctx context.Context, meta *entity.Attachm
 	}
 
 	// The rest can be modified
-	result, err = c.Handler.Post(ctx, meta, map[string]string{
+	createdAt := map[string]string{
 		"created_at": time.Now().Format(time.RFC3339),
-	})
+	}
+	result, err = c.Handler.Post(ctx, meta, createdAt)
 	if err != nil {
 		return nil, err
 	}
@@ -161,7 +162,8 @@ func (c *HandlerWithAttachment) Attach(ctx context.Context, meta *entity.Attachm
 
 	// Another server protected field
 	result.ContentSize = uint64(repometa.ContentSize)
-	result.Url = repometa.PublicURL // the blob storage URL, not this metadata for this case
+	result.Url = repometa.PublicURL // will be overwritten..
+	result.DataUrl = repometa.PublicURL
 
 	// write back
 	result, err = c.Handler.Post(ctx, result, nil)
@@ -191,6 +193,7 @@ func (c *HandlerWithAttachment) Delete(ctx context.Context, namespace string, re
 
 	if c.hideUrl {
 		at.Url = ""
+		at.DataUrl = ""
 		at.Path = ""
 	}
 	return at, nil

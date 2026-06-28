@@ -392,7 +392,7 @@ func attachmentToImage(attachment *content.Attachment) *entity.Image {
 	return &entity.Image{
 		Id:          attachment.Id,
 		DataUrl:     attachment.ImageDataUrl,
-		Url:         attachment.Url,
+		Url:         attachment.DataUrl, // because Url will be overwritten by the metadata (not the actual data)
 		Tags:        attachment.Tags,
 		Description: attachment.Description,
 		// Hash: r, should not have haash.. TODO: deprecate hash in thumbnail. Use in attachment instead

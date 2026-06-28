@@ -9,16 +9,17 @@ import (
 type Attachment struct {
 	Id           string   `json:"id,omitempty"`
 	RefIds       []string `json:"ref_ids,omitempty"`
-	OwnerId      string   `json:"owner_id,omitempty"`
-	Path         string   `json:"path,omitempty"` // private path of the resource
-	Name         string   `json:"name,omitempty"` // name of the resource
-	Url          string   `json:"url,omitempty"`  // public URL of the resource
+	OwnerId      string   `json:"owner_id,omitempty"` // TODOOOO: REPLACE MAXXXING WITH NAMESPACE URGENT
+	Path         string   `json:"path,omitempty"`     // private path of the resource
+	Name         string   `json:"name,omitempty"`     // name of the resource
+	Url          string   `json:"url,omitempty"`      // public URL of the resource
 	ContentType  string   `json:"content_type,omitempty"`
 	ContentSize  uint64   `json:"content_size,omitempty"`
 	Description  string   `json:"description,omitempty"`
 	Tags         []string `json:"tags,omitempty"` // meta data
 	Ordering     int32    `json:"ordering,omitempty"`
-	ImageDataUrl string   `json:"image_data_url,omitempty"` // image (thumbnail) data URL if applicable
+	ImageDataUrl string   `json:"image_data_url,omitempty"` // image (thumbnail) data URL if applicable (BLOB)
+	DataUrl      string   `json:"data_url,omitempty"`       // url for actual data (url is only the metadata); or we can say public url
 	CreatedAt    string   `json:"created_at,omitempty"`
 	Hash         string   `json:"hash,omitempty"` // hash of the attachment
 }
