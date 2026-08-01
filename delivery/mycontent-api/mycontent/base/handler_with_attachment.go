@@ -140,8 +140,8 @@ func (c *HandlerWithAttachment) Attach(ctx context.Context, meta *entity.Attachm
 			return nil, fmt.Errorf("%w: failed to generate uuid", err)
 		}
 
-		// overwrite name with random (so cannot be guessed)
-		result.Name = uid.String()
+		// overwrite name with random (so cannot be guessed); todo: since the actual path is using random uuid we good.
+		// result.Name = uid.String()
 		t, err := time.Parse(time.RFC3339, result.CreatedAt)
 		if err != nil {
 			return nil, fmt.Errorf("%w: invalid created at value, must be RFC3339", err)
