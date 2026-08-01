@@ -39,10 +39,10 @@ func NewStorageClient(
 		tableConfig: tableConfig,
 	}
 
-	// if err := app.initSQLite(); err != nil {
-	// 	_ = db.Close()
-	// 	return nil, err
-	// }
+	if err := app.initSQLite(); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
 
 	if err := app.initSchema(); err != nil {
 		_ = db.Close()
@@ -63,4 +63,21 @@ func (a *ContentApp) Repository() *repository {
 	return &repository{
 		app: a,
 	}
+}
+
+func (a *ContentApp) initSQLite() error {
+	pragmas := []string{
+		"PRAGMA journal_mode=WAL;",
+		"PRAGMA synchronous=NORMAL;",
+		"PRAGMA foreign_keys=ON;",
+		"PRAGMA busy_timeout=5000;",
+	}
+
+	for _, pragma := range pragmas {
+		if _, err := a.db.Exec(pragma); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
