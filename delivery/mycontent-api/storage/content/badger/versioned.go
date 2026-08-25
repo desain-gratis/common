@@ -343,6 +343,9 @@ func (c *VersionedBadgerRepo) Delete(
 		return nil
 	})
 	if err != nil {
+		if errors.Is(err, mycontent.ErrNotFound) {
+			return content.Data{}, mycontent.ErrNotFound // simplify error msg for user
+		}
 		return content.Data{}, fmt.Errorf(
 			"delete versioned content: %w",
 			err,

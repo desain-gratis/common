@@ -3,6 +3,7 @@ package base
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/rs/zerolog/log"
@@ -284,6 +285,10 @@ func (c *Handler[T]) Delete(ctx context.Context, namespace string, refIDs []stri
 	d, err := c.repo.Delete(ctx, namespace, refIDs, ID)
 	if err != nil {
 		var t T
+		if errors.Is(err, content.ErrNotFound) {
+			return t, err // simplify error msg for known error
+		}
+
 		return t, fmt.Errorf("repository error: %w", err)
 	}
 
