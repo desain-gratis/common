@@ -134,6 +134,10 @@ func (c *BadgerRepo) Get(
 		}
 	}
 
+	if id != "" && len(result) == 0 {
+		return nil, content.ErrNotFound
+	}
+
 	return result, nil
 }
 
@@ -164,6 +168,9 @@ func (c *BadgerRepo) Delete(
 		}
 
 		item, err := txn.Get(key)
+		if errors.Is(err, badger.ErrKeyNotFound) {
+			return content.ErrNotFound
+		}
 		if err != nil {
 			return err
 		}

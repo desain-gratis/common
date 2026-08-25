@@ -11,6 +11,7 @@ import (
 
 	"github.com/dgraph-io/badger/v4"
 
+	"github.com/desain-gratis/common/delivery/mycontent-api/mycontent"
 	"github.com/desain-gratis/common/delivery/mycontent-api/storage/content"
 )
 
@@ -191,6 +192,10 @@ func (c *VersionedBadgerRepo) Get(
 		}
 	}
 
+	if id != "" && len(result) == 0 {
+		return nil, content.ErrNotFound
+	}
+
 	return result, nil
 }
 
@@ -251,7 +256,7 @@ func (c *VersionedBadgerRepo) Delete(
 		// getEntryVersion() returns zero for a missing index. Since versions
 		// start at 1, zero means that the logical entry does not exist.
 		if currentVersion == 0 {
-			return badger.ErrKeyNotFound
+			return content.ErrNotFound
 		}
 
 		version = currentVersion
@@ -272,7 +277,7 @@ func (c *VersionedBadgerRepo) Delete(
 			return fmt.Errorf(
 				"version index points to missing data: version=%d: %w",
 				currentVersion,
-				badger.ErrKeyNotFound,
+				mycontent.ErrNotFound,
 			)
 		}
 		if err != nil {
