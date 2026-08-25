@@ -193,7 +193,7 @@ func (c *VersionedBadgerRepo) Get(
 	}
 
 	if id != "" && len(result) == 0 {
-		return nil, content.ErrNotFound
+		return nil, mycontent.ErrNotFound
 	}
 
 	return result, nil
@@ -256,7 +256,7 @@ func (c *VersionedBadgerRepo) Delete(
 		// getEntryVersion() returns zero for a missing index. Since versions
 		// start at 1, zero means that the logical entry does not exist.
 		if currentVersion == 0 {
-			return content.ErrNotFound
+			return mycontent.ErrNotFound
 		}
 
 		version = currentVersion

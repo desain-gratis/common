@@ -309,7 +309,7 @@ func handlePostError(w http.ResponseWriter, err error) {
 		handleError(w, "BAD_REQUEST", err.Error(), http.StatusBadRequest, nil)
 	case errors.Is(err, mycontent.ErrNotFound):
 		handleError(w, "NOT_FOUND", err.Error(), http.StatusNotFound, nil)
-	case errors.Is(err, content.ErrInvalidKey):
+	case errors.Is(err, content.ErrInvalidKey): // todo: simplify error mycontent vs content
 		handleError(w, "BAD_REQUEST", err.Error(), http.StatusBadRequest, nil)
 	case errors.Is(err, content.ErrNotFound):
 		handleError(w, "NOT_FOUND", err.Error(), http.StatusNotFound, nil)
