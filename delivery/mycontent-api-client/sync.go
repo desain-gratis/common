@@ -190,7 +190,7 @@ func (s *sync[T]) Execute(ctx context.Context) error {
 		// todo: implement worker thread
 		stat, err := fileDep.syncFiles(fileRefs)
 		if err != nil {
-			log.Error().Msgf("	Failed to sync project file. Err: %v", err)
+			log.Error().Msgf("	Failed to sync local entity's file. Err: %v", err)
 			continue
 		}
 		log.Info().Msgf(`Sync project's file statistics:
@@ -202,7 +202,7 @@ func (s *sync[T]) Execute(ctx context.Context) error {
 		// TODO: calculate hash or compare directly to optimize upload
 		_, err = s.client.Post(ctx, localEntity, nil)
 		if err != nil {
-			log.Error().Msgf("Failed to update project definition %+v", err)
+			log.Error().Msgf("Failed to sync local entity  %+v", err)
 		}
 	}
 
