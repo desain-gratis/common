@@ -27,6 +27,7 @@ const (
 )
 
 var _ raft.Application = &ContentApp{}
+var _ raft.ApplicationV2 = &ContentApp{}
 
 type QueryMyContent struct {
 	Table     string   `json:"table"`
@@ -77,6 +78,25 @@ func New(tableConfig ...TableConfig) *ContentApp {
 	return &ContentApp{
 		tableConfig: tableConfigMap,
 	}
+}
+
+// NOTES:
+// VERSIONED REPO RULE.
+// IT SHOULD ALWAYS CAN BE ACCESSED AS MYCONTENT REPOSITORY WITH "ADDITIONAL" "ID" FIELD.
+// 1. THERE IS ALWAYS INCREMENTING ID FOR THE MAIN ENTITY.
+// 2. WE CAN LIST DOWN ALL VERSION, SHOULD BEHAVE LIKE ORDINARY MY CONTENT (BASICALLY JUST OTHER MY CONTENT with increased REF ID, and auto increment ID)
+// 3. WE CAN ALWAYS LIST ALL VERSIONED ENTITIES BASED ON LATEST VERSION JUST LIKE MY CONTENT
+// 4. implemeneted optimistic lock
+//
+
+func (s *ContentApp) InitV2(ctx context.Context) (uint64, error) {
+	return 0, nil
+}
+
+// Simpler API for distributed state machine
+// If return error, we will acknowledge it as applied. If you don't want, just crash the state machine.
+func (s *ContentApp) OnUpdateV2(ctx context.Context, entry raft.EntryV2) ([]byte, error) {
+	return nil, nil
 }
 
 // GetRepository offers the usual mycontent.Usecase interface for code *inside* raft.Application
