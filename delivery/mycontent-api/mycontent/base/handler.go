@@ -66,6 +66,10 @@ func (c *Handler[T]) Post(ctx context.Context, data T, meta any) (T, error) {
 
 	parsedResult.WithID(result.ID)
 
+	if result.Version > 0 {
+		parsedResult.WithVersion(result.Version)
+	}
+
 	return parsedResult, nil
 }
 
@@ -127,6 +131,9 @@ func (c *Handler[T]) Get(ctx context.Context, namespace string, refIDs []string,
 
 		// repository responsble to specify it inside their ID
 		parsedResult.WithID(d.ID)
+		if d.Version > 0 {
+			parsedResult.WithVersion(d.Version)
+		}
 
 		result = append(result, parsedResult)
 	}
@@ -157,6 +164,9 @@ func (c *Handler[T]) GetWithMeta(ctx context.Context, namespace string, refIDs [
 
 		// repository responsble to specify it inside their ID
 		parsedResult.WithID(d.ID)
+		if d.Version > 0 {
+			parsedResult.WithVersion(d.Version)
+		}
 
 		result = append(result, Pair[T]{
 			Data: parsedResult,
@@ -218,6 +228,12 @@ func (c *Handler[T]) Stream(ctx context.Context, namespace string, refIDs []stri
 					log.Error().Msgf("Should not happend")
 					continue
 				}
+
+				parsedResult.WithID(d.ID)
+				if d.Version > 0 {
+					parsedResult.WithVersion(d.Version)
+				}
+
 				result <- parsedResult
 			}
 		}()
@@ -240,6 +256,12 @@ func (c *Handler[T]) Stream(ctx context.Context, namespace string, refIDs []stri
 				log.Error().Msgf("Should not happend")
 				continue
 			}
+
+			parsedResult.WithID(d.ID)
+			if d.Version > 0 {
+				parsedResult.WithVersion(d.Version)
+			}
+
 			result <- parsedResult
 		}
 	}()
@@ -271,6 +293,10 @@ func (c *Handler[T]) Delete(ctx context.Context, namespace string, refIDs []stri
 	}
 
 	parsedResult.WithID(d.ID)
+	parsedResult.WithID(d.ID)
+	if d.Version > 0 {
+		parsedResult.WithVersion(d.Version)
+	}
 
 	return parsedResult, nil
 }

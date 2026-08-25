@@ -61,13 +61,12 @@ type Data interface {
 	Created
 	RefIDs
 	Validator
-
+	Versioned
 	// TODO: Add EventID
 }
 
-type VersionedData interface {
-	Data
-	WithEventID(eventID uint64) VersionedData
+type Versioned interface {
+	WithVersion(versionID uint64) Data
 }
 
 // Mutator or modifier, fluent style

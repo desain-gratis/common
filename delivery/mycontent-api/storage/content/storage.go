@@ -3,6 +3,7 @@ package content
 import (
 	"context"
 	"errors"
+	"time"
 )
 
 var (
@@ -29,7 +30,9 @@ type Repository interface {
 // TODO: change naming, since not only data but also other
 type Data struct {
 	// Incremental value for "log" storage for OLAP maxxing
-	EventID uint64
+	EventID uint64 // todo: naming? better only version ..? DEPRECATE??
+
+	Version uint64
 
 	// For all content ID, we have incremental value
 	// might not be not needed, since it can be put inside ID
@@ -44,4 +47,12 @@ type Data struct {
 	// The actual data
 	Data []byte
 	Meta []byte
+}
+
+// todo todo
+type Meta struct {
+	CreatedAt             time.Time `json:"created_at"` // server time
+	OptimisticLockVersion *uint64   `json:"optimistic_lock_version,omitempty"`
+
+	// Can add more here later
 }

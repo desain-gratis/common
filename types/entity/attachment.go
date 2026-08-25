@@ -69,4 +69,8 @@ func (c *Attachment) Validate() error {
 	return nil
 }
 
+func (c *Attachment) WithVersion(v uint64) mycontent.Data {
+	return c
+}
+
 // TODO: compare difference / calculate hash
