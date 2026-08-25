@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 
 	"github.com/dgraph-io/badger/v4"
@@ -12,21 +11,24 @@ import (
 	"github.com/desain-gratis/common/delivery/mycontent-api/storage/content"
 )
 
-var _ content.Repository = &BadgerRepo{}
+var _ content.Repository = (*BadgerRepo)(nil)
 
 var (
 	ErrNotReady = errors.New("raft not ready")
+
+	ErrInvalidNamespace = errors.New("invalid namespace")
+	ErrInvalidRefSize   = errors.New("invalid ref size")
+	ErrInvalidRefID     = errors.New("invalid ref ID")
+	ErrInvalidID        = errors.New("invalid ID")
 )
 
-// todo: consider moving it as the same as badger-raft
-// eg. default, raft_default
 type BadgerRepo struct {
 	db        *badger.DB
 	TableName string
 	RefSize   int
 }
 
-// NewDefault implementation, simple KV store
+// New creates a Badger-backed content repository.
 func New(db *badger.DB, tableName string, refSize int) *BadgerRepo {
 	return &BadgerRepo{
 		db:        db,
@@ -35,185 +37,567 @@ func New(db *badger.DB, tableName string, refSize int) *BadgerRepo {
 	}
 }
 
-func (c *BadgerRepo) Post(ctx context.Context, namespace string, refIDs []string, ID string, data content.Data) (content.Data, error) {
-	// todo: other validation
-	if len(refIDs) != c.RefSize {
-		return content.Data{}, fmt.Errorf("invalid ref size")
-	}
-	if ID == "" {
-		return content.Data{}, fmt.Errorf("need ID")
+// Post stores data at:
+//
+//	namespace -> refIDs -> ID
+//
+// Writes always require the complete logical path.
+func (c *BadgerRepo) Post(
+	ctx context.Context,
+	namespace string,
+	refIDs []string,
+	id string,
+	data content.Data,
+) (content.Data, error) {
+	if err := c.validateWritePath(namespace, refIDs, id); err != nil {
+		return content.Data{}, err
 	}
 
-	// todo: other validation
+	if err := ctx.Err(); err != nil {
+		return content.Data{}, err
+	}
 
-	key := buildKey(false, c.TableName, namespace, refIDs, ID)
+	key := c.dataKey(namespace, refIDs, id)
+
 	err := c.db.Update(func(txn *badger.Txn) error {
-		// todo: save meta as well ~
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
 		return txn.Set(key, data.Data)
 	})
 	if err != nil {
-		return content.Data{}, fmt.Errorf("error writing :%w", err)
+		return content.Data{}, fmt.Errorf("store content: %w", err)
 	}
 
-	log.Printf("WRITEN KEY: %s\n", key)
-	log.Printf("WRITEN VALUE: %s\n", string(data.Data))
-
-	return content.Data{ // todo:
-		Namespace: data.Namespace,
-		RefIDs:    data.RefIDs,
-		ID:        data.ID,
-		Data:      data.Data,
-		Meta:      data.Meta,
+	return content.Data{
+		Namespace: namespace,
+		RefIDs:    cloneStrings(refIDs),
+		ID:        id,
+		Data:      cloneBytes(data.Data),
+		Meta:      cloneBytes(data.Meta),
 		EventID:   data.EventID,
+		Version:   data.Version,
 	}, nil
 }
 
-// Post within transaction for more advanced usecase
-func (c *BadgerRepo) PostTx(tx *badger.Txn, namespace string, refIDs []string, ID string) error {
-	return nil
-}
-
-// Get daya by owner ID
-func (c *BadgerRepo) Get(ctx context.Context, namespace string, refIDs []string, ID string) ([]content.Data, error) {
-	var result = make([]content.Data, 0)
-
-	data, err := c.Stream(ctx, namespace, refIDs, ID)
-	if err != nil {
+// Get returns all data matching the specified logical subtree.
+//
+// Read paths may be partial:
+//
+//	namespace="foo", refIDs=[]        -> everything in foo
+//	namespace="foo", refIDs=["a"]     -> everything below foo/a
+//	namespace="*", refIDs=[]          -> everything
+//	namespace="*", refIDs=["a"]       -> a below every namespace
+//
+// If ID is specified, only the exact ID is returned.
+func (c *BadgerRepo) Get(
+	ctx context.Context,
+	namespace string,
+	refIDs []string,
+	id string,
+) ([]content.Data, error) {
+	if err := c.validateReadPath(namespace, refIDs, id); err != nil {
 		return nil, err
 	}
 
-	for d := range data {
-		result = append(result, d)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	dataCh, errCh := c.stream(ctx, namespace, refIDs, id)
+
+	result := make([]content.Data, 0)
+
+	for dataCh != nil || errCh != nil {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+
+		case data, ok := <-dataCh:
+			if !ok {
+				dataCh = nil
+				continue
+			}
+
+			result = append(result, data)
+
+		case err, ok := <-errCh:
+			if !ok {
+				errCh = nil
+				continue
+			}
+
+			if err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	return result, nil
 }
 
-// Delete specific ID data. If no data, MUST return error
-func (c *BadgerRepo) Delete(ctx context.Context, namespace string, refIDs []string, ID string) (content.Data, error) {
-	// todo: other validation
-	if len(refIDs) != c.RefSize {
-		return content.Data{}, fmt.Errorf("invalid ref size")
+// Delete deletes a specific ID.
+//
+// If the item does not exist, Badger's ErrKeyNotFound is returned.
+func (c *BadgerRepo) Delete(
+	ctx context.Context,
+	namespace string,
+	refIDs []string,
+	id string,
+) (content.Data, error) {
+	if err := c.validateWritePath(namespace, refIDs, id); err != nil {
+		return content.Data{}, err
 	}
-	if ID == "" {
-		return content.Data{}, fmt.Errorf("need ID")
+
+	if err := ctx.Err(); err != nil {
+		return content.Data{}, err
 	}
 
-	// todo: other validation
+	key := c.dataKey(namespace, refIDs, id)
 
-	key := buildKey(false, c.TableName, namespace, refIDs, ID)
+	var previous []byte
 
-	prev := make([]byte, 0)
 	err := c.db.Update(func(txn *badger.Txn) error {
-		// todo: save meta as well ~
-		value, err := txn.Get(key)
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
+		item, err := txn.Get(key)
 		if err != nil {
 			return err
 		}
-		value.ValueCopy(prev)
+
+		previous, err = item.ValueCopy(nil)
+		if err != nil {
+			return err
+		}
 
 		return txn.Delete(key)
 	})
 	if err != nil {
-		return content.Data{}, fmt.Errorf("error writing :%w", err)
+		return content.Data{}, fmt.Errorf("delete content: %w", err)
 	}
 
-	// todo: parse pre
-	return content.Data{ // todo:
+	return content.Data{
 		Namespace: namespace,
-		RefIDs:    refIDs,
-		ID:        ID,
-		Data:      prev,
-		Meta:      []byte(`{}`), // todo:
-		EventID:   0,            // todo:
+		RefIDs:    cloneStrings(refIDs),
+		ID:        id,
+		Data:      previous,
 	}, nil
 }
 
-// Stream Get data
-func (c *BadgerRepo) Stream(ctx context.Context, namespace string, refIDs []string, ID string) (<-chan content.Data, error) {
-	result := make(chan content.Data)
+// Stream streams all data matching the specified logical subtree.
+//
+// The public interface intentionally exposes only the data channel.
+// Errors occurring during iteration are ignored here.
+//
+// Get uses stream() directly so it can observe those errors.
+func (c *BadgerRepo) Stream(
+	ctx context.Context,
+	namespace string,
+	refIDs []string,
+	id string,
+) (<-chan content.Data, error) {
+	if err := c.validateReadPath(namespace, refIDs, id); err != nil {
+		return nil, err
+	}
+
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	dataCh, _ := c.stream(ctx, namespace, refIDs, id)
+
+	return dataCh, nil
+}
+
+// stream is the internal implementation of Stream.
+//
+// The error channel is buffered so that a caller which intentionally ignores
+// the error channel cannot leave the streaming goroutine blocked forever.
+func (c *BadgerRepo) stream(
+	ctx context.Context,
+	namespace string,
+	refIDs []string,
+	id string,
+) (<-chan content.Data, <-chan error) {
+	dataCh := make(chan content.Data)
+	errCh := make(chan error, 1)
 
 	go func() {
-		defer close(result)
+		defer close(dataCh)
+		defer close(errCh)
 
-		itrCfg := badger.DefaultIteratorOptions
-		itrCfg.AllVersions = false
-		itrCfg.PrefetchValues = true
-		itrCfg.Prefix = buildKey(false, c.TableName, namespace, refIDs, ID)
+		prefix := c.queryPrefix(namespace, refIDs, id)
 
-		log.Printf("PREFIX KEY: %s\n", itrCfg.Prefix)
+		if namespace == "*" {
+			prefix = c.tablePrefix()
+		}
 
-		err := c.db.View(func(txn *badger.Txn) error {
-			it := txn.NewIterator(itrCfg)
-			defer it.Close()
-
-			for it.Rewind(); it.Valid(); it.Next() {
-				item := it.Item()
-				key := item.KeyCopy(nil)
-
-				var keyID string
-				token := strings.Split(string(key), "::")
-				if len(token) == 2 { // todo: special chars validation ofcourse for later..
-					keyID = token[1]
-				}
-
-				d := content.Data{
-					Namespace: namespace,
-					EventID:   0, // todo:
-					RefIDs:    refIDs,
-					ID:        keyID, // TODO: maybe can be cut out
-				}
-				value, err := item.ValueCopy(nil)
+		err := c.iterate(
+			ctx,
+			prefix,
+			func(key []byte, value []byte) (content.Data, error) {
+				decoded, err := c.decodeDataKey(key)
 				if err != nil {
-					// log warning todo
-					log.Println("UHUY WWARNN")
-					continue
+					return content.Data{}, err
 				}
 
-				d.Data = value
+				if !matchesQuery(
+					decoded,
+					namespace,
+					refIDs,
+					id,
+				) {
+					return content.Data{}, nil
+				}
 
-				log.Printf("GET KEY: %s\n", string(item.Key()))
-				log.Printf("GET VALUE: %s\n", string(d.Data))
+				return content.Data{
+					Namespace: decoded.Namespace,
+					RefIDs:    cloneStrings(decoded.RefIDs),
+					ID:        decoded.ID,
+					Data:      cloneBytes(value),
+				}, nil
+			},
+			func(data content.Data) error {
+				select {
+				case dataCh <- data:
+					return nil
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			},
+		)
 
-				result <- d
-			}
-
-			return nil
-		})
 		if err != nil {
-			return
+			errCh <- fmt.Errorf("stream content: %w", err)
 		}
 	}()
+
+	return dataCh, errCh
+}
+
+func (c *BadgerRepo) iterate(
+	ctx context.Context,
+	prefix []byte,
+	decode func(key []byte, value []byte) (content.Data, error),
+	consume func(content.Data) error,
+) error {
+	return c.db.View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		opts.PrefetchValues = true
+		opts.Prefix = prefix
+
+		it := txn.NewIterator(opts)
+		defer it.Close()
+
+		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+
+			item := it.Item()
+
+			key := item.KeyCopy(nil)
+
+			value, err := item.ValueCopy(nil)
+			if err != nil {
+				return fmt.Errorf("copy badger value: %w", err)
+			}
+
+			data, err := decode(key, value)
+			if err != nil {
+				return fmt.Errorf(
+					"decode badger key %q: %w",
+					string(key),
+					err,
+				)
+			}
+
+			// Empty Namespace means this item was filtered out by decode.
+			if data.Namespace == "" {
+				continue
+			}
+
+			if err := consume(data); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+}
+
+func (c *BadgerRepo) validateWritePath(
+	namespace string,
+	refIDs []string,
+	id string,
+) error {
+	if err := c.validateRepository(); err != nil {
+		return err
+	}
+
+	if namespace == "" || namespace == "*" {
+		return ErrInvalidNamespace
+	}
+
+	if len(refIDs) != c.RefSize {
+		return fmt.Errorf(
+			"%w: expected %d, got %d",
+			ErrInvalidRefSize,
+			c.RefSize,
+			len(refIDs),
+		)
+	}
+
+	for i, refID := range refIDs {
+		if refID == "" || refID == "*" {
+			return fmt.Errorf(
+				"%w at index %d",
+				ErrInvalidRefID,
+				i,
+			)
+		}
+	}
+
+	if id == "" || id == "*" {
+		return ErrInvalidID
+	}
+
+	return nil
+}
+
+func (c *BadgerRepo) validateReadPath(
+	namespace string,
+	refIDs []string,
+	id string,
+) error {
+	if err := c.validateRepository(); err != nil {
+		return err
+	}
+
+	if namespace == "" {
+		return ErrInvalidNamespace
+	}
+
+	if len(refIDs) > c.RefSize {
+		return fmt.Errorf(
+			"%w: maximum %d, got %d",
+			ErrInvalidRefSize,
+			c.RefSize,
+			len(refIDs),
+		)
+	}
+
+	for i, refID := range refIDs {
+		if refID == "" || refID == "*" {
+			return fmt.Errorf(
+				"%w at index %d",
+				ErrInvalidRefID,
+				i,
+			)
+		}
+	}
+
+	if id == "*" {
+		return ErrInvalidID
+	}
+
+	return nil
+}
+
+func (c *BadgerRepo) validateRepository() error {
+	if c.db == nil {
+		return errors.New("badger database is nil")
+	}
+
+	if c.TableName == "" {
+		return errors.New("table name is required")
+	}
+
+	if c.RefSize < 0 {
+		return errors.New("ref size cannot be negative")
+	}
+
+	return nil
+}
+
+func (c *BadgerRepo) tablePrefix() []byte {
+	return []byte(c.TableName)
+}
+
+func (c *BadgerRepo) queryPrefix(
+	namespace string,
+	refIDs []string,
+	id string,
+) []byte {
+	return c.dataKey(namespace, refIDs, id)
+}
+
+func (c *BadgerRepo) dataKey(
+	namespace string,
+	refIDs []string,
+	id string,
+) []byte {
+	return buildKey(
+		false,
+		c.TableName,
+		namespace,
+		refIDs,
+		id,
+	)
+}
+
+type decodedDataKey struct {
+	Namespace string
+	RefIDs    []string
+	ID        string
+}
+
+func (c *BadgerRepo) decodeDataKey(key []byte) (decodedDataKey, error) {
+	raw := string(key)
+
+	raw = strings.TrimPrefix(raw, "vsn!")
+
+	if !strings.HasPrefix(raw, c.TableName) {
+		return decodedDataKey{}, errors.New(
+			"key does not belong to table",
+		)
+	}
+
+	raw = strings.TrimPrefix(raw, c.TableName)
+
+	var result decodedDataKey
+
+	if idx := strings.LastIndex(raw, "::"); idx >= 0 {
+		result.ID = raw[idx+2:]
+		raw = raw[:idx]
+
+		if result.ID == "" {
+			return decodedDataKey{}, ErrInvalidID
+		}
+	}
+
+	if raw == "" {
+		return result, nil
+	}
+
+	if !strings.HasPrefix(raw, "__") {
+		return decodedDataKey{}, errors.New(
+			"invalid content key namespace",
+		)
+	}
+
+	raw = strings.TrimPrefix(raw, "__")
+
+	if idx := strings.IndexByte(raw, '_'); idx >= 0 {
+		result.Namespace = raw[:idx]
+		raw = raw[idx+1:]
+	} else {
+		result.Namespace = raw
+		raw = ""
+	}
+
+	if result.Namespace == "" {
+		return decodedDataKey{}, ErrInvalidNamespace
+	}
+
+	if raw == "" {
+		return result, nil
+	}
+
+	parts := strings.Split(raw, "|")
+
+	result.RefIDs = make([]string, 0, len(parts))
+
+	for _, refID := range parts {
+		if refID == "" {
+			return decodedDataKey{}, ErrInvalidRefID
+		}
+
+		result.RefIDs = append(result.RefIDs, refID)
+	}
 
 	return result, nil
 }
 
-func buildKey(versioned bool, tableName, namespace string, refIDs []string, ID string) []byte {
-	// + validation or non printable
-	var key string
-
-	if versioned {
-		key = "vsn!"
+func matchesQuery(
+	key decodedDataKey,
+	namespace string,
+	refIDs []string,
+	id string,
+) bool {
+	if namespace != "*" && key.Namespace != namespace {
+		return false
 	}
 
-	key = key + tableName
+	if len(key.RefIDs) < len(refIDs) {
+		return false
+	}
+
+	for i, refID := range refIDs {
+		if key.RefIDs[i] != refID {
+			return false
+		}
+	}
+
+	if id != "" && key.ID != id {
+		return false
+	}
+
+	return true
+}
+
+func buildKey(
+	versioned bool,
+	tableName string,
+	namespace string,
+	refIDs []string,
+	id string,
+) []byte {
+	var builder strings.Builder
+
+	if versioned {
+		builder.WriteString("vsn!")
+	}
+
+	builder.WriteString(tableName)
 
 	if namespace != "" {
 		if namespace == "*" {
 			namespace = ""
 		}
-		key = key + "__" + namespace
+
+		builder.WriteString("__")
+		builder.WriteString(namespace)
 	}
+
 	if len(refIDs) > 0 {
-		key = key + "_"
-		for _, refID := range refIDs[:len(refIDs)-1] {
-			key = key + refID + "|"
-		}
-		key = key + refIDs[len(refIDs)-1]
+		builder.WriteByte('_')
+		builder.WriteString(strings.Join(refIDs, "|"))
 	}
-	if ID != "" {
-		key = key + "::" + ID
+
+	if id != "" {
+		builder.WriteString("::")
+		builder.WriteString(id)
 	}
-	// todo: with strings builder
-	return []byte(key)
+
+	return []byte(builder.String())
+}
+
+func cloneBytes(value []byte) []byte {
+	if value == nil {
+		return nil
+	}
+
+	return append([]byte(nil), value...)
+}
+
+func cloneStrings(value []string) []string {
+	if value == nil {
+		return nil
+	}
+
+	return append([]string(nil), value...)
 }
