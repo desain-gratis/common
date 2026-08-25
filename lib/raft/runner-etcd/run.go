@@ -24,15 +24,17 @@ import (
 	"go.uber.org/zap"
 )
 
-func RunWithConfig(cfgPath string, app dgraft.ApplicationV2) (context.Context, chan string, error) {
+func RunWithConfig(cfgPath string, partitionID string, app dgraft.ApplicationV2) (context.Context, chan string, error) {
 	cfg, err := readEtcdRaftConfig(cfgPath)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	cluster := cfg.GetStringSlice("cluster")
-	id := cfg.GetInt("id")
-	join := cfg.GetBool("join")
+	partitionCfg := cfg.Sub(partitionID)
+
+	cluster := partitionCfg.GetStringSlice("cluster")
+	id := partitionCfg.GetInt("id")
+	join := partitionCfg.GetBool("join")
 
 	// proposeC := make(chan string)
 	// defer close(proposeC)
@@ -40,8 +42,8 @@ func RunWithConfig(cfgPath string, app dgraft.ApplicationV2) (context.Context, c
 	// defer close(confChangeC)
 
 	rw, err := startRaft(
-		fmt.Sprintf("raftexample-%d-snap", id),
-		fmt.Sprintf("raftexample-%d", id), // todo: configurable
+		fmt.Sprintf("%s-%d-snap", partitionID, id),
+		fmt.Sprintf("%s-%d", partitionID, id), // todo: configurable
 		id,
 		cluster,
 		join,
@@ -279,7 +281,7 @@ func startRaft(snapdir, waldir string, id int, peers []string, join bool, app dg
 func readEtcdRaftConfig(cfgFile string) (cfg *viper.Viper, err error) {
 	f, err := os.Open(cfgFile)
 	if err != nil {
-		log.Fatal("failed to open file %v", cfgFile)
+		log.Fatalf("failed to open config file: %v", err)
 	}
 
 	v := viper.New()
@@ -287,10 +289,10 @@ func readEtcdRaftConfig(cfgFile string) (cfg *viper.Viper, err error) {
 	v.SetConfigType("yaml")
 	err = v.ReadConfig(f)
 	if err != nil {
-		log.Fatal("failed to read dragonboat config %v %v", cfgFile, err)
+		log.Fatalf("failed to read dragonboat config %v %v", cfgFile, err)
 	}
 
-	log.Printf("reading config: %v", cfgFile)
+	log.Printf("reading config: '%v'", cfgFile)
 
 	return v, nil
 }

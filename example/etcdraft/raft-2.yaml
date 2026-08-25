@@ -1,7 +1,8 @@
-id: 3
-cluster:
-  - http://localhost:9101
-  - http://localhost:9102
-  - http://localhost:9103
-bind_address: localhost:9103
-join: false
+user-profile:
+  id: 3
+  cluster:
+    - http://localhost:9101
+    - http://localhost:9102
+    - http://localhost:9103
+  bind_address: localhost:9103
+  join: false

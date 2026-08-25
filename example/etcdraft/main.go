@@ -47,6 +47,7 @@ func main() {
 	// Run the raft engine for this app
 	raftCtx, in, _ := runneretcd.RunWithConfig(
 		configPath,
+		"user-profile",
 		badgerStorageApp,
 	)
 
