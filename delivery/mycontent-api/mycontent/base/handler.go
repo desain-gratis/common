@@ -293,7 +293,6 @@ func (c *Handler[T]) Delete(ctx context.Context, namespace string, refIDs []stri
 	}
 
 	parsedResult.WithID(d.ID)
-	parsedResult.WithID(d.ID)
 	if d.Version > 0 {
 		parsedResult.WithVersion(d.Version)
 	}
