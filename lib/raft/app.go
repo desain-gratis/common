@@ -36,10 +36,10 @@ func WithRaftContext(ctx context.Context, runner any) context.Context {
 }
 
 type EntryV2 struct {
-	Index        uint64 `json:"index"`
-	Term         uint64 `json:"term"`
-	SourceNodeID uint64 `json:"source_node_id"`
-	RequestID    uint64 `json:"request_id"` // or subscribe ID
+	Index          uint64 `json:"index"`
+	Term           uint64 `json:"term"`
+	SourceNodeID   uint64 `json:"source_node_id"`
+	SubscriptionID string `json:"subscription_id"` // or subscription ID
 
 	Data []byte `json:"data"`
 }
@@ -53,8 +53,11 @@ type ResultV2 struct {
 	// or code
 	Value uint64
 
+	SubscriptionID string
+
 	// the payload
-	Data []byte
+	Data  any
+	Error error
 }
 
 type Result sm.Result
@@ -70,7 +73,7 @@ type ApplicationV2 interface {
 
 	// Simpler API for distributed state machine
 	// If return error, we will acknowledge it as applied. If you don't want, just crash the state machine.
-	OnUpdateV2(ctx context.Context, entry EntryV2) ([]byte, error)
+	OnUpdateV2(ctx context.Context, entry EntryV2) (any, error)
 }
 
 // Application represents a dragonboat state machine application

@@ -2,15 +2,18 @@ package runneretcd
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"log"
 	"net"
 	"net/http"
 	"net/url"
+	"sync"
 	"time"
 
 	"github.com/desain-gratis/common/lib/notifier"
+	"github.com/desain-gratis/common/lib/notifier/impl"
 	dgraft "github.com/desain-gratis/common/lib/raft"
 	"go.etcd.io/etcd/client/pkg/v3/types"
 	"go.etcd.io/etcd/server/v3/etcdserver/api/rafthttp"
@@ -62,11 +65,42 @@ type commit struct {
 	applyDoneC chan<- struct{}
 }
 
+// Maybe we rename to ProposeSync
 func (rc *RaftContext) Propose(ctx context.Context, value []byte) (any, error) {
+	// potential security issue;
+	// generated subscription id s should be secure random
+	// inside the impl module, TODO.
+	// or we can use arbitrary value
+	subID := rand.Text()
+
+	sub, _ := rc.ApplyTopic.Subscribe(ctx, impl.NewStandardSubscriber(func(a any) bool {
+		// filter out other message
+		r, ok := a.(*dgraft.ResultV2)
+		return !ok || r.SubscriptionID != subID
+	}))
+
+	sub.Start()
+
+	var result *dgraft.ResultV2
+
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+
+		msg := <-sub.Listen()
+
+		r, ok := msg.(*dgraft.ResultV2)
+		if !ok {
+			return
+		}
+		result = r
+	}()
+
 	data := dgraft.EntryV2{
-		SourceNodeID: rc.id,
-		Data:         value,
-		// id term later
+		SourceNodeID:   rc.id,
+		Data:           value,
+		SubscriptionID: sub.ID(),
 	}
 	payload, err := json.Marshal(data)
 	if err != nil {
@@ -78,9 +112,12 @@ func (rc *RaftContext) Propose(ctx context.Context, value []byte) (any, error) {
 		return nil, err
 	}
 
-	// rc.ApplyTopic
+	wg.Wait()
+	if result == nil && ctx.Err() != nil {
+		return result, ctx.Err()
+	}
 
-	return nil, nil
+	return result.Data, result.Error
 }
 
 func (rc *RaftContext) serveRaft() {

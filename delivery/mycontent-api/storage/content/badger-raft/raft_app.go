@@ -119,7 +119,7 @@ func (s *badgerRaftApp) InitV2(ctx context.Context) (uint64, error) {
 
 // Simpler API for distributed state machine
 // If return error, we will acknowledge it as applied. If you don't want, just crash the state machine.
-func (s *badgerRaftApp) OnUpdateV2(ctx context.Context, e raft.EntryV2) ([]byte, error) {
+func (s *badgerRaftApp) OnUpdateV2(ctx context.Context, e raft.EntryV2) (any, error) {
 	cmd, err := parseAs[Command](e.Data)
 	if err != nil {
 		return nil, fmt.Errorf("%w: failed to parse command as JSON (%v)", err, string(e.Data))
@@ -156,13 +156,7 @@ func (s *badgerRaftApp) OnUpdateV2(ctx context.Context, e raft.EntryV2) ([]byte,
 		return nil, err
 	}
 
-	// Todo:
-	payload, err := json.Marshal(resp)
-	if err != nil {
-		return nil, err
-	}
-
-	return payload, nil
+	return resp, nil
 }
 
 // For external access

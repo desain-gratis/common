@@ -256,12 +256,10 @@ func startRaft(snapdir, waldir string, id int, peers []string, join bool, app dg
 
 				result, err := app.OnUpdateV2(ctx, entry)
 				resultWrapper := &dgraft.ResultV2{
-					Value: 0,
-					Data:  result,
-				}
-				if err != nil {
-					resultWrapper.Value = 1
-					resultWrapper.Data = []byte(err.Error())
+					Value:          0,
+					Data:           result,
+					Error:          err,
+					SubscriptionID: entry.SubscriptionID,
 				}
 				err = rc.ApplyTopic.Broadcast(ctx, resultWrapper)
 				if err != nil {

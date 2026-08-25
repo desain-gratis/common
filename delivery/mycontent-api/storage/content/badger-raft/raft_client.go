@@ -3,6 +3,7 @@ package badgerraft
 import (
 	"context"
 	"encoding/json"
+	"log"
 
 	"github.com/desain-gratis/common/delivery/mycontent-api/storage/content"
 	runneretcd "github.com/desain-gratis/common/lib/raft/runner-etcd"
@@ -46,7 +47,7 @@ func (c *badgerRaftRepo) Post(ctx context.Context, namespace string, refIDs []st
 		return content.Data{}, err
 	}
 
-	_ = result // because no additional info, ,we can return the request data only
+	data, _ = result.(content.Data) // because no additional info, ,we can return the request data only
 
 	return data, nil
 }
@@ -70,7 +71,9 @@ func (c *badgerRaftRepo) Delete(ctx context.Context, namespace string, refIDs []
 		return content.Data{}, err
 	}
 
-	_ = result
+	data, _ := result.(content.Data) // because no additional info, ,we can return the request data only
 
-	return content.Data{}, nil
+	log.Printf("DATANYA %v\n", string(data.Data))
+
+	return data, nil
 }
