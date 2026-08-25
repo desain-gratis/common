@@ -71,12 +71,14 @@ func (rc *RaftContext) Propose(ctx context.Context, value []byte) (any, error) {
 	// generated subscription id s should be secure random
 	// inside the impl module, TODO.
 	// or we can use arbitrary value
+
+	// TODO: use the number version to save memory?
 	subID := rand.Text()
 
 	sub, _ := rc.ApplyTopic.Subscribe(ctx, impl.NewStandardSubscriber(func(a any) bool {
 		// filter out other message
-		r, ok := a.(*dgraft.ResultV2)
-		return !ok || r.SubscriptionID != subID
+		msg, ok := a.(*dgraft.ResultV2)
+		return !ok || msg.SubscriptionID != subID
 	}))
 
 	sub.Start()
@@ -100,7 +102,7 @@ func (rc *RaftContext) Propose(ctx context.Context, value []byte) (any, error) {
 	data := dgraft.EntryV2{
 		SourceNodeID:   rc.id,
 		Data:           value,
-		SubscriptionID: sub.ID(),
+		SubscriptionID: subID,
 	}
 	payload, err := json.Marshal(data)
 	if err != nil {
