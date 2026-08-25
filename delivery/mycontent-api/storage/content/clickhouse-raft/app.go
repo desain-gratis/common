@@ -27,7 +27,6 @@ const (
 )
 
 var _ raft.Application = &ContentApp{}
-var _ raft.ApplicationV2 = &ContentApp{}
 
 type QueryMyContent struct {
 	Table     string   `json:"table"`
