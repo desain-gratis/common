@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 
 	"github.com/desain-gratis/common/delivery/mycontent-api/mycontent"
 	types "github.com/desain-gratis/common/types/http"
@@ -156,6 +157,10 @@ func (c *client[T]) get(ctx context.Context, authToken string, namespace string,
 		req.Header.Add("Authorization", "Bearer "+authToken)
 	}
 	req.Header.Add("X-Namespace", namespace)
+
+	if version := mycontent.GetEntityVersion(ctx); version > 0 {
+		req.Header.Add("DG-Version", strconv.FormatUint(version, 10))
+	}
 
 	// sff udrt sorg
 

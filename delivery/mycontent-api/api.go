@@ -152,6 +152,18 @@ func (i *service[T]) Get(w http.ResponseWriter, r *http.Request, p httprouter.Pa
 		return
 	}
 
+	versionS := r.Header.Get("DG-Version")
+	if versionS != "" {
+		version, err := strconv.ParseUint(versionS, 10, 64)
+		if err != nil {
+			handleError(
+				w, "BAD_REQUEST", "'DG-Version' header specified, but contain non uint64 value",
+				http.StatusBadRequest, nil)
+			return
+		}
+		r.WithContext(mycontent.WithEntityVersion(r.Context(), version))
+	}
+
 	invalidParams := validateParams(i.whitelistParams, r.URL.Query())
 	if len(invalidParams) > 0 {
 		handleError(

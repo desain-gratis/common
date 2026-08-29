@@ -159,11 +159,23 @@ func (c *VersionedBadgerRepo) Get(
 		return nil, err
 	}
 
+	if err := c.validateVersionQuery(ctx, refIDs, id); err != nil {
+		return nil, err
+	}
+
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 
-	dataCh, errCh := c.stream(ctx, namespace, refIDs, id)
+	version := mycontent.GetEntityVersion(ctx)
+
+	dataCh, errCh := c.stream(
+		ctx,
+		namespace,
+		refIDs,
+		id,
+		version,
+	)
 
 	result := make([]content.Data, 0)
 
@@ -376,11 +388,23 @@ func (c *VersionedBadgerRepo) Stream(
 		return nil, err
 	}
 
+	if err := c.validateVersionQuery(ctx, refIDs, id); err != nil {
+		return nil, err
+	}
+
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 
-	dataCh, _ := c.stream(ctx, namespace, refIDs, id)
+	version := mycontent.GetEntityVersion(ctx)
+
+	dataCh, _ := c.stream(
+		ctx,
+		namespace,
+		refIDs,
+		id,
+		version,
+	)
 
 	return dataCh, nil
 }
@@ -399,6 +423,7 @@ func (c *VersionedBadgerRepo) stream(
 	namespace string,
 	refIDs []string,
 	id string,
+	requestedVersion uint64,
 ) (<-chan content.Data, <-chan error) {
 	dataCh := make(chan content.Data)
 	errCh := make(chan error, 1)
@@ -446,16 +471,35 @@ func (c *VersionedBadgerRepo) stream(
 					continue
 				}
 
-				version, err := c.getEntryVersion(
-					txn,
-					versionKey,
-				)
-				if err != nil {
-					return fmt.Errorf(
-						"read version for %q: %w",
-						string(versionKey),
-						err,
+				var version uint32
+
+				if requestedVersion == 0 {
+					// Normal behavior: resolve the latest version from
+					// the version index.
+					version, err = c.getEntryVersion(
+						txn,
+						versionKey,
 					)
+					if err != nil {
+						return fmt.Errorf(
+							"read latest version for %q: %w",
+							string(versionKey),
+							err,
+						)
+					}
+
+					if version == 0 {
+						return mycontent.ErrNotFound
+					}
+				} else {
+					if requestedVersion > math.MaxUint32 {
+						return fmt.Errorf(
+							"requested version %d exceeds uint32",
+							requestedVersion,
+						)
+					}
+
+					version = uint32(requestedVersion)
 				}
 
 				entryKey := c.entryKey(
@@ -467,12 +511,7 @@ func (c *VersionedBadgerRepo) stream(
 
 				entry, err := txn.Get(entryKey)
 				if errors.Is(err, badger.ErrKeyNotFound) {
-					// The version index exists but the actual data does
-					// not. This indicates inconsistent storage.
-					//
-					// Preserve the previous behavior of skipping it,
-					// rather than failing the entire query.
-					continue
+					return mycontent.ErrNotFound
 				}
 				if err != nil {
 					return fmt.Errorf(
@@ -509,7 +548,10 @@ func (c *VersionedBadgerRepo) stream(
 		})
 
 		if err != nil {
-			errCh <- fmt.Errorf("stream versioned content: %w", err)
+			errCh <- fmt.Errorf(
+				"stream versioned content: %w",
+				err,
+			)
 		}
 	}()
 
@@ -597,4 +639,31 @@ func (c *VersionedBadgerRepo) entryKey(
 		actualRefIDs,
 		strconv.FormatUint(uint64(version), 10),
 	)
+}
+
+func (c *VersionedBadgerRepo) validateVersionQuery(
+	ctx context.Context,
+	refIDs []string,
+	id string,
+) error {
+	version := mycontent.GetEntityVersion(ctx)
+	if version == 0 {
+		return nil
+	}
+
+	if id == "" {
+		return fmt.Errorf(
+			"versioned query requires an ID",
+		)
+	}
+
+	if len(refIDs) != c.RefSize {
+		return fmt.Errorf(
+			"versioned query requires complete refIDs: expected %d, got %d",
+			c.RefSize,
+			len(refIDs),
+		)
+	}
+
+	return nil
 }
