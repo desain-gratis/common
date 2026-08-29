@@ -28,6 +28,10 @@ type BadgerRepo struct {
 	RefSize   int
 }
 
+// TODO: differentiate error with standard desain.gratis content error
+// so it can be differentiated between client error / validation or server error
+// standarized error interface of DG
+//
 // New creates a Badger-backed content repository.
 func New(db *badger.DB, tableName string, refSize int) *BadgerRepo {
 	return &BadgerRepo{

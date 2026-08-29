@@ -102,7 +102,7 @@ func (s *ContentApp) OnUpdateV2(ctx context.Context, entry raft.EntryV2) ([]byte
 func (s *ContentApp) GetStorage(tableName string) (content.Repository, error) {
 	tableCfg, ok := s.tableConfig[tableName]
 	if !ok {
-		return nil, errors.New("table not found")
+		return nil, fmt.Errorf("table not found: %s", tableName)
 	}
 
 	return &repository{

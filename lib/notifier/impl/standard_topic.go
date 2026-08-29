@@ -50,7 +50,7 @@ func (s *standardTopic) Subscribe(ctx context.Context, csf notifier.CreateSubscr
 
 	subs := csf(ctx, getKey(id))
 
-	log.Info().Msgf("topic: created new %v", id)
+	// log.Info().Msgf("topic: created new %v", id)
 
 	s.lock.Lock()
 	s.listener[id] = subs
@@ -62,7 +62,7 @@ func (s *standardTopic) Subscribe(ctx context.Context, csf notifier.CreateSubscr
 		s.lock.Lock()
 		defer s.lock.Unlock()
 		delete(s.listener, id)
-		log.Info().Msgf("topic: closed properly %v", id)
+		// log.Info().Msgf("topic: closed properly %v", id)
 	}(id)
 
 	return s.listener[id], nil

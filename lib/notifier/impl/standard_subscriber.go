@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/rs/zerolog/log"
+	// "github.com/rs/zerolog/log"
 
 	"github.com/desain-gratis/common/lib/notifier"
 )
@@ -56,7 +56,7 @@ func NewStandardSubscriber(filterOutFn func(any) bool) notifier.CreateSubscripti
 			filterOutFn = NoOp
 		}
 
-		log.Info().Msgf("subscription member: created %v", id)
+		// log.Info().Msgf("subscription member: created %v", id)
 
 		// main listener
 		go func() {
@@ -64,13 +64,13 @@ func NewStandardSubscriber(filterOutFn func(any) bool) notifier.CreateSubscripti
 			defer func() {
 				wg.Wait()
 				close(c.listenCh)
-				log.Info().Msgf("subscription member: closed properly %v", id)
+				// log.Info().Msgf("subscription member: closed properly %v", id)
 			}()
 
 			for {
 				select {
 				case <-ctx.Done():
-					log.Info().Msgf("subscription member: closing %v cause: %v", id, context.Cause(ctx))
+					// log.Info().Msgf("subscription member: closing %v cause: %v", id, context.Cause(ctx))
 
 					c.closed.Store(true)
 					close(c.receiveCh)
@@ -81,7 +81,7 @@ func NewStandardSubscriber(filterOutFn func(any) bool) notifier.CreateSubscripti
 						continue
 					}
 
-					log.Info().Msgf("subscription member: listen timed out %v", id)
+					// log.Info().Msgf("subscription member: listen timed out %v", id)
 
 					c.closed.Store(true)
 					close(c.receiveCh)

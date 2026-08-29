@@ -51,6 +51,11 @@ func main() {
 		badgerStorageApp,
 	)
 
+	// lets pass the version parameter via context in the client. 
+	// and allow delivery to accept this parameter, and pass it via context
+	//  maybe in the mycontent interface we define it (the context setter & getter)
+	// and it will be ready to be used in the repo (just like the error)
+
 	userProfileRepo, err := badgerStorageApp.GetContentRepository(raftCtx, "user_profile")
 	if err != nil {
 		return
