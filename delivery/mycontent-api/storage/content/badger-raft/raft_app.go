@@ -23,7 +23,7 @@ const (
 )
 
 // This is a raft application that able to produce multiple "badger" repository
-var _ raft.ApplicationV2 = &badgerRaftApp{}
+var _ raft.ApplicationV2 = &BadgerRaftApp{}
 
 type QueryMyContent struct {
 	Table     string   `json:"table"`
@@ -46,7 +46,7 @@ type DataWrapper struct {
 	Meta      json.RawMessage `json:"meta,omitempty"` // omitempty
 }
 
-type badgerRaftApp struct {
+type BadgerRaftApp struct {
 	// state
 	db            *badger.DB
 	tableConfig   map[string]TableConfig
@@ -66,7 +66,7 @@ func NewWithFile() {
 }
 
 // The Raft Application
-func New(db *badger.DB, tableConfig ...TableConfig) *badgerRaftApp {
+func New(db *badger.DB, tableConfig ...TableConfig) *BadgerRaftApp {
 	tableConfigMap := make(map[string]TableConfig)
 	repositoryMap := make(map[string]content.Repository)
 
@@ -82,14 +82,14 @@ func New(db *badger.DB, tableConfig ...TableConfig) *badgerRaftApp {
 		}
 	}
 
-	return &badgerRaftApp{
+	return &BadgerRaftApp{
 		db:            db,
 		tableConfig:   tableConfigMap,
 		repositoryMap: repositoryMap,
 	}
 }
 
-func (s *badgerRaftApp) InitV2(ctx context.Context) (uint64, error) {
+func (s *BadgerRaftApp) InitV2(ctx context.Context) (uint64, error) {
 	tmp := make([]byte, 0, 8)
 	err := s.db.View(func(txn *badger.Txn) error {
 		// todo: make the delete/post inside here as well.. later
@@ -119,7 +119,7 @@ func (s *badgerRaftApp) InitV2(ctx context.Context) (uint64, error) {
 
 // Simpler API for distributed state machine
 // If return error, we will acknowledge it as applied. If you don't want, just crash the state machine.
-func (s *badgerRaftApp) OnUpdateV2(ctx context.Context, e raft.EntryV2) (any, error) {
+func (s *BadgerRaftApp) OnUpdateV2(ctx context.Context, e raft.EntryV2) (any, error) {
 	cmd, err := parseAs[Command](e.Data)
 	if err != nil {
 		return nil, fmt.Errorf("%w: failed to parse command as JSON (%v)", err, string(e.Data))
@@ -160,16 +160,17 @@ func (s *badgerRaftApp) OnUpdateV2(ctx context.Context, e raft.EntryV2) (any, er
 }
 
 // For external access
-func (s *badgerRaftApp) GetContentRepository(ctx context.Context, tableName string) (*badgerRaftRepo, error) {
+// Todo: rename to GetRaftRepository or GetRaftEnabledRepository
+func (s *BadgerRaftApp) GetContentRepository(ctx context.Context, tableName string) (*badgerRaftRepo, error) {
 	repo, ok := s.repositoryMap[tableName]
 	if !ok {
-		return nil, errors.New("table not found")
+		return nil, fmt.Errorf("table not found: %s", tableName)
 	}
 
 	// right now we just use what we have
 	raftCtx, ok := raft.GetRaftContext(ctx).(*runneretcd.RaftContext)
 	if !ok {
-		return nil, fmt.Errorf("cannot raft maxxingo8i")
+		return nil, fmt.Errorf("cannot raft maxxing")
 	}
 
 	return &badgerRaftRepo{
