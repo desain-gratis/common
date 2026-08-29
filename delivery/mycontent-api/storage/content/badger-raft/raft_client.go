@@ -2,7 +2,6 @@ package badgerraft
 
 import (
 	"context"
-	"encoding/json"
 	"log"
 
 	"github.com/desain-gratis/common/delivery/mycontent-api/storage/content"
@@ -37,12 +36,8 @@ func (c *badgerRaftRepo) Post(ctx context.Context, namespace string, refIDs []st
 		ID:        ID,
 		Data:      data,
 	}
-	payload, err := json.Marshal(cmd)
-	if err != nil {
-		return content.Data{}, err
-	}
 
-	result, err := c.raftContext.Propose(ctx, payload)
+	result, err := c.raftContext.Propose(ctx, cmd)
 	if err != nil {
 		return content.Data{}, err
 	}
@@ -61,12 +56,8 @@ func (c *badgerRaftRepo) Delete(ctx context.Context, namespace string, refIDs []
 		RefIDs:    refIDs,
 		ID:        ID,
 	}
-	payload, err := json.Marshal(cmd)
-	if err != nil {
-		return content.Data{}, err
-	}
 
-	result, err := c.raftContext.Propose(ctx, payload)
+	result, err := c.raftContext.Propose(ctx, cmd)
 	if err != nil {
 		return content.Data{}, err
 	}

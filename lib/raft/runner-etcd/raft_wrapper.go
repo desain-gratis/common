@@ -66,7 +66,8 @@ type commit struct {
 }
 
 // Maybe we rename to ProposeSync
-func (rc *RaftContext) Propose(ctx context.Context, value []byte) (any, error) {
+// TODO as well, use better encoding eg. proto type.
+func (rc *RaftContext) Propose(ctx context.Context, value any) (any, error) {
 	// potential security issue;
 	// generated subscription id s should be secure random
 	// inside the impl module, TODO.
@@ -99,17 +100,26 @@ func (rc *RaftContext) Propose(ctx context.Context, value []byte) (any, error) {
 		result = r
 	}()
 
-	data := dgraft.EntryV2{
-		SourceNodeID:   rc.id,
-		Data:           value,
-		SubscriptionID: subID,
-	}
-	payload, err := json.Marshal(data)
+	reqPayload, err := json.Marshal(value)
 	if err != nil {
 		return nil, err
 	}
 
-	err = rc.node.Propose(ctx, payload)
+	// entry wrapper
+
+	data := dgraft.EntryV2{
+		SourceNodeID:   rc.id,
+		Data:           reqPayload,
+		SubscriptionID: subID,
+	}
+
+	// todo: use proto
+	wrappedPayload, err := json.Marshal(data)
+	if err != nil {
+		return nil, err
+	}
+
+	err = rc.node.Propose(ctx, wrappedPayload)
 	if err != nil {
 		return nil, err
 	}
