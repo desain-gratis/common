@@ -15,6 +15,12 @@ type badgerRaftRepo struct {
 	raftContext *runneretcd.RaftContext // specific
 }
 
+type versionedBadgerRaftRepo struct {
+	content.VersionedRepository
+	TableName   string
+	raftContext *runneretcd.RaftContext // specific
+}
+
 type Command struct {
 	Name    string `json:"name"`
 	Version string `json:"version"`

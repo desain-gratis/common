@@ -7,12 +7,11 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/desain-gratis/common/delivery/mycontent-api/mycontent"
 	"github.com/desain-gratis/common/lib/raft"
 	"github.com/lni/dragonboat/v4"
 	dclient "github.com/lni/dragonboat/v4/client"
 	"github.com/lni/dragonboat/v4/statemachine"
-
-	"github.com/desain-gratis/common/delivery/mycontent-api/storage/content"
 )
 
 var (
@@ -95,7 +94,7 @@ func (c *Client) Query(ctx context.Context, msg any) (any, error) {
 		}
 		errg = err
 		cancel()
-		if errors.Is(err, content.ErrInvalidKey) || errors.Is(err, content.ErrNotFound) {
+		if errors.Is(err, mycontent.ErrInvalidKey) || errors.Is(err, mycontent.ErrNotFound) {
 			return nil, err
 		}
 

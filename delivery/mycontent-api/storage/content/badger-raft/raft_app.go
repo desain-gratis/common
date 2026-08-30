@@ -48,9 +48,10 @@ type DataWrapper struct {
 
 type BadgerRaftApp struct {
 	// state
-	db            *badger.DB
-	tableConfig   map[string]TableConfig
-	repositoryMap map[string]content.Repository
+	db             *badger.DB
+	tableConfig    map[string]TableConfig
+	repos          map[string]*content_badger.BadgerRepo
+	versionedRepos map[string]*content_badger.VersionedBadgerRepo
 }
 
 type TableConfig struct {
@@ -68,7 +69,9 @@ func NewWithFile() {
 // The Raft Application
 func New(db *badger.DB, tableConfig ...TableConfig) *BadgerRaftApp {
 	tableConfigMap := make(map[string]TableConfig)
-	repositoryMap := make(map[string]content.Repository)
+
+	repos := make(map[string]*content_badger.BadgerRepo)
+	versionedRepos := make(map[string]*content_badger.VersionedBadgerRepo)
 
 	for _, c := range tableConfig {
 		tableConfigMap[c.Name] = c
@@ -76,16 +79,17 @@ func New(db *badger.DB, tableConfig ...TableConfig) *BadgerRaftApp {
 			log.Panic().Msgf("invalid refSize: %v", c.RefSize)
 		}
 		if !c.Versioned {
-			repositoryMap[c.Name] = content_badger.New(db, c.Name, c.RefSize)
+			repos[c.Name] = content_badger.New(db, c.Name, c.RefSize)
 		} else {
-			repositoryMap[c.Name] = content_badger.NewVersioned(db, c.Name, c.RefSize)
+			versionedRepos[c.Name] = content_badger.NewVersioned(db, c.Name, c.RefSize)
 		}
 	}
 
 	return &BadgerRaftApp{
-		db:            db,
-		tableConfig:   tableConfigMap,
-		repositoryMap: repositoryMap,
+		db:             db,
+		tableConfig:    tableConfigMap,
+		repos:          repos,
+		versionedRepos: versionedRepos,
 	}
 }
 
@@ -117,6 +121,16 @@ func (s *BadgerRaftApp) InitV2(ctx context.Context) (uint64, error) {
 	return lastAppliedIndex, nil
 }
 
+func (s *BadgerRaftApp) getRepository(tablelName string) (content.Repository, bool) {
+	if repo, ok := s.repos[tablelName]; ok {
+		return repo, true
+	}
+	if repo, ok := s.versionedRepos[tablelName]; ok {
+		return repo, true
+	}
+	return nil, false
+}
+
 // Simpler API for distributed state machine
 // If return error, we will acknowledge it as applied. If you don't want, just crash the state machine.
 func (s *BadgerRaftApp) OnUpdateV2(ctx context.Context, e raft.EntryV2) (any, error) {
@@ -125,7 +139,7 @@ func (s *BadgerRaftApp) OnUpdateV2(ctx context.Context, e raft.EntryV2) (any, er
 		return nil, fmt.Errorf("%w: failed to parse command as JSON (%v)", err, string(e.Data))
 	}
 
-	repo, ok := s.repositoryMap[cmd.TableName]
+	repo, ok := s.getRepository(cmd.TableName)
 	if !ok {
 		return nil, fmt.Errorf("table not found: %s", cmd.TableName)
 	}
@@ -159,10 +173,26 @@ func (s *BadgerRaftApp) OnUpdateV2(ctx context.Context, e raft.EntryV2) (any, er
 	return resp, nil
 }
 
+func (s *BadgerRaftApp) GetVersionedContentRepository(ctx context.Context, tableName string) (*versionedBadgerRaftRepo, error) {
+	if repo, ok := s.versionedRepos[tableName]; ok {
+		// right now we just use what we have
+		raftCtx, ok := raft.GetRaftContext(ctx).(*runneretcd.RaftContext)
+		if !ok {
+			return nil, fmt.Errorf("cannot raft maxxing")
+		}
+		return &versionedBadgerRaftRepo{
+			VersionedRepository: repo,
+			TableName:           tableName,
+			raftContext:         raftCtx,
+		}, nil
+	}
+	return nil, fmt.Errorf("table not found: %s", tableName)
+}
+
 // For external access
 // Todo: rename to GetRaftRepository or GetRaftEnabledRepository
 func (s *BadgerRaftApp) GetContentRepository(ctx context.Context, tableName string) (*badgerRaftRepo, error) {
-	repo, ok := s.repositoryMap[tableName]
+	repo, ok := s.getRepository(tableName)
 	if !ok {
 		return nil, fmt.Errorf("table not found: %s", tableName)
 	}
