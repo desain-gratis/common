@@ -8,6 +8,7 @@ import (
 
 	"github.com/dgraph-io/badger/v4"
 
+	"github.com/desain-gratis/common/delivery/mycontent-api/mycontent"
 	"github.com/desain-gratis/common/delivery/mycontent-api/storage/content"
 )
 
@@ -33,6 +34,7 @@ type BadgerRepo struct {
 // standarized error interface of DG
 //
 // New creates a Badger-backed content repository.
+// simple KV
 func New(db *badger.DB, tableName string, refSize int) *BadgerRepo {
 	return &BadgerRepo{
 		db:        db,
@@ -139,7 +141,7 @@ func (c *BadgerRepo) Get(
 	}
 
 	if id != "" && len(result) == 0 {
-		return nil, content.ErrNotFound
+		return nil, fmt.Errorf("get %w: id=%s refIds=%v", mycontent.ErrNotFound, id, refIDs)
 	}
 
 	return result, nil
@@ -173,7 +175,7 @@ func (c *BadgerRepo) Delete(
 
 		item, err := txn.Get(key)
 		if errors.Is(err, badger.ErrKeyNotFound) {
-			return content.ErrNotFound
+			return fmt.Errorf("delete %w: id=%s refIds=%v", mycontent.ErrNotFound, id, refIDs)
 		}
 		if err != nil {
 			return err

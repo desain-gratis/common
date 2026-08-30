@@ -7,16 +7,17 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sort"
 	"strconv"
-	"strings"
 
 	"github.com/dgraph-io/badger/v4"
+	"github.com/rs/zerolog/log"
 
 	"github.com/desain-gratis/common/delivery/mycontent-api/mycontent"
 	"github.com/desain-gratis/common/delivery/mycontent-api/storage/content"
 )
 
-var _ content.Repository = (*VersionedBadgerRepo)(nil)
+var _ content.VersionedRepository = (*VersionedBadgerRepo)(nil)
 
 // VersionedBadgerRepo stores:
 //
@@ -33,24 +34,247 @@ type VersionedBadgerRepo struct {
 }
 
 // NewVersioned creates a versioned Badger repository.
+// return also accompanied ordinary repo with "auto increment"
 func NewVersioned(
 	db *badger.DB,
 	tableName string,
 	refSize int,
-) *VersionedBadgerRepo {
-	return &VersionedBadgerRepo{
-		BadgerRepo: &BadgerRepo{
-			db:        db,
-			TableName: tableName,
-			RefSize:   refSize,
-		},
+) (*VersionedBadgerRepo, *VersionedBadgerRepo) {
+	// TODO: refactormaxxing, integrate physically with auto-increment
+	base := &BadgerRepo{
+		db:        db,
+		TableName: tableName,
+		RefSize:   refSize,
 	}
+	return &VersionedBadgerRepo{
+			BadgerRepo: base,
+		}, &VersionedBadgerRepo{
+			BadgerRepo: base,
+		}
+}
+
+func (c *VersionedBadgerRepo) GetByVersion(
+	ctx context.Context,
+	namespace string,
+	refIDs []string,
+	id string,
+	version uint64,
+) (content.Data, error) {
+	if err := c.validateReadPath(namespace, refIDs, id); err != nil {
+		return content.Data{}, err
+	}
+
+	if err := ctx.Err(); err != nil {
+		return content.Data{}, err
+	}
+
+	// Physical versions are stored as uint32.
+	if version == 0 || version > math.MaxUint32 {
+		return content.Data{}, mycontent.ErrNotFound
+	}
+
+	keyEntry := c.entryKey(
+		namespace,
+		refIDs,
+		id,
+		uint32(version),
+	)
+
+	var data []byte
+
+	err := c.db.View(func(txn *badger.Txn) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
+		item, err := txn.Get(keyEntry)
+		if errors.Is(err, badger.ErrKeyNotFound) {
+			return mycontent.ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+
+		data, err = item.ValueCopy(nil)
+		return err
+	})
+	if err != nil {
+		if errors.Is(err, mycontent.ErrNotFound) {
+			return content.Data{}, mycontent.ErrNotFound
+		}
+
+		return content.Data{}, fmt.Errorf(
+			"get versioned content: %w",
+			err,
+		)
+	}
+
+	return content.Data{
+		Namespace: namespace,
+		RefIDs:    cloneStrings(refIDs),
+		ID:        id,
+		Data:      data,
+		EventID:   version,
+		Version:   &version,
+	}, nil
+}
+
+func (c *VersionedBadgerRepo) GetAllVersion(
+	ctx context.Context,
+	namespace string,
+	refIDs []string,
+	id string,
+) ([]content.Data, error) {
+	if err := c.validateReadPath(namespace, refIDs, id); err != nil {
+		return nil, err
+	}
+
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	// The physical key is:
+	//
+	//	table__namespace_refIDs_ID::version
+	//
+	// Build the prefix without the version so we get every immutable
+	// version belonging to this logical entry.
+	actualRefIDs := make([]string, 0, len(refIDs)+1)
+	actualRefIDs = append(actualRefIDs, refIDs...)
+	actualRefIDs = append(actualRefIDs, id)
+
+	prefix := buildKey(
+		false,
+		c.TableName,
+		namespace,
+		actualRefIDs,
+		"",
+	)
+
+	result := make([]content.Data, 0)
+
+	err := c.db.View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		opts.PrefetchValues = true
+		opts.Prefix = prefix
+
+		it := txn.NewIterator(opts)
+		defer it.Close()
+
+		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+
+			item := it.Item()
+
+			key := item.KeyCopy(nil)
+
+			// Decode the physical key:
+			//
+			// namespace / refIDs / ID / version
+			//
+			// For a physical version key, decodeDataKey() gives us the
+			// logical ID plus the version as the leaf ID.
+			decoded, err := c.decodeDataKey(key)
+			if err != nil {
+				return fmt.Errorf(
+					"decode versioned key %q: %w",
+					string(key),
+					err,
+				)
+			}
+
+			// Physical keys have the logical ID as the final refID
+			// and the version as the leaf ID.
+			if len(decoded.RefIDs) == 0 {
+				return fmt.Errorf(
+					"invalid versioned key %q: missing logical ID",
+					string(key),
+				)
+			}
+
+			logicalRefIDs := decoded.RefIDs[:len(decoded.RefIDs)-1]
+			logicalID := decoded.RefIDs[len(decoded.RefIDs)-1]
+
+			// Make sure this is actually the requested logical entry.
+			if decoded.Namespace != namespace ||
+				logicalID != id ||
+				!matchesQuery(
+					decoded,
+					namespace,
+					append(cloneStrings(refIDs), id),
+					decoded.ID,
+				) {
+				continue
+			}
+
+			version, err := strconv.ParseUint(decoded.ID, 10, 32)
+			if err != nil {
+				return fmt.Errorf(
+					"invalid version %q in key %q: %w",
+					decoded.ID,
+					string(key),
+					err,
+				)
+			}
+
+			value, err := item.ValueCopy(nil)
+			if err != nil {
+				return fmt.Errorf(
+					"copy versioned entry: %w",
+					err,
+				)
+			}
+
+			result = append(result, content.Data{
+				Namespace: decoded.Namespace,
+				RefIDs:    cloneStrings(logicalRefIDs),
+				ID:        logicalID,
+				Data:      value,
+				EventID:   version,
+				Version:   &version,
+			})
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		if errors.Is(err, mycontent.ErrNotFound) {
+			return nil, mycontent.ErrNotFound
+		}
+
+		return nil, fmt.Errorf(
+			"get all versions: %w",
+			err,
+		)
+	}
+
+	// Badger iterates keys lexicographically. Since the version is stored
+	// as a decimal string, lexical ordering would produce:
+	//
+	//   1, 10, 11, 2, 3, ...
+	//
+	// Return versions in their natural numeric order instead.
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].Version == nil || result[j].Version == nil {
+			return false
+		}
+		return *result[i].Version < *result[j].Version
+	})
+
+	return result, nil
 }
 
 // Post writes a new immutable version of an entry.
 //
-// The version index and actual data are written in the same Badger
-// transaction, so the index cannot be committed without the data.
+// If data.Version is nil or zero, a new version is automatically allocated.
+//
+// If data.Version is specified, that exact version is overwritten. The version
+// must already exist; Post never creates a missing explicitly requested version.
+//
+// The version index and actual data are written in the same Badger transaction.
 func (c *VersionedBadgerRepo) Post(
 	ctx context.Context,
 	namespace string,
@@ -58,6 +282,7 @@ func (c *VersionedBadgerRepo) Post(
 	id string,
 	data content.Data,
 ) (content.Data, error) {
+
 	if err := c.validateWritePath(namespace, refIDs, id); err != nil {
 		return content.Data{}, err
 	}
@@ -82,6 +307,7 @@ func (c *VersionedBadgerRepo) Post(
 		refIDs,
 		id,
 	)
+	log.Info().Msgf("VN WRITTEN: %v", string(keyVersion))
 
 	var version uint32
 
@@ -90,50 +316,116 @@ func (c *VersionedBadgerRepo) Post(
 			return err
 		}
 
-		prevVersion, err := c.getEntryVersion(txn, keyVersion)
+		currentVersion, err := c.getEntryVersion(txn, keyVersion)
 		if err != nil {
 			return err
 		}
 
-		if prevVersion == math.MaxUint32 {
+		// ------------------------------------------------------------
+		// Explicit version
+		// ------------------------------------------------------------
+		if data.Version != nil && *data.Version != 0 {
+			if *data.Version > math.MaxUint32 {
+				return fmt.Errorf(
+					"version %d exceeds maximum supported version %d",
+					*data.Version,
+					math.MaxUint32,
+				)
+			}
+
+			version = uint32(*data.Version)
+
+			// An explicitly requested version must already exist.
+			keyEntry := c.entryKey(
+				namespace,
+				refIDs,
+				id,
+				version,
+			)
+
+			if _, err := txn.Get(keyEntry); errors.Is(err, badger.ErrKeyNotFound) {
+				return mycontent.ErrNotFound
+			} else if err != nil {
+				return fmt.Errorf(
+					"check version %d: %w",
+					version,
+					err,
+				)
+			}
+
+			// Overwrite the existing physical version.
+			if err := txn.Set(keyEntry, data.Data); err != nil {
+				return fmt.Errorf(
+					"overwrite versioned data: %w",
+					err,
+				)
+			}
+
+			// The version index only needs to change if the overwritten
+			// version is the current version. In that case it already
+			// contains the same version, so there is actually nothing
+			// to update.
+			//
+			// If version < currentVersion, leave the index untouched.
+			// This preserves the latest-version pointer.
+			_ = currentVersion
+
+			return nil
+		}
+
+		// ------------------------------------------------------------
+		// Automatic version
+		// ------------------------------------------------------------
+
+		if currentVersion == math.MaxUint32 {
 			return errors.New("content version exhausted")
 		}
 
-		version = prevVersion + 1
+		version = currentVersion + 1
 
-		// The actual data uses the logical ID as another refID, and
-		// the version becomes the physical leaf ID.
-		actualRefIDs := make([]string, 0, len(refIDs)+1)
-		actualRefIDs = append(actualRefIDs, refIDs...)
-		actualRefIDs = append(actualRefIDs, id)
-
-		keyEntry := buildKey(
-			false,
-			c.TableName,
+		keyEntry := c.entryKey(
 			namespace,
-			actualRefIDs,
-			strconv.FormatUint(uint64(version), 10),
+			refIDs,
+			id,
+			version,
 		)
+
+		log.Info().Msgf("VN WRITTEN ENTRY: %v", string(keyEntry))
 
 		var versionBuf [4]byte
 		binary.BigEndian.PutUint32(versionBuf[:], version)
 
+		// Update the current-version index.
 		if err := txn.Set(keyVersion, versionBuf[:]); err != nil {
-			return fmt.Errorf("write version index: %w", err)
+			return fmt.Errorf(
+				"write version index: %w",
+				err,
+			)
 		}
 
+		// Write the actual immutable version.
 		if err := txn.Set(keyEntry, data.Data); err != nil {
-			return fmt.Errorf("write versioned data: %w", err)
+			return fmt.Errorf(
+				"write versioned data: %w",
+				err,
+			)
 		}
 
 		return nil
 	})
+
 	if err != nil {
+		if errors.Is(err, mycontent.ErrNotFound) {
+			return content.Data{}, mycontent.ErrNotFound
+		}
+
 		return content.Data{}, fmt.Errorf(
 			"store versioned content: %w",
 			err,
 		)
 	}
+
+	v := uint64(version)
 
 	return content.Data{
 		Namespace: namespace,
@@ -142,7 +434,7 @@ func (c *VersionedBadgerRepo) Post(
 		Data:      cloneBytes(data.Data),
 		Meta:      cloneBytes(data.Meta),
 		EventID:   uint64(version),
-		Version:   uint64(version),
+		Version:   &v,
 	}, nil
 }
 
@@ -160,25 +452,11 @@ func (c *VersionedBadgerRepo) Get(
 		return nil, err
 	}
 
-	if err := c.validateVersionQuery(ctx, refIDs, id); err != nil {
-		return nil, err
-	}
-
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 
-	version := mycontent.GetEntityVersion(ctx)
-	getAllVersion := mycontent.GetAllVersion(ctx)
-
-	dataCh, errCh := c.stream(
-		ctx,
-		namespace,
-		refIDs,
-		id,
-		version,
-		getAllVersion,
-	)
+	dataCh, errCh := c.stream(ctx, namespace, refIDs, id)
 
 	result := make([]content.Data, 0)
 
@@ -367,13 +645,14 @@ func (c *VersionedBadgerRepo) Delete(
 		)
 	}
 
+	v := uint64(version)
 	return content.Data{
 		Namespace: namespace,
 		RefIDs:    cloneStrings(refIDs),
 		ID:        id,
 		Data:      previous,
 		EventID:   uint64(version),
-		Version:   uint64(version),
+		Version:   &v,
 	}, nil
 }
 
@@ -391,25 +670,11 @@ func (c *VersionedBadgerRepo) Stream(
 		return nil, err
 	}
 
-	if err := c.validateVersionQuery(ctx, refIDs, id); err != nil {
-		return nil, err
-	}
-
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 
-	version := mycontent.GetEntityVersion(ctx)
-	getAllVersion := mycontent.GetAllVersion(ctx)
-
-	dataCh, _ := c.stream(
-		ctx,
-		namespace,
-		refIDs,
-		id,
-		version,
-		getAllVersion,
-	)
+	dataCh, _ := c.stream(ctx, namespace, refIDs, id)
 
 	return dataCh, nil
 }
@@ -428,8 +693,6 @@ func (c *VersionedBadgerRepo) stream(
 	namespace string,
 	refIDs []string,
 	id string,
-	requestedVersion uint64,
-	getAllVersion bool,
 ) (<-chan content.Data, <-chan error) {
 	dataCh := make(chan content.Data)
 	errCh := make(chan error, 1)
@@ -438,252 +701,115 @@ func (c *VersionedBadgerRepo) stream(
 		defer close(dataCh)
 		defer close(errCh)
 
-		err := c.db.View(func(txn *badger.Txn) error {
-			if err := ctx.Err(); err != nil {
-				return err
-			}
+		prefix := c.versionQueryPrefix(
+			namespace,
+			refIDs,
+			id,
+		)
 
-			if getAllVersion || requestedVersion != 0 {
-				return c.streamLeafVersions(
-					ctx,
-					txn,
+		err := c.db.View(func(txn *badger.Txn) error {
+			opts := badger.DefaultIteratorOptions
+			opts.PrefetchValues = true
+			opts.Prefix = prefix
+
+			it := txn.NewIterator(opts)
+			defer it.Close()
+
+			for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+
+				versionKey := it.Item().KeyCopy(nil)
+
+				decoded, err := c.decodeDataKey(versionKey)
+				if err != nil {
+					return fmt.Errorf(
+						"decode version key %q: %w",
+						string(versionKey),
+						err,
+					)
+				}
+
+				if !matchesQuery(
+					decoded,
 					namespace,
 					refIDs,
 					id,
-					requestedVersion,
-					getAllVersion,
-					dataCh,
+				) {
+					continue
+				}
+
+				version, err := c.getEntryVersion(
+					txn,
+					versionKey,
 				)
+				if err != nil {
+					return fmt.Errorf(
+						"read version for %q: %w",
+						string(versionKey),
+						err,
+					)
+				}
+
+				entryKey := c.entryKey(
+					decoded.Namespace,
+					decoded.RefIDs,
+					decoded.ID,
+					version,
+				)
+
+				entry, err := txn.Get(entryKey)
+				if errors.Is(err, badger.ErrKeyNotFound) {
+					// The version index exists but the actual data does
+					// not. This indicates inconsistent storage.
+					//
+					// Preserve the previous behavior of skipping it,
+					// rather than failing the entire query.
+					continue
+				}
+				if err != nil {
+					return fmt.Errorf(
+						"read versioned entry: %w",
+						err,
+					)
+				}
+
+				entryData, err := entry.ValueCopy(nil)
+				if err != nil {
+					return fmt.Errorf(
+						"copy versioned entry: %w",
+						err,
+					)
+				}
+
+				v := uint64(version)
+
+				data := content.Data{
+					Namespace: decoded.Namespace,
+					RefIDs:    cloneStrings(decoded.RefIDs),
+					ID:        decoded.ID,
+					Data:      entryData,
+					EventID:   uint64(version),
+					Version:   &v,
+				}
+
+				select {
+				case dataCh <- data:
+				case <-ctx.Done():
+					return ctx.Err()
+				}
 			}
 
-			return c.streamLatest(
-				ctx,
-				txn,
-				namespace,
-				refIDs,
-				id,
-				dataCh,
-			)
+			return nil
 		})
 
 		if err != nil {
-			errCh <- fmt.Errorf(
-				"stream versioned content: %w",
-				err,
-			)
+			errCh <- fmt.Errorf("stream versioned content: %w", err)
 		}
 	}()
 
 	return dataCh, errCh
-}
-
-func (c *VersionedBadgerRepo) streamLeafVersions(
-	ctx context.Context,
-	txn *badger.Txn,
-	namespace string,
-	refIDs []string,
-	id string,
-	requestedVersion uint64,
-	getAllVersion bool,
-	dataCh chan<- content.Data,
-) error {
-	keyVersion := buildKey(
-		true,
-		c.TableName,
-		namespace,
-		refIDs,
-		id,
-	)
-
-	currentVersion, err := c.getEntryVersion(txn, keyVersion)
-	if err != nil {
-		return err
-	}
-
-	if currentVersion == 0 {
-		if getAllVersion {
-			return nil
-		}
-		return mycontent.ErrNotFound
-	}
-
-	if !getAllVersion {
-		if requestedVersion > math.MaxUint32 {
-			return fmt.Errorf(
-				"requested version %d exceeds uint32",
-				requestedVersion,
-			)
-		}
-
-		version := uint32(requestedVersion)
-
-		// A version cannot exist beyond the current version.
-		if version == 0 || version > currentVersion {
-			return mycontent.ErrNotFound
-		}
-
-		return c.streamLeafVersion(
-			ctx,
-			txn,
-			namespace,
-			refIDs,
-			id,
-			version,
-			dataCh,
-		)
-	}
-
-	// All versions.
-	for version := uint32(1); version <= currentVersion; version++ {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-
-		if err := c.streamLeafVersion(
-			ctx,
-			txn,
-			namespace,
-			refIDs,
-			id,
-			version,
-			dataCh,
-		); err != nil {
-			if errors.Is(err, mycontent.ErrNotFound) {
-				// A version may have been physically removed/corrupted.
-				// Don't silently manufacture a result for it.
-				return err
-			}
-
-			return err
-		}
-
-		// Avoid uint32 overflow at MaxUint32.
-		if version == math.MaxUint32 {
-			break
-		}
-	}
-
-	return nil
-}
-
-func (c *VersionedBadgerRepo) streamLeafVersion(
-	ctx context.Context,
-	txn *badger.Txn,
-	namespace string,
-	refIDs []string,
-	id string,
-	version uint32,
-	dataCh chan<- content.Data,
-) error {
-	actualRefIDs := make([]string, 0, len(refIDs)+1)
-	actualRefIDs = append(actualRefIDs, refIDs...)
-	actualRefIDs = append(actualRefIDs, id)
-
-	key := buildKey(
-		false,
-		c.TableName,
-		namespace,
-		actualRefIDs,
-		strconv.FormatUint(uint64(version), 10),
-	)
-
-	item, err := txn.Get(key)
-	if errors.Is(err, badger.ErrKeyNotFound) {
-		return mycontent.ErrNotFound
-	}
-	if err != nil {
-		return err
-	}
-
-	value, err := item.ValueCopy(nil)
-	if err != nil {
-		return err
-	}
-
-	result := content.Data{
-		Namespace: namespace,
-		RefIDs:    cloneStrings(refIDs),
-		ID:        id,
-		Data:      value,
-		EventID:   uint64(version),
-		Version:   uint64(version),
-	}
-
-	select {
-	case dataCh <- result:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-}
-
-func (c *VersionedBadgerRepo) streamLatest(
-	ctx context.Context,
-	txn *badger.Txn,
-	namespace string,
-	refIDs []string,
-	id string,
-	dataCh chan<- content.Data,
-) error {
-	prefix := buildKey(
-		true,
-		c.TableName,
-		namespace,
-		refIDs,
-		id,
-	)
-
-	opts := badger.DefaultIteratorOptions
-	opts.PrefetchValues = false // only iterate keys
-	opts.Prefix = prefix
-
-	it := txn.NewIterator(opts)
-	defer it.Close()
-
-	found := false
-
-	for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-
-		keyVersion := it.Item().KeyCopy(nil)
-
-		version, err := c.getEntryVersion(txn, keyVersion)
-		if err != nil {
-			return err
-		}
-
-		if version == 0 {
-			continue
-		}
-
-		entryNamespace, entryRefIDs, entryID, err :=
-			c.parseVersionKey(keyVersion)
-		if err != nil {
-			return err
-		}
-
-		if err := c.streamLeafVersion(
-			ctx,
-			txn,
-			entryNamespace,
-			entryRefIDs,
-			entryID,
-			version,
-			dataCh,
-		); err != nil {
-			return err
-		}
-
-		found = true
-	}
-
-	if id != "" && !found {
-		return mycontent.ErrNotFound
-	}
-
-	return nil
 }
 
 // getEntryVersion gets the current version from the version index.
@@ -767,107 +893,4 @@ func (c *VersionedBadgerRepo) entryKey(
 		actualRefIDs,
 		strconv.FormatUint(uint64(version), 10),
 	)
-}
-
-func (c *VersionedBadgerRepo) validateVersionQuery(
-	ctx context.Context,
-	refIDs []string,
-	id string,
-) error {
-	version := mycontent.GetEntityVersion(ctx)
-	getAllVersion := mycontent.GetAllVersion(ctx)
-
-	if !getAllVersion && version == 0 {
-		return nil
-	}
-
-	// Both historical-version queries and all-version queries operate
-	// on exactly one leaf.
-	if id == "" {
-		return fmt.Errorf(
-			"versioned query requires an ID",
-		)
-	}
-
-	if len(refIDs) != c.RefSize {
-		return fmt.Errorf(
-			"versioned query requires complete refIDs: expected %d, got %d",
-			c.RefSize,
-			len(refIDs),
-		)
-	}
-
-	return nil
-}
-
-func (c *VersionedBadgerRepo) parseVersionKey(key []byte) (
-	string,
-	[]string,
-	string,
-	error,
-) {
-	value := string(key)
-
-	const prefix = "vsn!"
-
-	if !strings.HasPrefix(value, prefix) {
-		return "", nil, "", fmt.Errorf(
-			"invalid version key: missing %q prefix: %q",
-			prefix,
-			value,
-		)
-	}
-
-	value = strings.TrimPrefix(value, prefix)
-
-	parts := strings.SplitN(value, "::", 2)
-	if len(parts) != 2 || parts[1] == "" {
-		return "", nil, "", fmt.Errorf(
-			"invalid version key: missing ID: %q",
-			string(key),
-		)
-	}
-
-	path := parts[0]
-	id := parts[1]
-
-	// The non-ID portion has the form:
-	//
-	//	tableName__namespace_ref1_ref2...
-	//
-	// The table name itself may contain underscores, so first remove
-	// it rather than blindly splitting the whole string.
-	tablePrefix := c.TableName + "__"
-
-	if !strings.HasPrefix(path, tablePrefix) {
-		return "", nil, "", fmt.Errorf(
-			"invalid version key: unexpected table prefix: %q",
-			string(key),
-		)
-	}
-
-	path = strings.TrimPrefix(path, tablePrefix)
-
-	parts = strings.Split(path, "_")
-	if len(parts) == 0 || parts[0] == "" {
-		return "", nil, "", fmt.Errorf(
-			"invalid version key: missing namespace: %q",
-			string(key),
-		)
-	}
-
-	namespace := parts[0]
-	refIDs := parts[1:]
-
-	for i, refID := range refIDs {
-		if refID == "" {
-			return "", nil, "", fmt.Errorf(
-				"invalid version key: empty refID at index %d: %q",
-				i,
-				string(key),
-			)
-		}
-	}
-
-	return namespace, refIDs, id, nil
 }

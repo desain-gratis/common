@@ -48,16 +48,28 @@ type DataWrapper struct {
 
 type BadgerRaftApp struct {
 	// state
-	db             *badger.DB
-	tableConfig    map[string]TableConfig
-	repos          map[string]*content_badger.BadgerRepo
-	versionedRepos map[string]*content_badger.VersionedBadgerRepo
+	db                 *badger.DB
+	tableConfig        map[string]TableConfig
+	repos              map[string]*content_badger.BadgerRepo // or KV
+	versionedRepos     map[string]*content_badger.VersionedBadgerRepo
+	autoIncrementRepos map[string]*content_badger.AutoIncrementBadgerRepo
+	// to avoid confusion, might need to add auto increment repository
 }
 
+// TODO: integrate as mycontent itself, so we can configure it via entity (eg. GetTableType(...))
+type TableType string
+
+const (
+	TableTypeKV            TableType = "kv"
+	TableTypeVersioned     TableType = "versioned"
+	TableTypeAutoIncrement TableType = "auto-increment"
+)
+
 type TableConfig struct {
-	Name                       string
-	RefSize                    int
-	Versioned                  bool
+	Name      string
+	RefSize   int
+	TableType TableType
+	// Versioned                  bool
 	VersionedGetLimit          uint32
 	VersionedUseOptimisticLock bool
 }
@@ -72,24 +84,30 @@ func New(db *badger.DB, tableConfig ...TableConfig) *BadgerRaftApp {
 
 	repos := make(map[string]*content_badger.BadgerRepo)
 	versionedRepos := make(map[string]*content_badger.VersionedBadgerRepo)
+	autoIncrementRepos := make(map[string]*content_badger.AutoIncrementBadgerRepo)
 
 	for _, c := range tableConfig {
 		tableConfigMap[c.Name] = c
 		if c.RefSize < 0 || c.RefSize > 20 {
 			log.Panic().Msgf("invalid refSize: %v", c.RefSize)
 		}
-		if !c.Versioned {
+		switch c.TableType {
+		case TableTypeVersioned:
+			versionedRepos[c.Name], _ = content_badger.NewVersioned(db, c.Name, c.RefSize)
+		case TableTypeAutoIncrement:
+			autoIncrementRepos[c.Name] = content_badger.NewAutoIncrement(db, c.Name, c.RefSize)
+		case TableTypeKV:
+		default:
 			repos[c.Name] = content_badger.New(db, c.Name, c.RefSize)
-		} else {
-			versionedRepos[c.Name] = content_badger.NewVersioned(db, c.Name, c.RefSize)
 		}
 	}
 
 	return &BadgerRaftApp{
-		db:             db,
-		tableConfig:    tableConfigMap,
-		repos:          repos,
-		versionedRepos: versionedRepos,
+		db:                 db,
+		tableConfig:        tableConfigMap,
+		repos:              repos,
+		versionedRepos:     versionedRepos,
+		autoIncrementRepos: autoIncrementRepos,
 	}
 }
 
@@ -125,9 +143,15 @@ func (s *BadgerRaftApp) getRepository(tablelName string) (content.Repository, bo
 	if repo, ok := s.repos[tablelName]; ok {
 		return repo, true
 	}
+
+	if repo, ok := s.autoIncrementRepos[tablelName]; ok {
+		return repo, true
+	}
+
 	if repo, ok := s.versionedRepos[tablelName]; ok {
 		return repo, true
 	}
+
 	return nil, false
 }
 
@@ -173,6 +197,8 @@ func (s *BadgerRaftApp) OnUpdateV2(ctx context.Context, e raft.EntryV2) (any, er
 	return resp, nil
 }
 
+// TODOO: MAKE IT MORE CLEAN
+
 func (s *BadgerRaftApp) GetVersionedContentRepository(ctx context.Context, tableName string) (*versionedBadgerRaftRepo, error) {
 	if repo, ok := s.versionedRepos[tableName]; ok {
 		// right now we just use what we have
@@ -189,13 +215,18 @@ func (s *BadgerRaftApp) GetVersionedContentRepository(ctx context.Context, table
 	return nil, fmt.Errorf("table not found: %s", tableName)
 }
 
+func (s *BadgerRaftApp) GetKVTable(ctx context.Context, tableName string) (*badgerRaftRepo, error) {
+	return s.GetContentRepository(ctx, TableTypeKV, tableName)
+}
+
+func (s *BadgerRaftApp) GetAutoIncrementTable(ctx context.Context, tableName string) (*badgerRaftRepo, error) {
+	return s.GetContentRepository(ctx, TableTypeAutoIncrement, tableName)
+}
+
+// TODOO: MAKE IT MORE CLEAN
 // For external access
 // Todo: rename to GetRaftRepository or GetRaftEnabledRepository
-func (s *BadgerRaftApp) GetContentRepository(ctx context.Context, tableName string) (*badgerRaftRepo, error) {
-	repo, ok := s.getRepository(tableName)
-	if !ok {
-		return nil, fmt.Errorf("table not found: %s", tableName)
-	}
+func (s *BadgerRaftApp) GetContentRepository(ctx context.Context, tableType TableType, tableName string) (*badgerRaftRepo, error) {
 
 	// right now we just use what we have
 	raftCtx, ok := raft.GetRaftContext(ctx).(*runneretcd.RaftContext)
@@ -203,11 +234,30 @@ func (s *BadgerRaftApp) GetContentRepository(ctx context.Context, tableName stri
 		return nil, fmt.Errorf("cannot raft maxxing")
 	}
 
-	return &badgerRaftRepo{
-		Repository:  repo,
-		TableName:   tableName,
-		raftContext: raftCtx,
-	}, nil
+	switch tableType {
+	case TableTypeKV:
+		repo, ok := s.repos[tableName]
+		if !ok {
+			return nil, fmt.Errorf("table not found: %s", tableName)
+		}
+		return &badgerRaftRepo{
+			Repository:  repo,
+			TableName:   tableName,
+			raftContext: raftCtx,
+		}, nil
+	case TableTypeAutoIncrement:
+		repo, ok := s.autoIncrementRepos[tableName]
+		if !ok {
+			return nil, fmt.Errorf("table not found: %s", tableName)
+		}
+		return &badgerRaftRepo{
+			Repository:  repo,
+			TableName:   tableName,
+			raftContext: raftCtx,
+		}, nil
+	}
+
+	return nil, fmt.Errorf("table not foound %s (type: %s)", tableName, tableType)
 }
 
 func parseAs[T any](payload []byte) (T, error) {

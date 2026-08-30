@@ -34,7 +34,7 @@ type Data struct {
 	// Incremental value for "log" storage for OLAP maxxing
 	EventID uint64 // todo: naming? better only version ..? DEPRECATE??
 
-	Version uint64
+	Version *uint64
 
 	// For all content ID, we have incremental value
 	// might not be not needed, since it can be put inside ID

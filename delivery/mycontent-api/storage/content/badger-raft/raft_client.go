@@ -2,7 +2,6 @@ package badgerraft
 
 import (
 	"context"
-	"log"
 
 	"github.com/desain-gratis/common/delivery/mycontent-api/storage/content"
 	runneretcd "github.com/desain-gratis/common/lib/raft/runner-etcd"
@@ -69,8 +68,6 @@ func (c *badgerRaftRepo) Delete(ctx context.Context, namespace string, refIDs []
 	}
 
 	data, _ := result.(content.Data) // because no additional info, ,we can return the request data only
-
-	log.Printf("DATANYA %v\n", string(data.Data))
 
 	return data, nil
 }
