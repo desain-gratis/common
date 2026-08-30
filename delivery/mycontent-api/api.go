@@ -164,6 +164,17 @@ func (i *service[T]) Get(w http.ResponseWriter, r *http.Request, p httprouter.Pa
 		r.WithContext(mycontent.WithEntityVersion(r.Context(), version))
 	}
 
+	versionGetAllS := r.Header.Get("DG-All-Version")
+	if versionGetAllS != "" {
+		if versionGetAllS != "*" {
+			handleError(
+				w, "BAD_REQUEST", "'DG-All-Version' header specified, but contain invalid value. Valid value is only *",
+				http.StatusBadRequest, nil)
+			return
+		}
+		r.WithContext(mycontent.WithEntityGetAllVersion(r.Context(), true))
+	}
+
 	invalidParams := validateParams(i.whitelistParams, r.URL.Query())
 	if len(invalidParams) > 0 {
 		handleError(

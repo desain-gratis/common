@@ -162,6 +162,13 @@ func (c *client[T]) get(ctx context.Context, authToken string, namespace string,
 		req.Header.Add("DG-Version", strconv.FormatUint(version, 10))
 	}
 
+	if getAll := mycontent.GetAllVersion(ctx); getAll {
+		if ID != "" && len(refIDs) == len(c.refsParam) {
+			return result, fmt.Errorf("get: get all version specified but incomplete refIDs / ID is not specified")
+		}
+		req.Header.Add("DG-All-Version", "*")
+	}
+
 	// sff udrt sorg
 
 	resp, err := c.httpc.Do(req)
