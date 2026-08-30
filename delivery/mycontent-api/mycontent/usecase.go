@@ -16,6 +16,8 @@ var (
 
 	// ErrNotFound when content is not found during Post, Delete, and Get (by ID)
 	ErrNotFound = errors.New("not found")
+
+	ErrInvalidKey = errors.New("invalid key")
 )
 
 type Meta struct {
@@ -43,6 +45,13 @@ type Usecase[T any] interface {
 	// Delete your resource here
 	// the implementation can check whether there are linked resource or not
 	Delete(ctx context.Context, namespace string, refIDs []string, ID string) (T, error)
+}
+
+type VersionedUsecase[T any] interface {
+	Usecase[T]
+	GetByVersion(ctx context.Context, namespace string, refIDs []string, ID string, version uint64) (T, error)
+	GetAllVersion(ctx context.Context, namespace string, refIDs []string, ID string) ([]T, error)
+	// todo: StreamAllVersion
 }
 
 type Attachable[T any] interface {

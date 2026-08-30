@@ -3,6 +3,7 @@ package sqliteraft
 import (
 	"database/sql"
 
+	"github.com/desain-gratis/common/delivery/mycontent-api/mycontent"
 	"github.com/desain-gratis/common/delivery/mycontent-api/storage/content"
 )
 
@@ -33,7 +34,7 @@ func (r *repository) scanRow(s scanner) (content.Data, error) {
 
 	if err := s.Scan(dest...); err != nil {
 		if err == sql.ErrNoRows {
-			return content.Data{}, content.ErrNotFound
+			return content.Data{}, mycontent.ErrNotFound
 		}
 		return content.Data{}, err
 	}

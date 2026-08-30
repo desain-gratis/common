@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/desain-gratis/common/delivery/mycontent-api/mycontent"
 	"github.com/desain-gratis/common/delivery/mycontent-api/storage/content"
 )
 
@@ -22,7 +23,7 @@ func (r *repository) post(
 	}
 
 	if ID == "" {
-		return content.Data{}, content.ErrInvalidKey
+		return content.Data{}, mycontent.ErrInvalidKey
 	}
 
 	// Keep behavior compatible with clickhouse-raft.
@@ -87,7 +88,7 @@ DO UPDATE SET
 	}
 
 	if len(result) == 0 {
-		return content.Data{}, content.ErrNotFound
+		return content.Data{}, mycontent.ErrNotFound
 	}
 
 	return result[0], nil

@@ -2,13 +2,7 @@ package content
 
 import (
 	"context"
-	"errors"
 	"time"
-)
-
-var (
-	ErrNotFound   = errors.New("content not found")
-	ErrInvalidKey = errors.New("invalid key")
 )
 
 type Repository interface {
@@ -25,6 +19,14 @@ type Repository interface {
 
 	// TODO: add ref size
 	// RefSize() int // Map key value for param / metadata
+}
+
+type VersionedRepository interface {
+	Repository
+	GetByVersion(ctx context.Context, namespace string, refIDs []string, ID string, version uint64) (Data, error)
+	GetAllVersion(ctx context.Context, namespace string, refIDs []string, ID string) ([]Data, error)
+
+	// todo stream all version
 }
 
 // TODO: change naming, since not only data but also other

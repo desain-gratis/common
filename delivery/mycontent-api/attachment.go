@@ -15,7 +15,6 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/desain-gratis/common/delivery/mycontent-api/mycontent"
-	"github.com/desain-gratis/common/delivery/mycontent-api/storage/content"
 	entity "github.com/desain-gratis/common/types/entity"
 	types "github.com/desain-gratis/common/types/http"
 )
@@ -279,7 +278,7 @@ func (i *uploadService) Upload(w http.ResponseWriter, r *http.Request, p httprou
 
 func handleAttachError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, content.ErrInvalidKey):
+	case errors.Is(err, mycontent.ErrInvalidKey):
 		handleError(w, "BAD_REQUEST", err.Error(), http.StatusBadRequest, nil)
 	default:
 		log.Error().Msgf("server error: %v", err)

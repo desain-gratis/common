@@ -332,9 +332,9 @@ func handlePostError(w http.ResponseWriter, err error) {
 		handleError(w, "BAD_REQUEST", err.Error(), http.StatusBadRequest, nil)
 	case errors.Is(err, mycontent.ErrNotFound):
 		handleError(w, "NOT_FOUND", err.Error(), http.StatusNotFound, nil)
-	case errors.Is(err, content.ErrInvalidKey): // todo: simplify error mycontent vs content
+	case errors.Is(err, mycontent.ErrInvalidKey): // todo: simplify error mycontent vs content
 		handleError(w, "BAD_REQUEST", err.Error(), http.StatusBadRequest, nil)
-	case errors.Is(err, content.ErrNotFound):
+	case errors.Is(err, mycontent.ErrNotFound):
 		handleError(w, "NOT_FOUND", err.Error(), http.StatusNotFound, nil)
 	default:
 		handleError(w, "SERVER_ERROR", "server error", http.StatusInternalServerError, err)
@@ -347,9 +347,9 @@ func handleGetError(w http.ResponseWriter, err error) {
 		handleError(w, "BAD_REQUEST", err.Error(), http.StatusBadRequest, nil)
 	case errors.Is(err, mycontent.ErrNotFound):
 		handleError(w, "NOT_FOUND", err.Error(), http.StatusNotFound, nil)
-	case errors.Is(err, content.ErrInvalidKey):
+	case errors.Is(err, mycontent.ErrInvalidKey):
 		handleError(w, "BAD_REQUEST", err.Error(), http.StatusBadRequest, nil)
-	case errors.Is(err, content.ErrNotFound):
+	case errors.Is(err, mycontent.ErrNotFound):
 		handleError(w, "NOT_FOUND", err.Error(), http.StatusNotFound, nil)
 	default:
 		handleError(w, "SERVER_ERROR", "server error", http.StatusInternalServerError, err)
@@ -362,9 +362,9 @@ func handleDeleteError(w http.ResponseWriter, err error) {
 		handleError(w, "BAD_REQUEST", err.Error(), http.StatusBadRequest, nil)
 	case errors.Is(err, mycontent.ErrNotFound):
 		handleError(w, "NOT_FOUND", err.Error(), http.StatusNotFound, nil)
-	case errors.Is(err, content.ErrInvalidKey):
+	case errors.Is(err, mycontent.ErrInvalidKey):
 		handleError(w, "BAD_REQUEST", err.Error(), http.StatusBadRequest, nil)
-	case errors.Is(err, content.ErrNotFound):
+	case errors.Is(err, mycontent.ErrNotFound):
 		handleError(w, "NOT_FOUND", err.Error(), http.StatusNotFound, nil)
 	default:
 		handleError(w, "SERVER_ERROR", "server error", http.StatusInternalServerError, err)

@@ -91,7 +91,7 @@ func (c *HandlerWithAttachment) Attach(ctx context.Context, meta *entity.Attachm
 	// Check existing, if exist with the same ID, then use existing
 	existing, err := c.Handler.Get(ctx, meta.Namespace(), meta.RefIds, meta.Id)
 	if err != nil {
-		if errors.Is(err, content.ErrNotFound) {
+		if errors.Is(err, mycontent.ErrNotFound) {
 			return nil, err
 		}
 	}

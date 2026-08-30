@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
+	"github.com/desain-gratis/common/delivery/mycontent-api/mycontent"
 	"github.com/desain-gratis/common/delivery/mycontent-api/storage/content"
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
@@ -104,7 +105,7 @@ func (h *handler) Get(ctx context.Context, namespace string, refIDs []string, ID
 func (h *handler) Post(ctx context.Context, namespace string, refIDs []string, ID string, input content.Data) (out content.Data, err error) {
 	// TODO: move to dedicated valdiation func
 	if len(refIDs) != h.refSize || ID == "" || namespace == "" || namespace == "*" {
-		return content.Data{}, fmt.Errorf("%w: incomplete reference", content.ErrInvalidKey)
+		return content.Data{}, fmt.Errorf("%w: incomplete reference", mycontent.ErrInvalidKey)
 	}
 
 	if input.Meta == nil {
@@ -130,7 +131,7 @@ func (h *handler) Post(ctx context.Context, namespace string, refIDs []string, I
 func (h *handler) Delete(ctx context.Context, namespace string, refIDs []string, ID string) (out content.Data, err error) {
 	// TODO: move to dedicated valdiation func
 	if len(refIDs) != h.refSize || ID == "" || namespace == "" || namespace == "*" {
-		return content.Data{}, fmt.Errorf("%w: incomplete reference", content.ErrInvalidKey)
+		return content.Data{}, fmt.Errorf("%w: incomplete reference", mycontent.ErrInvalidKey)
 	}
 
 	q, args, err := h.prepareGet(namespace, refIDs, ID)
@@ -172,7 +173,7 @@ func (h *handler) Delete(ctx context.Context, namespace string, refIDs []string,
 
 	if data == nil {
 		return content.Data{}, fmt.Errorf("%w: content not found for namespace=%v refIDs=%v and ID=%v",
-			content.ErrNotFound, namespace, refIDs, ID)
+			mycontent.ErrNotFound, namespace, refIDs, ID)
 	}
 
 	whereQ, whereArgs, err := h.prepareWhereQuery(namespace, refIDs, ID)
@@ -301,7 +302,7 @@ func (h *handler) preparePost(namespace string, refIDs []string, ID string, data
 func (h *handler) prepareGet(namespace string, refIDs []string, ID string) (string, []any, error) {
 	if len(refIDs) > h.refSize {
 		return "", nil, fmt.Errorf(
-			"%w: ref size is greater than expected (got %v, expected %v)", content.ErrInvalidKey, len(refIDs), h.refSize)
+			"%w: ref size is greater than expected (got %v, expected %v)", mycontent.ErrInvalidKey, len(refIDs), h.refSize)
 	}
 
 	buf := bytes.NewBuffer(make([]byte, 0, 100))
@@ -333,7 +334,7 @@ func (h *handler) prepareWhereQuery(namespace string, refIDs []string, ID string
 
 	// if not querying all data, namespace must be specified
 	if namespace == "" {
-		return "", args, fmt.Errorf("%w: namespace must be specified", content.ErrInvalidKey)
+		return "", args, fmt.Errorf("%w: namespace must be specified", mycontent.ErrInvalidKey)
 	}
 
 	// just to start the where statement..
@@ -370,7 +371,7 @@ func (h *handler) prepareWhereQuery(namespace string, refIDs []string, ID string
 	if len(refIDs) < h.refSize {
 		if ID != "" {
 			return "", nil, fmt.Errorf(
-				"%w: id provided without complete parent references", content.ErrInvalidKey)
+				"%w: id provided without complete parent references", mycontent.ErrInvalidKey)
 		}
 		return buf.String(), args, nil
 	}

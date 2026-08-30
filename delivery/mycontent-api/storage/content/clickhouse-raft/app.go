@@ -663,13 +663,13 @@ func (s *ContentApp) preparePost(tableConfig TableConfig, eventID uint64, namesp
 func (s *ContentApp) prepareGet(tableConfig TableConfig, _ QueryMyContent, namespace string, refIDs []string, ID any, limit int) (string, []any, func() (*scanResult, []any), error) {
 	if len(refIDs) > tableConfig.RefSize {
 		return "", nil, nil, fmt.Errorf(
-			"%w: ref size is greater than expected (got %v, expected %v)", content.ErrInvalidKey, len(refIDs), tableConfig.RefSize)
+			"%w: ref size is greater than expected (got %v, expected %v)", mycontent.ErrInvalidKey, len(refIDs), tableConfig.RefSize)
 	}
 
 	if tableConfig.Versioned && len(refIDs) != tableConfig.RefSize {
 		// TODO!!
 		// return "", nil, nil, fmt.Errorf(
-		// 	"%w: reference params must be fully specified for 'IncrementalID' table", content.ErrInvalidKey)
+		// 	"%w: reference params must be fully specified for 'IncrementalID' table", mycontent.ErrInvalidKey)
 	}
 
 	buf := bytes.NewBuffer(make([]byte, 0, 100))
@@ -784,7 +784,7 @@ func (s *ContentApp) prepareWhereQuery(refSize int, namespace string, refIDs []s
 
 	// if not querying all data, namespace must be specified
 	if namespace == "" {
-		return "", args, fmt.Errorf("%w: namespace must be specified", content.ErrInvalidKey)
+		return "", args, fmt.Errorf("%w: namespace must be specified", mycontent.ErrInvalidKey)
 	}
 
 	// just to start the where statement..
@@ -821,7 +821,7 @@ func (s *ContentApp) prepareWhereQuery(refSize int, namespace string, refIDs []s
 	if len(refIDs) < refSize {
 		if ID != "" {
 			return "", nil, fmt.Errorf(
-				"%w: id provided without complete parent references", content.ErrInvalidKey)
+				"%w: id provided without complete parent references", mycontent.ErrInvalidKey)
 		}
 		return buf.String(), args, nil
 	}

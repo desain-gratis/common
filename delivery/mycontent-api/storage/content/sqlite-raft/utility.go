@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/desain-gratis/common/delivery/mycontent-api/storage/content"
+	"github.com/desain-gratis/common/delivery/mycontent-api/mycontent"
 )
 
 func (a *ContentApp) validateKey(
@@ -13,16 +13,16 @@ func (a *ContentApp) validateKey(
 ) error {
 
 	if namespace == "" {
-		return content.ErrInvalidKey
+		return mycontent.ErrInvalidKey
 	}
 
 	if len(refIDs) != a.tableConfig.RefSize {
-		return content.ErrInvalidKey
+		return mycontent.ErrInvalidKey
 	}
 
 	for _, ref := range refIDs {
 		if ref == "" {
-			return content.ErrInvalidKey
+			return mycontent.ErrInvalidKey
 		}
 	}
 

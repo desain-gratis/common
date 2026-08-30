@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/desain-gratis/common/delivery/mycontent-api/mycontent"
 	"github.com/desain-gratis/common/delivery/mycontent-api/storage/content"
 )
 
@@ -19,7 +20,7 @@ func (r *repository) delete(
 	}
 
 	if ID == "" {
-		return content.Data{}, content.ErrInvalidKey
+		return content.Data{}, mycontent.ErrInvalidKey
 	}
 
 	items, err := r.get(
@@ -33,7 +34,7 @@ func (r *repository) delete(
 	}
 
 	if len(items) == 0 {
-		return content.Data{}, content.ErrNotFound
+		return content.Data{}, mycontent.ErrNotFound
 	}
 
 	query := fmt.Sprintf(`
@@ -61,7 +62,7 @@ WHERE %s
 	}
 
 	if affected == 0 {
-		return content.Data{}, content.ErrNotFound
+		return content.Data{}, mycontent.ErrNotFound
 	}
 
 	return items[0], nil

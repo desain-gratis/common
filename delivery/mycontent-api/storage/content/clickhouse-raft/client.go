@@ -12,6 +12,7 @@ import (
 	"github.com/lni/dragonboat/v4/client"
 	"github.com/lni/dragonboat/v4/statemachine"
 
+	"github.com/desain-gratis/common/delivery/mycontent-api/mycontent"
 	"github.com/desain-gratis/common/delivery/mycontent-api/storage/content"
 )
 
@@ -230,7 +231,7 @@ func (c *mycontentClient) queryLocal(ctx context.Context, msg any) (any, error) 
 		}
 		errg = err
 		cancel()
-		if errors.Is(err, content.ErrInvalidKey) || errors.Is(err, content.ErrNotFound) {
+		if errors.Is(err, mycontent.ErrInvalidKey) || errors.Is(err, mycontent.ErrNotFound) {
 			return nil, err
 		}
 
