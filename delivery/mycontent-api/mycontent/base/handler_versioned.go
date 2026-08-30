@@ -40,8 +40,8 @@ func (c *VersionedHandler[T]) GetByVersion(ctx context.Context, namespace string
 
 	// repository responsble to specify it inside their ID
 	parsedResult.WithID(d.ID)
-	if d.Version > 0 {
-		parsedResult.WithVersion(d.Version)
+	if ver := d.Version; ver != nil && *ver > 0 {
+		parsedResult.WithVersion(*ver)
 	}
 
 	return parsedResult, nil
@@ -63,8 +63,8 @@ func (c *VersionedHandler[T]) GetAllVersion(ctx context.Context, namespace strin
 
 		// repository responsble to specify it inside their ID
 		parsedResult.WithID(d.ID)
-		if d.Version > 0 {
-			parsedResult.WithVersion(d.Version)
+		if ver := d.Version; ver != nil && *ver > 0 {
+			parsedResult.WithVersion(*ver)
 		}
 
 		result = append(result, parsedResult)

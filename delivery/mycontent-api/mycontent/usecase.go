@@ -76,6 +76,7 @@ type Data interface {
 
 type Versioned interface {
 	WithVersion(versionID uint64) Data
+	DGVersion() *uint64
 }
 
 // Mutator or modifier, fluent style

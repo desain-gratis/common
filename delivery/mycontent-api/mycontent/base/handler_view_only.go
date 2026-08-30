@@ -10,7 +10,7 @@ import (
 var _ mycontent.Usecase[mycontent.Data] = &Handler[mycontent.Data]{}
 
 type ViewOnlyHandler[T mycontent.Data] struct {
-	*Handler[T]
+	*Handler[T] // exposed hehe
 }
 
 func (c *ViewOnlyHandler[T]) Post(ctx context.Context, data T, meta any) (T, error) {

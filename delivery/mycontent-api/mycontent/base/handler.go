@@ -18,6 +18,7 @@ type Handler[T mycontent.Data] struct {
 	repo content.Repository
 }
 
+// TODO: refactor view only + versioning
 func New[T mycontent.Data](
 	repo content.Repository,
 ) *Handler[T] {
@@ -59,8 +60,9 @@ func (c *Handler[T]) Post(ctx context.Context, data T, meta any) (T, error) {
 	}
 
 	result, err := c.repo.Post(ctx, data.Namespace(), data.RefIDs(), data.ID(), content.Data{
-		Data: payload,
-		Meta: metaPayload,
+		Data:    payload,
+		Meta:    metaPayload,
+		Version: data.DGVersion(),
 	})
 	if err != nil {
 		return t, fmt.Errorf("%w: %w during data storage", mycontent.ErrStorage, err)
@@ -72,9 +74,8 @@ func (c *Handler[T]) Post(ctx context.Context, data T, meta any) (T, error) {
 	}
 
 	parsedResult.WithID(result.ID)
-
-	if result.Version > 0 {
-		parsedResult.WithVersion(result.Version)
+	if ver := result.Version; ver != nil && *ver > 0 {
+		parsedResult.WithVersion(*ver)
 	}
 
 	return parsedResult, nil
@@ -138,8 +139,8 @@ func (c *Handler[T]) Get(ctx context.Context, namespace string, refIDs []string,
 
 		// repository responsble to specify it inside their ID
 		parsedResult.WithID(d.ID)
-		if d.Version > 0 {
-			parsedResult.WithVersion(d.Version)
+		if ver := d.Version; ver != nil && *ver > 0 {
+			parsedResult.WithVersion(*ver)
 		}
 
 		result = append(result, parsedResult)
@@ -171,8 +172,8 @@ func (c *Handler[T]) GetWithMeta(ctx context.Context, namespace string, refIDs [
 
 		// repository responsble to specify it inside their ID
 		parsedResult.WithID(d.ID)
-		if d.Version > 0 {
-			parsedResult.WithVersion(d.Version)
+		if ver := d.Version; ver != nil && *ver > 0 {
+			parsedResult.WithVersion(*ver)
 		}
 
 		result = append(result, Pair[T]{
@@ -237,8 +238,8 @@ func (c *Handler[T]) Stream(ctx context.Context, namespace string, refIDs []stri
 				}
 
 				parsedResult.WithID(d.ID)
-				if d.Version > 0 {
-					parsedResult.WithVersion(d.Version)
+				if ver := d.Version; ver != nil && *ver > 0 {
+					parsedResult.WithVersion(*ver)
 				}
 
 				result <- parsedResult
@@ -265,8 +266,8 @@ func (c *Handler[T]) Stream(ctx context.Context, namespace string, refIDs []stri
 			}
 
 			parsedResult.WithID(d.ID)
-			if d.Version > 0 {
-				parsedResult.WithVersion(d.Version)
+			if ver := d.Version; ver != nil && *ver > 0 {
+				parsedResult.WithVersion(*ver)
 			}
 
 			result <- parsedResult
@@ -304,8 +305,8 @@ func (c *Handler[T]) Delete(ctx context.Context, namespace string, refIDs []stri
 	}
 
 	parsedResult.WithID(d.ID)
-	if d.Version > 0 {
-		parsedResult.WithVersion(d.Version)
+	if ver := d.Version; ver != nil && *ver > 0 {
+		parsedResult.WithVersion(*ver)
 	}
 
 	return parsedResult, nil

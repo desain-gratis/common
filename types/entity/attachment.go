@@ -73,4 +73,8 @@ func (c *Attachment) WithVersion(v uint64) mycontent.Data {
 	return c
 }
 
+func (c *Attachment) DGVersion() *uint64 {
+	return nil
+}
+
 // TODO: compare difference / calculate hash
