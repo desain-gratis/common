@@ -27,6 +27,12 @@ func New[T mycontent.Data](
 	}
 }
 
+func (c *Handler[T]) ViewOnly() *ViewOnlyHandler[T] {
+	return &ViewOnlyHandler[T]{
+		Handler: c,
+	}
+}
+
 // Post (create new or overwrite) resource here
 func (c *Handler[T]) Post(ctx context.Context, data T, meta any) (T, error) {
 	var t T
