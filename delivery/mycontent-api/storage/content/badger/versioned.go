@@ -501,6 +501,9 @@ func (c *VersionedBadgerRepo) streamLeafVersions(
 	}
 
 	if currentVersion == 0 {
+		if getAllVersion {
+			return nil
+		}
 		return mycontent.ErrNotFound
 	}
 
