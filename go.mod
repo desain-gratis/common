@@ -2,6 +2,8 @@ module github.com/desain-gratis/common
 
 go 1.26
 
+toolchain go1.26.0
+
 require (
 	cloud.google.com/go/secretmanager v1.13.1
 	cloud.google.com/go/storage v1.42.0
