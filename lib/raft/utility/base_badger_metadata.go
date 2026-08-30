@@ -25,7 +25,7 @@ func NewBadgerMetadataWriter(db *badger.DB, lastAppliedIndexKey string) *BadgerM
 	}
 }
 
-func (m *BadgerMetadataWriter) Apply(ctx context.Context, entry raft.EntryV2) (any, error) {
+func (m *BadgerMetadataWriter) Apply(ctx context.Context, entry raft.EntryV2) error {
 	var buf [8]byte
 	binary.BigEndian.PutUint64(buf[:], entry.Index)
 
@@ -34,9 +34,10 @@ func (m *BadgerMetadataWriter) Apply(ctx context.Context, entry raft.EntryV2) (a
 		return txn.Set([]byte(m.lastAppliedIndexKey), buf[:])
 	})
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return nil, nil
+
+	return nil
 }
 
 func (m *BadgerMetadataWriter) GetLastAppliedIndex(ctx context.Context) (uint64, error) {
