@@ -48,6 +48,12 @@ func NewAutoIncrement(
 	}
 }
 
+func (c *AutoIncrementBadgerRepo) GetLatest() *AutoIncrementLatestBadgerRepo {
+	return &AutoIncrementLatestBadgerRepo{
+		c,
+	}
+}
+
 // Post creates an entry.
 //
 // If id is non-empty, this behaves exactly like the normal BadgerRepo.
