@@ -30,7 +30,7 @@ func New[T mycontent.Data](
 
 func (c *Handler[T]) ViewOnly() *ViewOnlyHandler[T] {
 	return &ViewOnlyHandler[T]{
-		Handler: c,
+		handler: c,
 	}
 }
 
