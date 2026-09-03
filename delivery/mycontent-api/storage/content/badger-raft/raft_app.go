@@ -197,24 +197,6 @@ func (s *BadgerRaftApp) OnUpdateV2(ctx context.Context, e raft.EntryV2) (any, er
 	return resp, nil
 }
 
-// TODOO: MAKE IT MORE CLEAN
-
-func (s *BadgerRaftApp) GetVersionedContentRepository(ctx context.Context, tableName string) (*versionedBadgerRaftRepo, error) {
-	if repo, ok := s.versionedRepos[tableName]; ok {
-		// right now we just use what we have
-		raftCtx, ok := raft.GetRaftContext(ctx).(*runneretcd.RaftContext)
-		if !ok {
-			return nil, fmt.Errorf("cannot raft maxxing")
-		}
-		return &versionedBadgerRaftRepo{
-			VersionedRepository: repo,
-			TableName:           tableName,
-			raftContext:         raftCtx,
-		}, nil
-	}
-	return nil, fmt.Errorf("table not found: %s", tableName)
-}
-
 func (s *BadgerRaftApp) GetKVTable(ctx context.Context, tableName string) (*badgerRaftRepo, error) {
 	return s.GetContentRepository(ctx, TableTypeKV, tableName)
 }
