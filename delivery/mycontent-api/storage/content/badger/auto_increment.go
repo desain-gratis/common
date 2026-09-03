@@ -11,6 +11,7 @@ import (
 
 	"github.com/dgraph-io/badger/v4"
 
+	"github.com/desain-gratis/common/delivery/mycontent-api/mycontent"
 	"github.com/desain-gratis/common/delivery/mycontent-api/storage/content"
 )
 
@@ -192,6 +193,8 @@ func (c *AutoIncrementBadgerRepo) Post(
 		)
 	}
 
+	ver, _ := strconv.ParseUint(generatedID, 10, 64) // todo: make more efficient ofcorss
+
 	return content.Data{
 		Namespace: namespace,
 		RefIDs:    cloneStrings(refIDs),
@@ -199,8 +202,84 @@ func (c *AutoIncrementBadgerRepo) Post(
 		Data:      cloneBytes(data.Data),
 		Meta:      cloneBytes(data.Meta),
 		EventID:   0,
-		Version:   nil,
+		Version:   &ver, // TODOmaxxxing
 	}, nil
+}
+
+// Get returns all data matching the specified logical subtree.
+//
+// Read paths may be partial:
+//
+//	namespace="foo", refIDs=[]        -> everything in foo
+//	namespace="foo", refIDs=["a"]     -> everything below foo/a
+//	namespace="*", refIDs=[]          -> everything
+//	namespace="*", refIDs=["a"]       -> a below every namespace
+//
+// If ID is specified, only the exact ID is returned.
+//
+// For auto-increment entries, Version is populated from the numeric ID.
+func (c *AutoIncrementBadgerRepo) Get(
+	ctx context.Context,
+	namespace string,
+	refIDs []string,
+	id string,
+) ([]content.Data, error) {
+	if err := c.validateReadPath(namespace, refIDs, id); err != nil {
+		return nil, err
+	}
+
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	dataCh, errCh := c.stream(ctx, namespace, refIDs, id)
+
+	result := make([]content.Data, 0)
+
+	for dataCh != nil || errCh != nil {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+
+		case data, ok := <-dataCh:
+			if !ok {
+				dataCh = nil
+				continue
+			}
+
+			// Auto-increment IDs are numeric and represent the
+			// physical version/sequence of the entry.
+			if data.ID != "" {
+				version, err := strconv.ParseUint(data.ID, 10, 64)
+				if err == nil {
+					data.Version = &version
+				}
+			}
+
+			result = append(result, data)
+
+		case err, ok := <-errCh:
+			if !ok {
+				errCh = nil
+				continue
+			}
+
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	if id != "" && len(result) == 0 {
+		return nil, fmt.Errorf(
+			"get %w: id=%s refIds=%v",
+			mycontent.ErrNotFound,
+			id,
+			refIDs,
+		)
+	}
+
+	return result, nil
 }
 
 // validateAutoIncrementPath validates everything except the ID.

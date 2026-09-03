@@ -92,7 +92,7 @@ func (c *AutoIncrementLatestBadgerRepo) Get(
 		return nil, err
 	}
 
-	return c.BadgerRepo.Get(
+	return c.AutoIncrementBadgerRepo.Get(
 		ctx,
 		namespace,
 		fullRefIDs,
@@ -120,7 +120,7 @@ func (c *AutoIncrementLatestBadgerRepo) Stream(
 		return nil, err
 	}
 
-	return c.BadgerRepo.Stream(
+	return c.AutoIncrementBadgerRepo.Stream(
 		ctx,
 		namespace,
 		fullRefIDs,
@@ -214,7 +214,7 @@ func (c *AutoIncrementLatestBadgerRepo) getAllNamespaces(
 			return nil, err
 		}
 
-		items, err := c.BadgerRepo.Get(
+		items, err := c.AutoIncrementBadgerRepo.Get(
 			ctx,
 			b.namespace,
 			b.refIDs,
@@ -261,7 +261,7 @@ func (c *AutoIncrementLatestBadgerRepo) streamAllNamespaces(
 				return
 			}
 
-			items, err := c.BadgerRepo.Get(
+			items, err := c.AutoIncrementBadgerRepo.Get(
 				ctx,
 				b.namespace,
 				b.refIDs,

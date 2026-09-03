@@ -60,9 +60,8 @@ func (c *Handler[T]) Post(ctx context.Context, data T, meta any) (T, error) {
 	}
 
 	result, err := c.repo.Post(ctx, data.Namespace(), data.RefIDs(), data.ID(), content.Data{
-		Data:    payload,
-		Meta:    metaPayload,
-		Version: data.DGVersion(),
+		Data: payload,
+		Meta: metaPayload,
 	})
 	if err != nil {
 		return t, fmt.Errorf("%w: %w during data storage", mycontent.ErrStorage, err)
