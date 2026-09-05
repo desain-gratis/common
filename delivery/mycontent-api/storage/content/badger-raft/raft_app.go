@@ -112,7 +112,7 @@ func New(db *badger.DB, tableConfig ...TableConfig) *BadgerRaftApp {
 }
 
 func (s *BadgerRaftApp) InitV2(ctx context.Context) (uint64, error) {
-	tmp := make([]byte, 0, 8)
+	tmp := make([]byte, 8)
 	err := s.db.View(func(txn *badger.Txn) error {
 		// todo: make the delete/post inside here as well.. later
 		value, err := txn.Get([]byte("last-applied-index"))

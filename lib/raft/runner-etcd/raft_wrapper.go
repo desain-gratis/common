@@ -201,7 +201,7 @@ func (rc *RaftContext) serveRaft() {
 				// kv must be un sync w. snapshot in me storage
 				rc.loadSnapshot(rd.Snapshot)
 			}
-			rc.raftStorage.Append(rd.Entries) // entnries
+			rc.raftStorage.Append(rd.Entries) // entries
 
 			// 3. SEND
 			rc.transport.Send(rc.updateMsgSnap(rd.Messages))
@@ -213,6 +213,9 @@ func (rc *RaftContext) serveRaft() {
 				return
 			}
 			rc.maybeTriggerSnapshot(applyDoneC)
+
+			// TODO: important, on after apply () should be here.
+
 			rc.node.Advance()
 
 		case err := <-rc.transport.ErrorC:
@@ -292,8 +295,8 @@ func (rc *RaftContext) saveSnapshotToDisk(snap *raftpb.Snapshot) error {
 	if err := rc.snapshotter.SaveSnap(snap); err != nil {
 		return err
 	}
-	if err := rc.wal.SaveSnapshot(&walSnap); err != nil {
-		return err
+	if err := rc.wal.SaveSnapshot(&walSnap); err != nil { // basically we "apply" here; using snap.Metadata.Index here.
+		return err // wal both save "entries" & the commited index
 	}
 	return rc.wal.ReleaseLockTo(snap.Metadata.GetIndex())
 }
@@ -399,7 +402,10 @@ func (rc *RaftContext) entriesToApply(ents []*raftpb.Entry) (nents []*raftpb.Ent
 	return nents
 }
 
-var defaultSnapshotCount uint64 = 20
+// TODO: IMPLEMENT RAFT STORAGE PROPERLY FOR BADGER, THIS IS JUST A QUICK HACK
+// We can  start by "extending" the *raft.MemoryStorage
+// Meanwhile, for POC we use this hack.
+var defaultSnapshotCount uint64 = 0
 
 func (rc *RaftContext) maybeTriggerSnapshot(applyDoneC <-chan struct{}) {
 	if rc.appliedIndex-rc.snapshotIndex <= defaultSnapshotCount {
@@ -416,7 +422,7 @@ func (rc *RaftContext) maybeTriggerSnapshot(applyDoneC <-chan struct{}) {
 	}
 
 	log.Printf("start snapshot [applied index: %d | last snapshot index: %d]", rc.appliedIndex, rc.snapshotIndex)
-	data, err := rc.getSnapshotData()
+	data, err := rc.getSnapshotData() // supposedly, the snapshot of our KV DB..(for now "badger")
 	if err != nil {
 		log.Panic(err)
 	}

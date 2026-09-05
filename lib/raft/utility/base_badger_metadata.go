@@ -41,7 +41,7 @@ func (m *BadgerMetadataWriter) Apply(ctx context.Context, entry raft.EntryV2) er
 }
 
 func (m *BadgerMetadataWriter) GetLastAppliedIndex(ctx context.Context) (uint64, error) {
-	tmp := make([]byte, 0, 8)
+	tmp := make([]byte, 8)
 	err := m.db.View(func(txn *badger.Txn) error {
 		// todo: make the delete/post inside here as well.. later
 		value, err := txn.Get([]byte(m.lastAppliedIndexKey))

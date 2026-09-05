@@ -172,12 +172,14 @@ func startRaft(snapdir, waldir string, id int, peers []string, join bool, app dg
 		MaxUncommittedEntriesSize: 1 << 30,
 	}
 
-	lastAppliedIndex, err := app.InitV2(ctx)
-	if err != nil {
-		return nil, err
-	}
+	// No need to do this, since we're doing "always commit / set hard state" POC
+	// at every msg; raft storage will knew already (inside WAL)
 
-	c.Applied = lastAppliedIndex
+	// lastAppliedIndex, err := app.InitV2(ctx)
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// c.Applied = lastAppliedIndex
 
 	// start the raft node
 
@@ -257,6 +259,12 @@ func startRaft(snapdir, waldir string, id int, peers []string, join bool, app dg
 				entry.Term = *s.Term
 
 				result, err := app.OnUpdateV2(ctx, entry)
+
+				// todo: defer apply broadcast until after hardcstate commited
+				// gather result first before broadcast all.
+
+				// (or maybe do it directly here)
+
 				resultWrapper := &dgraft.ResultV2{
 					Value:          0,
 					Data:           result,
