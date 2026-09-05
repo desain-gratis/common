@@ -376,7 +376,7 @@ func handleError(w http.ResponseWriter, code, msg string, httpStatus int, err er
 		slog.Error("failed to serve request", slog.String("error", err.Error()))
 	}
 
-	w.WriteHeader(http.StatusInternalServerError)
+	w.WriteHeader(httpStatus)
 	message := serializeError(&types.CommonError{
 		Errors: []types.Error{
 			{Message: msg, Code: code, HTTPCode: httpStatus},
