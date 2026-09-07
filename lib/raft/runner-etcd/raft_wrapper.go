@@ -212,9 +212,14 @@ func (rc *RaftContext) serveRaft() {
 				rc.stop()
 				return
 			}
+
+			// todo: maybe better if we can  make it simpler later / make it per "applied" message;
+			// no need to use channel.
+
+			// see inside this method
 			rc.maybeTriggerSnapshot(applyDoneC)
 
-			// TODO: important, on after apply () should be here.
+			// TODO: important, on after apply () should be made here.
 
 			rc.node.Advance()
 
