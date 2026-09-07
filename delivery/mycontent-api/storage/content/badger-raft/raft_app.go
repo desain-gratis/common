@@ -2,9 +2,7 @@ package badgerraft
 
 import (
 	"context"
-	"encoding/binary"
 	"encoding/json"
-	"errors"
 	"fmt"
 
 	badger "github.com/dgraph-io/badger/v4"
@@ -111,34 +109,6 @@ func New(db *badger.DB, tableConfig ...TableConfig) *BadgerRaftApp {
 	}
 }
 
-func (s *BadgerRaftApp) InitV2(ctx context.Context) (uint64, error) {
-	tmp := make([]byte, 8)
-	err := s.db.View(func(txn *badger.Txn) error {
-		// todo: make the delete/post inside here as well.. later
-		value, err := txn.Get([]byte("last-applied-index"))
-		if err != nil {
-			return err
-		}
-
-		_, err = value.ValueCopy(tmp)
-		if err != nil {
-			return err
-		}
-
-		return nil
-	})
-	if err != nil {
-		if errors.Is(err, badger.ErrKeyNotFound) {
-			return 0, nil
-		}
-		return 0, err
-	}
-
-	lastAppliedIndex := binary.BigEndian.Uint64(tmp[:])
-
-	return lastAppliedIndex, nil
-}
-
 func (s *BadgerRaftApp) getRepository(tablelName string) (content.Repository, bool) {
 	if repo, ok := s.repos[tablelName]; ok {
 		return repo, true
@@ -179,17 +149,6 @@ func (s *BadgerRaftApp) OnUpdateV2(ctx context.Context, e raft.EntryV2) (any, er
 		return nil, fmt.Errorf("unsupported command: %s", cmd.Name)
 	}
 
-	if err != nil {
-		return nil, err
-	}
-
-	var buf [8]byte
-	binary.BigEndian.PutUint64(buf[:], e.Index)
-
-	err = s.db.Update(func(txn *badger.Txn) error {
-		// todo: make the delete/post inside here as well.. later
-		return txn.Set([]byte("last-applied-index"), buf[:])
-	})
 	if err != nil {
 		return nil, err
 	}
