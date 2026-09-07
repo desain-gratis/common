@@ -257,15 +257,18 @@ func (rc *RaftContext) serveRaft() {
 // TODO: use our pattern
 // allow communicate to each server
 func (rc *RaftContext) serveTransport() {
-	url, err := url.Parse(rc.peers[rc.id-1]) // todo: use rc.bindAddr
-	if err != nil {
-		log.Fatalf("raftexample: Failed parsing URL (%v)", err)
+	if rc.bindAddr == "" {
+		url, err := url.Parse(rc.peers[rc.id-1]) // todo: use rc.bindAddr
+		if err != nil {
+			log.Fatalf("raftexample: Failed parsing URL (%v)", err)
+		}
+		rc.bindAddr = url.Host
 	}
 
 	// https://stackoverflow.com/questions/63676241/how-to-set-setkeepaliveperiod-on-a-tls-conn
-	// 3 minutes as per the raftexample
+	// 3 minutes as per the etcd's contrib/raftexample
 	lc := net.ListenConfig{KeepAlive: 3 * time.Minute}
-	ln, err := lc.Listen(context.Background(), "tcp", url.Host) // TODO: use proper context
+	ln, err := lc.Listen(context.Background(), "tcp", rc.bindAddr) // TODO: use proper context
 	// log.Println("HELLO ORLDFREND: ", url.Host)
 	// ln, err := newStoppableListener(url.Host, rc.httpstopc)
 	if err != nil {

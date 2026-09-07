@@ -45,6 +45,7 @@ func RunWithConfig(cfgPath string, partitionID string, app dgraft.ApplicationV2)
 		fmt.Sprintf("%s-%d", partitionID, id), // todo: configurable
 		id,
 		cluster,
+		partitionCfg.GetString("bind_address"),
 		join,
 		app,
 	)
@@ -65,7 +66,7 @@ func RunWithConfig(cfgPath string, partitionID string, app dgraft.ApplicationV2)
 
 // snpadir --> DATA snapdir
 // waldir --> raft wal dir & raft snapshot dir
-func startRaft(snapdir, waldir string, id int, peers []string, join bool, app dgraft.ApplicationV2) (*RaftContext, error) {
+func startRaft(snapdir, waldir string, id int, peers []string, bindAddr string, join bool, app dgraft.ApplicationV2) (*RaftContext, error) {
 	ctx := context.Background()
 
 	if !fileutil.Exist(snapdir) {
@@ -223,9 +224,9 @@ func startRaft(snapdir, waldir string, id int, peers []string, join bool, app dg
 	snapshotterReady := make(chan *snap.Snapshotter, 1)
 
 	rc := &RaftContext{
-		id:    uint64(id),
-		peers: peers,
-		// join:  join,
+		id:       uint64(id),
+		peers:    peers,
+		bindAddr: bindAddr,
 
 		raftStorage: raftStorage, // duplicate, but necessary since it's implementation is used inside (not only on the raft)
 		wal:         w,           // used in internal process
