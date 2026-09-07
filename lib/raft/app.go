@@ -67,10 +67,6 @@ type OnAfterApply func() (Result, error)
 // exploring etcd raft / make it simpler compared to Application
 // or just EtcdApplication
 type ApplicationV2 interface {
-	// Return last applied index
-	// todo might separate it
-	InitV2(ctx context.Context) (uint64, error)
-
 	// Simpler API for distributed state machine
 	// If return error, we will acknowledge it as applied. If you don't want, just crash the state machine.
 	OnUpdateV2(ctx context.Context, entry EntryV2) (any, error)
