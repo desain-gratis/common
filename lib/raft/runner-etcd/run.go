@@ -3,7 +3,6 @@ package runneretcd
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -91,12 +90,22 @@ func startRaft(snapdir, waldir string, id int, peers []string, join bool, app dg
 		}
 		// load from DATA (KV) SNAPSHOT folder / snapdir dalam bentuk raftpb.Snapshot (kan dia bisa ada banyak)
 		// dia di match dengan data walSnaps index & term nya match (many to many)
-		_snapshot, err := snapshotter.LoadNewestAvailable(walSnaps) // THIS KV SNAPSHOT DATA is obtaine inside latest walsnap.
-		if err != nil && !errors.Is(err, snap.ErrNoSnapshot) {
-			log.Fatalf("raftexample: error loading snapshot (%v)", err)
-		}
+		// NOTE: HMM MENARIK. DIA AMBIL DARI SNAPSHOTTER, BUKAN DARI WAL.
+		// bener2 cari yang sukses; DARI snapshot.
+		// sekarang, mari kitalihat kalau gak peduli load snapshot; mari kita tidak overwrite;
 
-		snapshot = _snapshot // apparently KV snapshot loaded here aswell; so, ngga "hanya" WAL snapshot, tapi mengandung kv
+		snapshotFromWalOnly := walSnaps[len(walSnaps)-1]
+		snapshot.Metadata = &raftpb.SnapshotMetadata{}
+		snapshot.Metadata.Index = snapshotFromWalOnly.Index
+		snapshot.Metadata.Term = snapshotFromWalOnly.Term
+		snapshot.Metadata.ConfState = snapshotFromWalOnly.ConfState
+
+		// _snapshot, err := snapshotter.LoadNewestAvailable(walSnaps) // THIS KV SNAPSHOT DATA is obtaine inside latest walsnap.
+		// if err != nil && !errors.Is(err, snap.ErrNoSnapshot) {
+		// 	log.Fatalf("raftexample: error loading snapshot (%v)", err)
+		// }
+
+		// snapshot = _snapshot // apparently KV snapshot loaded here aswell; so, ngga "hanya" WAL snapshot, tapi mengandung kv
 		// dan lebih tepatnya lagi, term dan index & metadata segalanya ngikutin si KV.
 	}
 

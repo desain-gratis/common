@@ -292,13 +292,14 @@ func (rc *RaftContext) saveSnapshotToDisk(snap *raftpb.Snapshot) error {
 	// save the snapshot file before writing the snapshot to the wal.
 	// This makes it possible for the snapshot file to become orphaned, but prevents
 	// a WAL snapshot entry from having no corresponding snapshot file.
-	if err := rc.snapshotter.SaveSnap(snap); err != nil {
-		return err
-	}
+	// TESTING COMMENT SNAPSHOT RELATED
+	// if err := rc.snapshotter.SaveSnap(snap); err != nil {
+	// 	return err
+	// }
 	if err := rc.wal.SaveSnapshot(&walSnap); err != nil { // basically we "apply" here; using snap.Metadata.Index here.
 		return err // wal both save "entries" & the commited index
 	}
-	return rc.wal.ReleaseLockTo(snap.Metadata.GetIndex())
+	return rc.wal.ReleaseLockTo(snap.Metadata.GetIndex()) // TESTING COMMENT SNAPSHOT RELATED
 }
 
 func (rc *RaftContext) loadSnapshot(snapshotToSave *raftpb.Snapshot) {
@@ -421,18 +422,24 @@ func (rc *RaftContext) maybeTriggerSnapshot(applyDoneC <-chan struct{}) {
 		}
 	}
 
-	log.Printf("start snapshot [applied index: %d | last snapshot index: %d]", rc.appliedIndex, rc.snapshotIndex)
-	data, err := rc.getSnapshotData() // supposedly, the snapshot of our KV DB..(for now "badger")
-	if err != nil {
-		log.Panic(err)
-	}
+	// TODO: we can split between "ordinary apply", and "apply" that also creates snapshot.
+	// but let's try only do ordinary "apply" without any snapshotting
+
+	// this part only get "bytes" of data to store.
+	// log.Printf("start snapshot [applied index: %d | last snapshot index: %d]", rc.appliedIndex, rc.snapshotIndex)
+	// data, err := rc.getSnapshotData() // supposedly, the snapshot of our KV DB..(for now "badger")
+	// if err != nil {
+	// 	log.Panic(err)
+	// }
 
 	// take a "photo" snapshot of the storage as source of truth; used by the raft framework
-	snap, err := rc.raftStorage.CreateSnapshot(rc.appliedIndex, rc.confState, data)
+	// It seems it's used by Raft in Snapshot() method. In our case, it also response back to us for saving externally.
+	snap, err := rc.raftStorage.CreateSnapshot(rc.appliedIndex, rc.confState, nil) // test with nil. we don't have "snapshot"
 	if err != nil {
 		panic(err)
 	}
 
+	// this is the actual "wal" commit index
 	if err := rc.saveSnapshotToDisk(snap); err != nil {
 		panic(err)
 	}
@@ -441,6 +448,8 @@ func (rc *RaftContext) maybeTriggerSnapshot(applyDoneC <-chan struct{}) {
 	if rc.appliedIndex > snapshotCatchUpEntriesN {
 		compactIndex = rc.appliedIndex - snapshotCatchUpEntriesN
 	}
+
+	// this is for in memory , it's ok
 	if err := rc.raftStorage.Compact(compactIndex); err != nil {
 		if !errors.Is(err, raft.ErrCompacted) {
 			panic(err)
