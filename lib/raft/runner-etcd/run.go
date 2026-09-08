@@ -23,7 +23,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func RunWithConfig(cfgPath string, partitionID string, app dgraft.ApplicationV2) (context.Context, chan string, error) {
+func RunWithConfig(ctx context.Context, cfgPath string, partitionID string, app dgraft.ApplicationV2) (context.Context, chan string, error) {
 	cfg, err := readEtcdRaftConfig(cfgPath)
 	if err != nil {
 		return nil, nil, err
@@ -61,7 +61,7 @@ func RunWithConfig(cfgPath string, partitionID string, app dgraft.ApplicationV2)
 		}
 	}()
 
-	return dgraft.WithRaftContext(context.Background(), rw), proposeOut, nil
+	return dgraft.WithRaftContext(ctx, rw), proposeOut, nil
 }
 
 // snpadir --> DATA snapdir

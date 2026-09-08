@@ -41,22 +41,23 @@ func main() {
 	// A raft application that provides distributed mycontent storage
 	badgerStorageApp := content_badgerraft.New(
 		db,
-		content_badgerraft.TableConfig{Name: "user_profile", RefSize: 0, Versioned: true},
+		content_badgerraft.TableConfig{Name: "user_profile", RefSize: 0},
 	)
 
 	// Run the raft engine for this app
 	raftCtx, in, _ := runneretcd.RunWithConfig(
+		context.Background(),
 		configPath,
 		"user-profile",
 		badgerStorageApp,
 	)
 
-	// lets pass the version parameter via context in the client. 
+	// lets pass the version parameter via context in the client.
 	// and allow delivery to accept this parameter, and pass it via context
 	//  maybe in the mycontent interface we define it (the context setter & getter)
 	// and it will be ready to be used in the repo (just like the error)
 
-	userProfileRepo, err := badgerStorageApp.GetContentRepository(raftCtx, "user_profile")
+	userProfileRepo, err := badgerStorageApp.GetKVTable(raftCtx, "user_profile")
 	if err != nil {
 		return
 	}

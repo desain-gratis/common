@@ -94,3 +94,7 @@ func (c *UserProfile) WithVersion(v uint64) mycontent.Data {
 	c.Version = v
 	return c
 }
+
+func (c *UserProfile) DGVersion() *uint64 {
+	return &c.Version
+}
