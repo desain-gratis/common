@@ -23,26 +23,24 @@ import (
 	"go.uber.org/zap"
 )
 
-func RunWithConfig(ctx context.Context, cfgPath string, partitionID string, app dgraft.ApplicationV2) (context.Context, chan string, error) {
+func RunWithConfig(ctx context.Context, cfgPath string, replicaID string, app dgraft.ApplicationV2) (context.Context, chan string, error) {
 	cfg, err := readEtcdRaftConfig(cfgPath)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	partitionCfg := cfg.Sub(partitionID)
+	id := cfg.GetInt("node_id")
+	partitionCfg := cfg.Sub("replica").Sub(replicaID)
 
 	cluster := partitionCfg.GetStringSlice("cluster")
-	id := partitionCfg.GetInt("id")
 	join := partitionCfg.GetBool("join")
 
-	// proposeC := make(chan string)
-	// defer close(proposeC)
-	// confChangeC := make(chan *raftpb.ConfChange)
-	// defer close(confChangeC)
-
+	// todomaxxing
+	snapDir := fmt.Sprintf("%s/etcd-raft/%s-%d-snap", cfg.GetString("base_data_dir"), replicaID, id)
+	walDir := fmt.Sprintf("%s/etcd-raft/%s-%d", cfg.GetString("base_wal_dir"), replicaID, id)
 	rw, err := startRaft(
-		fmt.Sprintf("%s-%d-snap", partitionID, id),
-		fmt.Sprintf("%s-%d", partitionID, id), // todo: configurable
+		snapDir,
+		walDir,
 		id,
 		cluster,
 		partitionCfg.GetString("bind_address"),
@@ -70,7 +68,7 @@ func startRaft(snapdir, waldir string, id int, peers []string, bindAddr string, 
 	ctx := context.Background()
 
 	if !fileutil.Exist(snapdir) {
-		if err := os.Mkdir(snapdir, 0o750); err != nil {
+		if err := os.MkdirAll(snapdir, 0o750); err != nil {
 			log.Fatalf("raftexample: cannot create dir for snapshot %v (%v)", snapdir, err)
 		}
 	}
@@ -112,7 +110,7 @@ func startRaft(snapdir, waldir string, id int, peers []string, bindAddr string, 
 
 	// openWAL
 	if !walExist {
-		if err := os.Mkdir(waldir, 0o750); err != nil {
+		if err := os.MkdirAll(waldir, 0o750); err != nil {
 			log.Fatalf("raftexample: cannot create dir for wal (%v)", err)
 		}
 

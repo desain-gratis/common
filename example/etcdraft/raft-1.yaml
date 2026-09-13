@@ -1,8 +1,11 @@
-user-profile:
-  id: 2
-  cluster:
-    - http://localhost:9101
-    - http://localhost:9102
-    - http://localhost:9103
-  bind_address: localhost:9102
-  join: false
+node_id: 2
+base_wal_dir: "/wal/deployd"
+base_data_dir: "/data/deployd"
+replica:
+  user-profile:
+    cluster:
+      - http://localhost:9101
+      - http://localhost:9102
+      - http://localhost:9103
+    bind_address: localhost:9102
+    join: false
