@@ -82,24 +82,6 @@ func (rc *RaftContext) Propose(ctx context.Context, value any) (any, error) {
 		return !ok || msg.SubscriptionID != subID
 	}))
 
-	sub.Start()
-
-	var result *dgraft.ResultV2
-
-	wg := &sync.WaitGroup{}
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-
-		msg := <-sub.Listen()
-
-		r, ok := msg.(*dgraft.ResultV2)
-		if !ok {
-			return
-		}
-		result = r
-	}()
-
 	reqPayload, err := json.Marshal(value)
 	if err != nil {
 		return nil, err
@@ -118,6 +100,24 @@ func (rc *RaftContext) Propose(ctx context.Context, value any) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	sub.Start()
+
+	var result *dgraft.ResultV2
+
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+
+		msg := <-sub.Listen()
+
+		r, ok := msg.(*dgraft.ResultV2)
+		if !ok {
+			return
+		}
+		result = r
+	}()
 
 	err = rc.node.Propose(ctx, wrappedPayload)
 	if err != nil {
