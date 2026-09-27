@@ -46,26 +46,23 @@ func (s *standardTopic) Subscribe(ctx context.Context, csf notifier.CreateSubscr
 		return nil, ctx.Err()
 	}
 
-	id := rand.Uint64() // change id impl to avoid conflict if needed
+	id := rand.Uint64()
 
 	subs := csf(ctx, getKey(id))
-
-	// log.Info().Msgf("topic: created new %v", id)
 
 	s.lock.Lock()
 	s.listener[id] = subs
 	s.lock.Unlock()
 
-	// unregister once the ctx has done
 	go func(id uint64) {
-		_ = <-ctx.Done()
+		<-ctx.Done()
+
 		s.lock.Lock()
-		defer s.lock.Unlock()
 		delete(s.listener, id)
-		// log.Info().Msgf("topic: closed properly %v", id)
+		s.lock.Unlock()
 	}(id)
 
-	return s.listener[id], nil
+	return subs, nil
 }
 
 func (s *standardTopic) GetSubscription(id string) (notifier.Subscription, error) {
