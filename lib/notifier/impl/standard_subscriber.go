@@ -3,22 +3,13 @@ package impl
 import (
 	"context"
 	"errors"
-	"sync"
 	"sync/atomic"
-	"time"
-
-	// "github.com/rs/zerolog/log"
 
 	"github.com/desain-gratis/common/lib/notifier"
 )
 
 const (
-	// include creation, start, listen
-	// usually it is fast, but recently I've experienced cloudflare re-routing
-	// causing high latency.. and making this operation timed out
-	// http://cloudflarestatus.com
-	listenTimeOut   = 50000 * time.Millisecond
-	listenQueueSize = 24000
+	listenQueueSize = 1024
 )
 
 var _ notifier.Subscription = &standardSubscriber{}
@@ -31,11 +22,9 @@ var (
 type standardSubscriber struct {
 	id        string
 	started   atomic.Bool
-	closed    atomic.Bool
-	listened  atomic.Bool
-	closed2   bool
 	listenCh  chan any
 	receiveCh chan any
+	done      chan struct{}
 }
 
 func NoOp(a any) bool {
@@ -51,6 +40,7 @@ func NewStandardSubscriber(filterOutFn func(any) bool) notifier.CreateSubscripti
 			id:        id,
 			listenCh:  make(chan any, listenQueueSize),
 			receiveCh: make(chan any),
+			done:      make(chan struct{}),
 		}
 
 		if filterOutFn == nil {
@@ -61,40 +51,26 @@ func NewStandardSubscriber(filterOutFn func(any) bool) notifier.CreateSubscripti
 
 		// main listener
 		go func() {
-			wg := sync.WaitGroup{}
 			defer func() {
-				wg.Wait()
 				close(c.listenCh)
-				// log.Info().Msgf("subscription member: closed properly %v", id)
 			}()
 
 			for {
 				select {
 				case <-ctx.Done():
-					// log.Info().Msgf("subscription member: closing %v cause: %v", id, context.Cause(ctx))
-
-					c.closed.Store(true)
-					c.closed2 = true
-					close(c.receiveCh)
-
+					c.close()
 					return
-				case <-time.After(listenTimeOut):
-					if c.listened.Load() {
-						continue
-					}
 
-					// log.Info().Msgf("subscription member: listen timed out %v", id)
-
-					c.closed.Store(true)
-					c.closed2 = true
-					close(c.receiveCh)
-
-					return
 				case msg := <-c.receiveCh:
 					if filterOutFn(msg) {
 						continue
 					}
-					c.listenCh <- msg
+
+					select {
+					case c.listenCh <- msg:
+					case <-c.done:
+						return
+					}
 				}
 			}
 		}()
@@ -113,29 +89,27 @@ func (c *standardSubscriber) Start() {
 }
 
 func (c *standardSubscriber) Listen() <-chan any {
-	c.listened.Store(true)
 	return c.listenCh
 }
 
 func (c *standardSubscriber) Publish(msg any) error {
-	if c.closed.Load() {
-		return ErrClosed
-	}
-
 	if !c.started.Load() {
 		return ErrNotStarted
 	}
 
-	// we do not reject based on !c.listened,
-	// we want to queue messages after publisher Start() them
+	select {
+	case c.receiveCh <- msg:
+		return nil
 
-	// maybe we can add statistics eg. number of publishhed messages..
-
-	if c.closed2 {
+	case <-c.done:
 		return ErrClosed
 	}
+}
 
-	c.receiveCh <- msg
-
-	return nil
+func (c *standardSubscriber) close() {
+	select {
+	case <-c.done:
+	default:
+		close(c.done)
+	}
 }
