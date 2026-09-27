@@ -97,13 +97,21 @@ func (s *standardTopic) RemoveSubscription(id string) error {
 }
 
 func (s *standardTopic) Broadcast(ctx context.Context, message any) error {
-	s.lock.RLock()
-	defer s.lock.RUnlock()
+	listeners := make([]notifier.Subscription, 0, len(s.listener))
 
-	for key, listener := range s.listener {
+	func() {
+		s.lock.RLock()
+		defer s.lock.RUnlock()
+
+		for _, listener := range s.listener {
+			listeners = append(listeners, listener)
+		}
+	}()
+
+	for _, listener := range listeners {
 		err := listener.Publish(message)
 		if err != nil && !errors.Is(err, ErrNotStarted) {
-			log.Err(err).Msgf("error during publish.. I delete: %v msg: %v", key, message)
+			log.Err(err).Msgf("error during publish.. msg: %v", message)
 		}
 	}
 
