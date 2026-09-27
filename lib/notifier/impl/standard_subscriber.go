@@ -33,6 +33,7 @@ type standardSubscriber struct {
 	started   atomic.Bool
 	closed    atomic.Bool
 	listened  atomic.Bool
+	closed2   bool
 	listenCh  chan any
 	receiveCh chan any
 }
@@ -73,6 +74,7 @@ func NewStandardSubscriber(filterOutFn func(any) bool) notifier.CreateSubscripti
 					// log.Info().Msgf("subscription member: closing %v cause: %v", id, context.Cause(ctx))
 
 					c.closed.Store(true)
+					c.closed2 = true
 					close(c.receiveCh)
 
 					return
@@ -84,6 +86,7 @@ func NewStandardSubscriber(filterOutFn func(any) bool) notifier.CreateSubscripti
 					// log.Info().Msgf("subscription member: listen timed out %v", id)
 
 					c.closed.Store(true)
+					c.closed2 = true
 					close(c.receiveCh)
 
 					return
@@ -127,6 +130,10 @@ func (c *standardSubscriber) Publish(msg any) error {
 	// we want to queue messages after publisher Start() them
 
 	// maybe we can add statistics eg. number of publishhed messages..
+
+	if c.closed2 {
+		return ErrClosed
+	}
 
 	c.receiveCh <- msg
 
