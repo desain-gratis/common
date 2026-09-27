@@ -110,8 +110,12 @@ func (s *standardTopic) Broadcast(ctx context.Context, message any) error {
 
 	for _, listener := range listeners {
 		err := listener.Publish(message)
-		if err != nil && !errors.Is(err, ErrNotStarted) {
-			log.Err(err).Msgf("error during publish.. msg: %v", message)
+		if errors.Is(err, ErrNotStarted) || errors.Is(err, ErrClosed) {
+			// expected errors
+			continue
+		}
+		if err != nil {
+			log.Err(err).Msgf("error during broadcast.. msg: %v", message)
 		}
 	}
 
