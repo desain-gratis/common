@@ -2,13 +2,14 @@ package runneretcd
 
 import (
 	"context"
-	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"log"
+	"math/rand"
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"sync"
 	"time"
 
@@ -68,13 +69,7 @@ type commit struct {
 // Maybe we rename to ProposeSync
 // TODO as well, use better encoding eg. proto type.
 func (rc *RaftContext) Propose(ctx context.Context, value any) (any, error) {
-	// potential security issue;
-	// generated subscription id s should be secure random
-	// inside the impl module, TODO.
-	// or we can use arbitrary value
-
-	// TODO: use the number version to save memory?
-	subID := rand.Text()
+	subID := strconv.FormatUint(rand.Uint64(), 10)
 
 	sub, _ := rc.ApplyTopic.Subscribe(ctx, impl.NewStandardSubscriber(func(a any) bool {
 		// filter out other message
