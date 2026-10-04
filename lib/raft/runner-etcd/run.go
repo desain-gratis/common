@@ -24,6 +24,10 @@ import (
 )
 
 func RunWithConfig(ctx context.Context, cfgPath string, replicaID string, app dgraft.ApplicationV2) (context.Context, chan string, error) {
+	return RunWithConfigAll(ctx, cfgPath, replicaID, app, nil)
+}
+
+func RunWithConfigAll(ctx context.Context, cfgPath string, replicaID string, app dgraft.ApplicationV2, leaderListener dgraft.LeaderListener) (context.Context, chan string, error) {
 	cfg, err := readEtcdRaftConfig(cfgPath)
 	if err != nil {
 		return nil, nil, err
@@ -46,6 +50,7 @@ func RunWithConfig(ctx context.Context, cfgPath string, replicaID string, app dg
 		partitionCfg.GetString("bind_address"),
 		join,
 		app,
+		leaderListener,
 	)
 	if err != nil {
 		return nil, nil, err
@@ -62,9 +67,19 @@ func RunWithConfig(ctx context.Context, cfgPath string, replicaID string, app dg
 	return dgraft.WithRaftContext(ctx, rw), proposeOut, nil
 }
 
+// todo: make proper later
+type leaderTracker struct {
+	term      uint64 // last term seen in HardState
+	isLeader  bool   // from latest SoftState
+	firedTerm uint64 // last term we already fired for
+
+	lctx    context.Context
+	lcancel func()
+}
+
 // snpadir --> DATA snapdir
 // waldir --> raft wal dir & raft snapshot dir
-func startRaft(snapdir, waldir string, id int, peers []string, bindAddr string, join bool, app dgraft.ApplicationV2) (*RaftContext, error) {
+func startRaft(snapdir, waldir string, id int, peers []string, bindAddr string, join bool, app dgraft.ApplicationV2, leaderListener dgraft.LeaderListener) (*RaftContext, error) {
 	ctx := context.Background()
 
 	if !fileutil.Exist(snapdir) {
@@ -178,6 +193,8 @@ func startRaft(snapdir, waldir string, id int, peers []string, bindAddr string, 
 		MaxSizePerMsg:             1024 * 1024,
 		MaxInflightMsgs:           256,
 		MaxUncommittedEntriesSize: 1 << 30,
+		CheckQuorum:               true,
+		PreVote:                   true,
 	}
 
 	// No need to do this, since we're doing "always commit / set hard state" POC
@@ -218,6 +235,7 @@ func startRaft(snapdir, waldir string, id int, peers []string, bindAddr string, 
 	}
 
 	commitC := make(chan *commit)
+	leaderC := make(chan *leaderChange)
 	errorC := make(chan error)
 	snapshotterReady := make(chan *snap.Snapshotter, 1)
 
@@ -241,6 +259,7 @@ func startRaft(snapdir, waldir string, id int, peers []string, bindAddr string, 
 		node:             raftNode,
 		transport:        transport,
 		commitC:          commitC,
+		leaderC:          leaderC,
 		errorC:           errorC,
 		snapshotterReady: snapshotterReady,
 
@@ -250,6 +269,16 @@ func startRaft(snapdir, waldir string, id int, peers []string, bindAddr string, 
 
 		ApplyTopic: topicImpl.NewStandardTopic(),
 	}
+
+	go func() {
+		for leaderUpdate := range leaderC {
+			if leaderListener == nil {
+				continue
+			}
+			ctx := dgraft.WithRaftContext(leaderUpdate.Ctx, rc)
+			_ = leaderListener(ctx, leaderUpdate.Term, leaderUpdate.LeaderID)
+		}
+	}()
 
 	go func() {
 		for commit := range commitC {

@@ -72,6 +72,8 @@ type ApplicationV2 interface {
 	OnUpdateV2(ctx context.Context, entry EntryV2) (any, error)
 }
 
+type LeaderListener func(ctx context.Context, term uint64, leaderID uint64) error
+
 // Application represents a dragonboat state machine application
 type Application interface {
 	// Init

@@ -50,8 +50,9 @@ type RaftContext struct {
 	proposeC    chan string               // proposed messages (k,v)
 	confChangeC <-chan *raftpb.ConfChange // proposed cluster config changes
 	commitC     chan<- *commit            // entries committed to log (k,v)
-	errorC      chan<- error              // errors from raft session
-	stopc       chan struct{}             // signals proposal channel closed
+	leaderC     chan<- *leaderChange
+	errorC      chan<- error  // errors from raft session
+	stopc       chan struct{} // signals proposal channel closed
 
 	snapshotter      *snap.Snapshotter
 	snapshotterReady chan *snap.Snapshotter // signals when snapshotter is ready
@@ -64,6 +65,12 @@ type RaftContext struct {
 type commit struct {
 	data       []*raftpb.Entry
 	applyDoneC chan<- struct{}
+}
+
+type leaderChange struct {
+	Ctx      context.Context
+	Term     uint64
+	LeaderID uint64
 }
 
 // Maybe we rename to ProposeSync
@@ -169,6 +176,8 @@ func (rc *RaftContext) serveRaft() {
 		close(rc.stopc)
 	}()
 
+	var lt leaderTracker
+
 	// event loop on raft state machine updates
 	for {
 		select {
@@ -216,6 +225,9 @@ func (rc *RaftContext) serveRaft() {
 
 			// TODO: important, on after apply () should be made here.
 
+			// Leadership change event
+			rc.detectLeadershipChange(&lt, &rd)
+
 			rc.node.Advance()
 
 		case err := <-rc.transport.ErrorC:
@@ -247,6 +259,47 @@ func (rc *RaftContext) serveRaft() {
 	// Using existing WAL implementation let's the library more flexible,
 	// eg. if no need to use clickhouse, its ok. If we re-implement wal using clickhouse then its coupled to that...
 	// so wal dir default impl is the way to go.
+}
+
+// todo: very crude can improve later
+func (rc *RaftContext) detectLeadershipChange(lt *leaderTracker, rd *raft.Ready) {
+	// 1) HardState appears ONLY on change — a new term voids leadership.
+	if hs := rd.HardState; hs != nil && hs.GetTerm() != lt.term {
+		if lt.isLeader && hs.GetTerm() > lt.term {
+			// s.onLeadershipLost() // stepped down into a higher term
+		}
+		lt.term = hs.GetTerm()
+		lt.isLeader = false
+		if lt.lcancel != nil {
+			lt.lcancel()
+		}
+	}
+
+	// 2) SoftState appears ONLY on change.
+	if ss := rd.SoftState; ss != nil {
+		lt.isLeader = ss.Lead == rc.id &&
+			ss.RaftState == raft.StateLeader
+
+		if len(rd.CommittedEntries) == 0 && !lt.isLeader && lt.lcancel != nil {
+			lt.lcancel()
+		}
+	}
+
+	// 3) Apply entries; fire once when an entry of MY term commits.
+	for _, e := range rd.CommittedEntries {
+		if lt.isLeader &&
+			e.GetTerm() == lt.term && // committed in *my* term
+			lt.firedTerm != lt.term {
+			lt.firedTerm = lt.term
+			lt.lctx, lt.lcancel = context.WithCancel(context.Background()) // todo: maybe pass ctx from application context
+
+			rc.leaderC <- &leaderChange{Ctx: lt.lctx, Term: lt.term, LeaderID: rc.id}
+		} else {
+			if lt.lcancel != nil {
+				lt.lcancel()
+			}
+		}
+	}
 }
 
 // TODO: use our pattern
@@ -470,6 +523,7 @@ func (rc *RaftContext) stop() {
 	rc.stopHTTP()
 	close(rc.commitC)
 	close(rc.errorC)
+	close(rc.leaderC)
 	rc.node.Stop()
 }
 
@@ -485,4 +539,5 @@ func (rc *RaftContext) writeError(err error) {
 	rc.errorC <- err
 	close(rc.errorC)
 	rc.node.Stop()
+	close(rc.leaderC)
 }
