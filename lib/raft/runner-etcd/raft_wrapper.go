@@ -210,6 +210,9 @@ func (rc *RaftContext) serveRaft() {
 			// 3. SEND
 			rc.transport.Send(rc.updateMsgSnap(rd.Messages))
 
+			// Leadership change event
+			rc.detectLeadershipChange(&lt, &rd)
+
 			// 4. APPLY
 			applyDoneC, ok := rc.publishEntries(rc.entriesToApply(rd.CommittedEntries))
 			if !ok {
@@ -224,9 +227,6 @@ func (rc *RaftContext) serveRaft() {
 			rc.maybeTriggerSnapshot(applyDoneC)
 
 			// TODO: important, on after apply () should be made here.
-
-			// Leadership change event
-			rc.detectLeadershipChange(&lt, &rd)
 
 			rc.node.Advance()
 

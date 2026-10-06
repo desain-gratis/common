@@ -64,6 +64,7 @@ func RunWithConfigAll(ctx context.Context, cfgPath string, replicaID string, app
 		}
 	}()
 
+	// todo: maybe just return raw *RaftContext
 	return dgraft.WithRaftContext(ctx, rw), proposeOut, nil
 }
 
