@@ -34,6 +34,8 @@ type RaftContext struct {
 	peers    []string
 	bindAddr string
 
+	config *raft.Config
+
 	// todo: temporary (can use better pattern)
 	httpstopc chan struct{}
 	httpdonec chan struct{}
@@ -49,8 +51,8 @@ type RaftContext struct {
 
 	proposeC    chan string               // proposed messages (k,v)
 	confChangeC <-chan *raftpb.ConfChange // proposed cluster config changes
-	commitC     chan<- *commit            // entries committed to log (k,v)
-	leaderC     chan<- *leaderChange
+	commitC     chan *commit              // entries committed to log (k,v)
+	leaderC     chan *leaderChange
 	errorC      chan<- error  // errors from raft session
 	stopc       chan struct{} // signals proposal channel closed
 
@@ -60,6 +62,7 @@ type RaftContext struct {
 	getSnapshotData func() ([]byte, error)
 
 	ApplyTopic notifier.Topic
+	app        dgraft.ApplicationV2
 }
 
 type commit struct {
@@ -261,44 +264,40 @@ func (rc *RaftContext) serveRaft() {
 	// so wal dir default impl is the way to go.
 }
 
-// todo: very crude can improve later
 func (rc *RaftContext) detectLeadershipChange(lt *leaderTracker, rd *raft.Ready) {
-	// 1) HardState appears ONLY on change — a new term voids leadership.
+	// 1) New term voids leadership.
 	if hs := rd.HardState; hs != nil && hs.GetTerm() != lt.term {
-		if lt.isLeader && hs.GetTerm() > lt.term {
-			// s.onLeadershipLost() // stepped down into a higher term
-		}
 		lt.term = hs.GetTerm()
-		lt.isLeader = false
-		if lt.lcancel != nil {
-			lt.lcancel()
-		}
+		lt.loseLeadership()
 	}
 
-	// 2) SoftState appears ONLY on change.
+	// 2) SoftState change: losing StateLeader or a new Lead voids leadership.
 	if ss := rd.SoftState; ss != nil {
-		lt.isLeader = ss.Lead == rc.id &&
-			ss.RaftState == raft.StateLeader
-
-		if len(rd.CommittedEntries) == 0 && !lt.isLeader && lt.lcancel != nil {
-			lt.lcancel()
+		if lt.isLeader && !(ss.Lead == rc.id && ss.RaftState == raft.StateLeader) {
+			lt.loseLeadership()
 		}
+		lt.isLeader = ss.Lead == rc.id && ss.RaftState == raft.StateLeader
 	}
 
-	// 3) Apply entries; fire once when an entry of MY term commits.
-	for _, e := range rd.CommittedEntries {
-		if lt.isLeader &&
-			e.GetTerm() == lt.term && // committed in *my* term
-			lt.firedTerm != lt.term {
-			lt.firedTerm = lt.term
-			lt.lctx, lt.lcancel = context.WithCancel(context.Background()) // todo: maybe pass ctx from application context
-
-			rc.leaderC <- &leaderChange{Ctx: lt.lctx, Term: lt.term, LeaderID: rc.id}
-		} else {
-			if lt.lcancel != nil {
-				lt.lcancel()
+	// 3) Fire exactly once per term, when an entry of MY term commits.
+	//    The first such entry is what confirms leadership.
+	if lt.isLeader && lt.firedTerm != lt.term {
+		for _, e := range rd.CommittedEntries {
+			if e.GetTerm() == lt.term {
+				lt.firedTerm = lt.term
+				lt.lctx, lt.lcancel = context.WithCancel(context.Background())
+				rc.leaderC <- &leaderChange{Ctx: lt.lctx, Term: lt.term, LeaderID: rc.id}
+				break
 			}
 		}
+	}
+}
+
+func (lt *leaderTracker) loseLeadership() {
+	lt.isLeader = false
+	if lt.lcancel != nil {
+		lt.lcancel()
+		lt.lcancel = nil
 	}
 }
 

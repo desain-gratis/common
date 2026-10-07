@@ -2,6 +2,7 @@ package raft
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 
 	"github.com/lni/dragonboat/v4/raftio"
@@ -41,7 +42,7 @@ type EntryV2 struct {
 	SourceNodeID   uint64 `json:"source_node_id"`
 	SubscriptionID string `json:"subscription_id"` // or subscription ID
 
-	Data []byte `json:"data"`
+	Data json.RawMessage `json:"data"`
 }
 
 var (
