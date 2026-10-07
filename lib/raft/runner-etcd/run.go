@@ -23,11 +23,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func RunWithConfig(ctx context.Context, cfgPath string, replicaID string, app dgraft.ApplicationV2) (context.Context, chan string, error) {
-	return RunWithConfigAll(ctx, cfgPath, replicaID, app, nil)
-}
-
-func RunWithConfigAll(ctx context.Context, cfgPath string, replicaID string, app dgraft.ApplicationV2, leaderListener dgraft.LeaderListener) (context.Context, chan string, error) {
+func RunWithConfig(_ context.Context, cfgPath string, replicaID string, app dgraft.ApplicationV2) (*RaftContext, chan string, error) {
 	cfg, err := readEtcdRaftConfig(cfgPath)
 	if err != nil {
 		return nil, nil, err
@@ -40,6 +36,7 @@ func RunWithConfigAll(ctx context.Context, cfgPath string, replicaID string, app
 	join := partitionCfg.GetBool("join")
 
 	// todomaxxing
+	// TODO: let's start in dedicated method (eg. RaftContext.Run())
 	snapDir := fmt.Sprintf("%s/etcd-raft/%s-%d-snap", cfg.GetString("base_data_dir"), replicaID, id)
 	walDir := fmt.Sprintf("%s/etcd-raft/%s-%d", cfg.GetString("base_wal_dir"), replicaID, id)
 	rw, err := startRaft(
@@ -50,7 +47,6 @@ func RunWithConfigAll(ctx context.Context, cfgPath string, replicaID string, app
 		partitionCfg.GetString("bind_address"),
 		join,
 		app,
-		leaderListener,
 	)
 	if err != nil {
 		return nil, nil, err
@@ -65,7 +61,69 @@ func RunWithConfigAll(ctx context.Context, cfgPath string, replicaID string, app
 	}()
 
 	// todo: maybe just return raw *RaftContext
-	return dgraft.WithRaftContext(ctx, rw), proposeOut, nil
+	return rw, proposeOut, nil
+}
+
+// TODOODOODODO
+func (rc *RaftContext) Run(ctx context.Context, leaderListener dgraft.LeaderListener) error {
+	rc.transport.Start()
+	for i := range rc.peers { // right now start first and then add..
+		if uint64(i+1) != rc.id {
+			rc.transport.AddPeer(types.ID(i+1), []string{rc.peers[i]})
+		}
+	}
+
+	go func() {
+		for leaderUpdate := range rc.leaderC {
+			if leaderListener == nil {
+				continue
+			}
+			ctx := dgraft.WithRaftContext(leaderUpdate.Ctx, rc)
+			_ = leaderListener(ctx, leaderUpdate.Term, leaderUpdate.LeaderID)
+		}
+	}()
+
+	go func() {
+		for commit := range rc.commitC {
+			for _, s := range commit.data {
+				// log.Printf("index=%v term=%v data=%v\n", *s.Index, *s.Term, string(s.Data))
+				var entry dgraft.EntryV2
+				err := json.Unmarshal(s.Data, &entry)
+				if err != nil {
+					// bad data
+					continue
+				}
+
+				// overwrite
+				entry.Index = *s.Index
+				entry.Term = *s.Term
+
+				result, err := rc.app.OnUpdateV2(ctx, entry)
+
+				// todo: defer apply broadcast until after hardcstate commited
+				// gather result first before broadcast all.
+
+				// (or maybe do it directly here)
+
+				resultWrapper := &dgraft.ResultV2{
+					Value:          0,
+					Data:           result,
+					Error:          err,
+					SubscriptionID: entry.SubscriptionID,
+				}
+				err = rc.ApplyTopic.Broadcast(ctx, resultWrapper)
+				if err != nil {
+					log.Printf("should fatal")
+				}
+			}
+			close(commit.applyDoneC)
+		}
+	}()
+
+	go rc.serveTransport()
+	go rc.serveRaft()
+
+	return nil
 }
 
 // todo: make proper later
@@ -80,9 +138,8 @@ type leaderTracker struct {
 
 // snpadir --> DATA snapdir
 // waldir --> raft wal dir & raft snapshot dir
-func startRaft(snapdir, waldir string, id int, peers []string, bindAddr string, join bool, app dgraft.ApplicationV2, leaderListener dgraft.LeaderListener) (*RaftContext, error) {
-	ctx := context.Background()
-
+// TODO: refactor
+func startRaft(snapdir, waldir string, id int, peers []string, bindAddr string, join bool, app dgraft.ApplicationV2) (*RaftContext, error) {
 	if !fileutil.Exist(snapdir) {
 		if err := os.MkdirAll(snapdir, 0o750); err != nil {
 			log.Fatalf("raftexample: cannot create dir for snapshot %v (%v)", snapdir, err)
@@ -182,10 +239,6 @@ func startRaft(snapdir, waldir string, id int, peers []string, bindAddr string, 
 	// the snapshotter will be used in kv
 	// rc.snapshotterReady <- rc.snapshotter
 
-	rpeers := make([]raft.Peer, len(peers))
-	for i := range rpeers {
-		rpeers[i] = raft.Peer{ID: uint64(i + 1)}
-	}
 	c := &raft.Config{
 		ID:                        uint64(id),
 		ElectionTick:              10,
@@ -201,23 +254,17 @@ func startRaft(snapdir, waldir string, id int, peers []string, bindAddr string, 
 	// No need to do this, since we're doing "always commit / set hard state" POC
 	// at every msg; raft storage will knew already (inside WAL)
 
-	// lastAppliedIndex, err := app.InitV2(ctx)
-	// if err != nil {
-	// 	return nil, err
-	// }
-	// c.Applied = lastAppliedIndex
-
-	// start the raft node
-
 	var raftNode raft.Node
 	if walExist || join {
 		raftNode = raft.RestartNode(c)
 	} else {
+		rpeers := make([]raft.Peer, len(peers))
+		for i := range rpeers {
+			rpeers[i] = raft.Peer{ID: uint64(i + 1)}
+		}
 		raftNode = raft.StartNode(c, rpeers)
 	}
 
-	// TODO: refactor this part
-	// prepare the transport
 	transport := &rafthttp.Transport{
 		Logger:      logger,
 		ID:          types.ID(id),
@@ -227,23 +274,12 @@ func startRaft(snapdir, waldir string, id int, peers []string, bindAddr string, 
 		LeaderStats: stats.NewLeaderStats(logger, strconv.Itoa(id)),
 		ErrorC:      make(chan error),
 	}
-	transport.Start()
-
-	for i := range peers { // right now start first and then add..
-		if i+1 != id {
-			transport.AddPeer(types.ID(i+1), []string{peers[i]})
-		}
-	}
-
-	commitC := make(chan *commit)
-	leaderC := make(chan *leaderChange)
-	errorC := make(chan error)
-	snapshotterReady := make(chan *snap.Snapshotter, 1)
 
 	rc := &RaftContext{
 		id:       uint64(id),
 		peers:    peers,
 		bindAddr: bindAddr,
+		app:      app,
 
 		raftStorage: raftStorage, // duplicate, but necessary since it's implementation is used inside (not only on the raft)
 		wal:         w,           // used in internal process
@@ -259,10 +295,10 @@ func startRaft(snapdir, waldir string, id int, peers []string, bindAddr string, 
 
 		node:             raftNode,
 		transport:        transport,
-		commitC:          commitC,
-		leaderC:          leaderC,
-		errorC:           errorC,
-		snapshotterReady: snapshotterReady,
+		commitC:          make(chan *commit),
+		leaderC:          make(chan *leaderChange),
+		errorC:           make(chan error),
+		snapshotterReady: make(chan *snap.Snapshotter, 1),
 
 		getSnapshotData: func() ([]byte, error) {
 			return []byte("this is a snapshot"), nil
@@ -270,56 +306,6 @@ func startRaft(snapdir, waldir string, id int, peers []string, bindAddr string, 
 
 		ApplyTopic: topicImpl.NewStandardTopic(),
 	}
-
-	go func() {
-		for leaderUpdate := range leaderC {
-			if leaderListener == nil {
-				continue
-			}
-			ctx := dgraft.WithRaftContext(leaderUpdate.Ctx, rc)
-			_ = leaderListener(ctx, leaderUpdate.Term, leaderUpdate.LeaderID)
-		}
-	}()
-
-	go func() {
-		for commit := range commitC {
-			for _, s := range commit.data {
-				// log.Printf("index=%v term=%v data=%v\n", *s.Index, *s.Term, string(s.Data))
-				var entry dgraft.EntryV2
-				err := json.Unmarshal(s.Data, &entry)
-				if err != nil {
-					// bad data
-					continue
-				}
-
-				// overwrite
-				entry.Index = *s.Index
-				entry.Term = *s.Term
-
-				result, err := app.OnUpdateV2(ctx, entry)
-
-				// todo: defer apply broadcast until after hardcstate commited
-				// gather result first before broadcast all.
-
-				// (or maybe do it directly here)
-
-				resultWrapper := &dgraft.ResultV2{
-					Value:          0,
-					Data:           result,
-					Error:          err,
-					SubscriptionID: entry.SubscriptionID,
-				}
-				err = rc.ApplyTopic.Broadcast(ctx, resultWrapper)
-				if err != nil {
-					log.Printf("should fatal")
-				}
-			}
-			close(commit.applyDoneC)
-		}
-	}()
-
-	go rc.serveTransport()
-	go rc.serveRaft()
 
 	return rc, nil
 }
