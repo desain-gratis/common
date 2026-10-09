@@ -78,7 +78,7 @@ func (rc *RaftContext) Run(ctx context.Context, leaderListener dgraft.LeaderList
 			if leaderListener == nil {
 				continue
 			}
-			ctx := dgraft.WithRaftContext(leaderUpdate.Ctx, rc)
+			ctx := WithRaftContext(leaderUpdate.Ctx, rc)
 			_ = leaderListener(ctx, leaderUpdate.Term, leaderUpdate.LeaderID)
 		}
 	}()
@@ -327,4 +327,14 @@ func readEtcdRaftConfig(cfgFile string) (cfg *viper.Viper, err error) {
 	log.Printf("reading config: '%v'", cfgFile)
 
 	return v, nil
+}
+
+const raftCtxKey = "raft-ctx"
+
+func GetRaftContext(ctx context.Context) *RaftContext {
+	return ctx.Value(raftCtxKey).(*RaftContext)
+}
+
+func WithRaftContext(ctx context.Context, rc *RaftContext) context.Context {
+	return context.WithValue(ctx, raftCtxKey, rc)
 }
