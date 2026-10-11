@@ -23,8 +23,14 @@ import (
 	"go.etcd.io/etcd/server/v3/storage/wal/walpb"
 	"go.etcd.io/raft/v3"
 	"go.etcd.io/raft/v3/raftpb"
+	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
 )
+
+// TODO: IMPLEMENT RAFT STORAGE PROPERLY FOR BADGER, THIS IS JUST A QUICK HACK
+// We can  start by "extending" the *raft.MemoryStorage
+// Meanwhile, for POC we use this hack.
+var defaultSnapshotCount uint64 = 10000
 
 var snapshotCatchUpEntriesN uint64 = 10000
 
@@ -63,6 +69,8 @@ type RaftContext struct {
 
 	ApplyTopic notifier.Topic
 	app        dgraft.ApplicationV2
+
+	Logger *zap.Logger
 }
 
 type commit struct {
@@ -192,6 +200,7 @@ func (rc *RaftContext) serveRaft() {
 			// 1. SAVE IN ADVANCE (TO DISK)
 			if !raft.IsEmptySnap(rd.Snapshot) {
 				// Save snapshot from raft (not from our initialization code) to disk immediately.
+				// meaning: Save it inside the WAL that we have a 'snapshot entry' not necessary a full Database backup.
 				rc.saveSnapshotToDisk(rd.Snapshot)
 			}
 			var hs *raftpb.HardState
@@ -200,7 +209,7 @@ func (rc *RaftContext) serveRaft() {
 			}
 			rc.wal.Save(hs, rd.Entries)
 
-			// 2. LOAD TO STORAGE
+			// 2. LOAD TO STORAGE (TO MEMORY; since it's using the inmemory implementation)
 			if !raft.IsEmptySnap(rd.Snapshot) {
 				// Load the snapshot to the application
 				rc.raftStorage.ApplySnapshot(rd.Snapshot)
@@ -208,6 +217,7 @@ func (rc *RaftContext) serveRaft() {
 				// kv must be un sync w. snapshot in me storage
 				rc.loadSnapshot(rd.Snapshot)
 			}
+			// 2a. Load entries (to memory as well)
 			rc.raftStorage.Append(rd.Entries) // entries
 
 			// 3. SEND
@@ -334,26 +344,59 @@ func (rc *RaftContext) serveTransport() {
 		log.Fatalf("raftexample: Failed to serve rafthttp (%v)", err)
 	}
 
-	log.Println("LOH KENAPA DICLOSE BAPACK!")
 	close(rc.httpdonec)
 }
 
+// Apply is just like "saveSnapshotToDisk", but without any snapshotting logic
+// It's only writes to WAL, not to the "snapshot"
+func (rc *RaftContext) apply(index, term uint64, confState *raftpb.ConfState, _debugDeleteMe *raftpb.Snapshot) error {
+	walSnap := walpb.Snapshot{
+		Index:     &index,
+		Term:      &term,
+		ConfState: confState,
+	}
+
+	if _debugDeleteMe != nil && _debugDeleteMe.Metadata != nil {
+		rc.Logger.Info("Refactor debug: ",
+			zap.Any("confState-equal", _debugDeleteMe.Metadata.ConfState.Equivalent(confState) == nil),
+			zap.Any("index-equal", _debugDeleteMe.Metadata.GetIndex() == index),
+			zap.Any("term-equal", _debugDeleteMe.Metadata.GetTerm() == term),
+		)
+	}
+
+	// notice the difference between this and saveSnapshotToDisk
+	// this one doesn't store snapshot; since we append to wal on every message.
+
+	// Since at init, we open the wal using a *walSnap pointer, we mark it use it as our "Apply" mechanism.
+	// Notice that we don't do actual "snapshotting" logic (no accompanied snapshotter.SaveSnap )
+	if err := rc.wal.SaveSnapshot(&walSnap); err != nil { // basically we "apply" here; using snap.Metadata.Index here.
+		return err // wal both save "entries" & the commited index
+	}
+
+	return rc.wal.ReleaseLockTo(index)
+}
+
+// Called from Ready
 func (rc *RaftContext) saveSnapshotToDisk(snap *raftpb.Snapshot) error {
 	walSnap := walpb.Snapshot{
 		Index:     snap.Metadata.Index,
 		Term:      snap.Metadata.Term,
 		ConfState: snap.Metadata.ConfState,
 	}
+
 	// save the snapshot file before writing the snapshot to the wal.
 	// This makes it possible for the snapshot file to become orphaned, but prevents
 	// a WAL snapshot entry from having no corresponding snapshot file.
 	// TESTING COMMENT SNAPSHOT RELATED
+
 	// if err := rc.snapshotter.SaveSnap(snap); err != nil {
 	// 	return err
 	// }
-	if err := rc.wal.SaveSnapshot(&walSnap); err != nil { // basically we "apply" here; using snap.Metadata.Index here.
+
+	if err := rc.wal.SaveSnapshot(&walSnap); err != nil {
 		return err // wal both save "entries" & the commited index
 	}
+
 	return rc.wal.ReleaseLockTo(snap.Metadata.GetIndex()) // TESTING COMMENT SNAPSHOT RELATED
 }
 
@@ -362,12 +405,11 @@ func (rc *RaftContext) loadSnapshot(snapshotToSave *raftpb.Snapshot) {
 		return
 	}
 
-	log.Printf("publishing snapshot at index %d", rc.snapshotIndex)
-	defer log.Printf("finished publishing snapshot at index %d", rc.snapshotIndex)
-
 	if snapshotToSave.Metadata.GetIndex() <= rc.appliedIndex {
 		log.Fatalf("snapshot index [%d] should > progress.appliedIndex [%d]", snapshotToSave.Metadata.GetIndex(), rc.appliedIndex)
 	}
+
+	// IMPORTANT: this one need to be implemented since can load the snapshot from DISK.
 	rc.commitC <- nil // trigger kvstore to load snapshot
 
 	rc.confState = snapshotToSave.Metadata.ConfState
@@ -419,7 +461,7 @@ func (rc *RaftContext) publishEntries(ents []*raftpb.Entry) (<-chan struct{}, bo
 				}
 			case raftpb.ConfChangeRemoveNode:
 				if cc.GetNodeId() == uint64(rc.id) {
-					log.Println("I've been removed from the cluster! Shutting down.")
+					rc.Logger.Info("I've been removed from the cluster! Shutting down.")
 					return nil, false
 				}
 				rc.transport.RemovePeer(types.ID(cc.GetNodeId()))
@@ -458,13 +500,13 @@ func (rc *RaftContext) entriesToApply(ents []*raftpb.Entry) (nents []*raftpb.Ent
 	return nents
 }
 
-// TODO: IMPLEMENT RAFT STORAGE PROPERLY FOR BADGER, THIS IS JUST A QUICK HACK
-// We can  start by "extending" the *raft.MemoryStorage
-// Meanwhile, for POC we use this hack.
-var defaultSnapshotCount uint64 = 0
-
 func (rc *RaftContext) maybeTriggerSnapshot(applyDoneC <-chan struct{}) {
 	if rc.appliedIndex-rc.snapshotIndex <= defaultSnapshotCount {
+		return
+	}
+
+	_, ok := rc.app.(dgraft.ApplicationV2WithSnapshot)
+	if !ok {
 		return
 	}
 
@@ -477,27 +519,51 @@ func (rc *RaftContext) maybeTriggerSnapshot(applyDoneC <-chan struct{}) {
 		}
 	}
 
-	// TODO: we can split between "ordinary apply", and "apply" that also creates snapshot.
-	// but let's try only do ordinary "apply" without any snapshotting
+	// take a "photo" snapshot of the storage as source of truth; used by the raft framework
+	// It seems it's used by Raft in Snapshot() method. In our case, it also response back to us for saving externally.
+	// important to remember: all node do create snapshot, not only the leader. (etcd also do that)
+	// additionally, etcd server can do force snapshot locally for storage versioning backward compability
+	// but we dont do it for our usecase (at least for near future)
+	rc.Logger.Info("SNAPSHOT TRIGGERED", zap.Uint64("applied-index", rc.appliedIndex))
 
-	// this part only get "bytes" of data to store.
-	// log.Printf("start snapshot [applied index: %d | last snapshot index: %d]", rc.appliedIndex, rc.snapshotIndex)
-	// data, err := rc.getSnapshotData() // supposedly, the snapshot of our KV DB..(for now "badger")
+	// // TODO:
+	// var buf bytes.Buffer
+	// size, err := app.WriteSnapshot(&buf)
 	// if err != nil {
 	// 	log.Panic(err)
 	// }
 
-	// take a "photo" snapshot of the storage as source of truth; used by the raft framework
-	// It seems it's used by Raft in Snapshot() method. In our case, it also response back to us for saving externally.
-	snap, err := rc.raftStorage.CreateSnapshot(rc.appliedIndex, rc.confState, nil) // test with nil. we don't have "snapshot"
+	// IMPORTANT THAT THIS WAS THE METADATA, SINCE IT WILL ALL BE WRITTEN INTO MEMORY.
+	// We can PIPE the whole data somewhere else, and
+	// SNAPSHOT APP METADATA
+	smallDataSample := []byte(`{"message": "this is only a metadata, loaded all into memory. we can configure this later~"}`)
+	verifyMyLogicTmp, err := rc.raftStorage.CreateSnapshot(rc.appliedIndex, rc.confState, smallDataSample) // test with nil. we don't have "snapshot"
 	if err != nil {
 		panic(err)
 	}
 
+	// IMPORTANT to remember:
+	// "light" snap storage (not the full DB). not sure  if we needed; I'll comment out for now
+	// if err := rc.snapshotter.SaveSnap(verifyMyLogicTmp); err != nil {
+	// 	panic(err)
+	// }
+
+	// Using our refactored "apply" start ---
+
 	// this is the actual "wal" commit index
-	if err := rc.saveSnapshotToDisk(snap); err != nil {
+	term, err := rc.raftStorage.Term(rc.appliedIndex)
+	if err != nil {
 		panic(err)
 	}
+
+	// re-use the apply. code is same
+	if err := rc.apply(rc.appliedIndex, term, rc.confState, verifyMyLogicTmp); err != nil {
+		panic(err)
+	}
+
+	// refactored "apply" end ---
+
+	// I thnk this one is logic for "slow" follower for them to catch up entries
 
 	compactIndex := uint64(1)
 	if rc.appliedIndex > snapshotCatchUpEntriesN {
@@ -510,7 +576,7 @@ func (rc *RaftContext) maybeTriggerSnapshot(applyDoneC <-chan struct{}) {
 			panic(err)
 		}
 	} else {
-		log.Printf("compacted log at index %d", compactIndex)
+		rc.Logger.Info("Compacted log", zap.Uint64("compact-index", compactIndex))
 	}
 
 	rc.snapshotIndex = rc.appliedIndex
@@ -518,7 +584,7 @@ func (rc *RaftContext) maybeTriggerSnapshot(applyDoneC <-chan struct{}) {
 
 // stop closes http, closes all channels, and stops raft.
 func (rc *RaftContext) stop() {
-	log.Println("KENEAPADISOPT?")
+	rc.Logger.Info("KENEAPADISTOP?")
 	rc.stopHTTP()
 	close(rc.commitC)
 	close(rc.errorC)

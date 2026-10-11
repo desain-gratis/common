@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 
 	"github.com/lni/dragonboat/v4/raftio"
 	sm "github.com/lni/dragonboat/v4/statemachine"
@@ -24,16 +25,6 @@ type Entry struct {
 
 	// Replica that triggered the update
 	ReplicaID *uint64
-}
-
-const raftCtxKey = "raft-ctx"
-
-func GetRaftContext(ctx context.Context) any {
-	return ctx.Value(raftCtxKey)
-}
-
-func WithRaftContext(ctx context.Context, runner any) context.Context {
-	return context.WithValue(ctx, raftCtxKey, runner)
 }
 
 type EntryV2 struct {
@@ -71,6 +62,11 @@ type ApplicationV2 interface {
 	// Simpler API for distributed state machine
 	// If return error, we will acknowledge it as applied. If you don't want, just crash the state machine.
 	OnUpdateV2(ctx context.Context, entry EntryV2) (any, error)
+}
+
+type ApplicationV2WithSnapshot interface {
+	// write to writer, with the size hint. Size hint must be exact according to deepwiki desc.
+	WriteSnapshot(writer io.Writer) (int, error)
 }
 
 type LeaderListener func(ctx context.Context, term uint64, leaderID uint64) error

@@ -85,6 +85,15 @@ func (rc *RaftContext) Run(ctx context.Context, leaderListener dgraft.LeaderList
 
 	go func() {
 		for commit := range rc.commitC {
+
+			if commit == nil {
+				func() {
+					// TODO: load snapshot from DISK
+					// Pass it to our raft App
+				}()
+				continue
+			}
+
 			for _, s := range commit.data {
 				// log.Printf("index=%v term=%v data=%v\n", *s.Index, *s.Term, string(s.Data))
 				var entry dgraft.EntryV2
@@ -111,6 +120,12 @@ func (rc *RaftContext) Run(ctx context.Context, leaderListener dgraft.LeaderList
 					Error:          err,
 					SubscriptionID: entry.SubscriptionID,
 				}
+
+				err = rc.apply(*s.Index, *s.Term, rc.confState, nil)
+				if err != nil {
+					log.Panic("ngga bisa apply, hehe")
+				}
+
 				err = rc.ApplyTopic.Broadcast(ctx, resultWrapper)
 				if err != nil {
 					log.Printf("should fatal")
@@ -171,6 +186,14 @@ func startRaft(snapdir, waldir string, id int, peers []string, bindAddr string, 
 		snapshot.Metadata.Index = snapshotFromWalOnly.Index
 		snapshot.Metadata.Term = snapshotFromWalOnly.Term
 		snapshot.Metadata.ConfState = snapshotFromWalOnly.ConfState
+
+		logger.Info("LOADING FROM DISK THE WAL SNAPSHOT, WE GOT",
+			zap.Any("index", snapshot.Metadata.GetIndex()),
+			zap.Any("term", snapshot.Metadata.GetTerm()),
+			zap.Any("confState", snapshot.Metadata.GetConfState()),
+		)
+
+		// IMPORTANT TODO: READ FROM THE ACTUAL DB SNAPSHOT
 
 		// _snapshot, err := snapshotter.LoadNewestAvailable(walSnaps) // THIS KV SNAPSHOT DATA is obtaine inside latest walsnap.
 		// if err != nil && !errors.Is(err, snap.ErrNoSnapshot) {
@@ -266,13 +289,14 @@ func startRaft(snapdir, waldir string, id int, peers []string, bindAddr string, 
 	}
 
 	transport := &rafthttp.Transport{
-		Logger:      logger,
+		Logger:      nil, // avoid spam err; can turn on later
 		ID:          types.ID(id),
 		ClusterID:   0x1000,
 		Raft:        &transportListener{node: raftNode},
 		ServerStats: stats.NewServerStats("", ""),
 		LeaderStats: stats.NewLeaderStats(logger, strconv.Itoa(id)),
 		ErrorC:      make(chan error),
+		// Snapshotter: snapshotter, // not included in raft example, but we use it since we will send snapshot separately later
 	}
 
 	rc := &RaftContext{
@@ -305,6 +329,8 @@ func startRaft(snapdir, waldir string, id int, peers []string, bindAddr string, 
 		},
 
 		ApplyTopic: topicImpl.NewStandardTopic(),
+
+		Logger: logger,
 	}
 
 	return rc, nil
@@ -323,8 +349,6 @@ func readEtcdRaftConfig(cfgFile string) (cfg *viper.Viper, err error) {
 	if err != nil {
 		log.Fatalf("failed to read dragonboat config %v %v", cfgFile, err)
 	}
-
-	log.Printf("reading config: '%v'", cfgFile)
 
 	return v, nil
 }
