@@ -73,6 +73,14 @@ type RaftContext struct {
 	Logger *zap.Logger
 }
 
+func (r *RaftContext) ID() uint64 {
+	return r.id
+}
+
+func (r *RaftContext) Node() raft.Node {
+	return r.node
+}
+
 type commit struct {
 	data       []*raftpb.Entry
 	applyDoneC chan<- struct{}
