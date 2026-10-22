@@ -40,6 +40,9 @@ type RaftContext struct {
 	peers    []string
 	bindAddr string
 
+	walExist bool
+	join     bool
+
 	config *raft.Config
 
 	// todo: temporary (can use better pattern)

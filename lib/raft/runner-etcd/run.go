@@ -39,7 +39,7 @@ func RunWithConfig(_ context.Context, cfgPath string, replicaID string, app dgra
 	// TODO: let's start in dedicated method (eg. RaftContext.Run())
 	snapDir := fmt.Sprintf("%s/etcd-raft/%s-%d-snap", cfg.GetString("base_data_dir"), replicaID, id)
 	walDir := fmt.Sprintf("%s/etcd-raft/%s-%d", cfg.GetString("base_wal_dir"), replicaID, id)
-	rw, err := startRaft(
+	rw, err := loadRaft(
 		snapDir,
 		walDir,
 		id,
@@ -66,6 +66,46 @@ func RunWithConfig(_ context.Context, cfgPath string, replicaID string, app dgra
 
 // TODOODOODODO
 func (rc *RaftContext) Run(ctx context.Context, leaderListener dgraft.LeaderListener) error {
+	c := &raft.Config{
+		ID:                        uint64(rc.id),
+		ElectionTick:              10,
+		HeartbeatTick:             1,
+		Storage:                   rc.raftStorage,
+		MaxSizePerMsg:             1024 * 1024,
+		MaxInflightMsgs:           256,
+		MaxUncommittedEntriesSize: 1 << 30,
+		CheckQuorum:               true,
+		PreVote:                   true,
+	}
+
+	// No need to do this, since we're doing "always commit / set hard state" POC
+	// at every msg; raft storage will knew already (inside WAL)
+
+	var raftNode raft.Node
+	if rc.walExist || rc.join {
+		raftNode = raft.RestartNode(c)
+	} else {
+		rpeers := make([]raft.Peer, len(rc.peers))
+		for i := range rpeers {
+			rpeers[i] = raft.Peer{ID: uint64(i + 1)}
+		}
+		raftNode = raft.StartNode(c, rpeers)
+	}
+
+	transport := &rafthttp.Transport{
+		Logger:      nil, // avoid spam err; can turn on later
+		ID:          types.ID(rc.id),
+		ClusterID:   0x1000,
+		Raft:        &transportListener{node: raftNode},
+		ServerStats: stats.NewServerStats("", ""),
+		LeaderStats: stats.NewLeaderStats(zap.NewExample(), strconv.FormatUint(rc.id, 10)),
+		ErrorC:      make(chan error),
+		// Snapshotter: snapshotter, // not included in raft example, but we use it since we will send snapshot separately later
+	}
+
+	rc.node = raftNode
+	rc.transport = transport
+
 	rc.transport.Start()
 	for i := range rc.peers { // right now start first and then add..
 		if uint64(i+1) != rc.id {
@@ -106,6 +146,7 @@ func (rc *RaftContext) Run(ctx context.Context, leaderListener dgraft.LeaderList
 				// overwrite
 				entry.Index = *s.Index
 				entry.Term = *s.Term
+				entry.NodeID = rc.id
 
 				result, err := rc.app.OnUpdateV2(ctx, entry)
 
@@ -154,7 +195,7 @@ type leaderTracker struct {
 // snpadir --> DATA snapdir
 // waldir --> raft wal dir & raft snapshot dir
 // TODO: refactor
-func startRaft(snapdir, waldir string, id int, peers []string, bindAddr string, join bool, app dgraft.ApplicationV2) (*RaftContext, error) {
+func loadRaft(snapdir, waldir string, id int, peers []string, bindAddr string, join bool, app dgraft.ApplicationV2) (*RaftContext, error) {
 	if !fileutil.Exist(snapdir) {
 		if err := os.MkdirAll(snapdir, 0o750); err != nil {
 			log.Fatalf("raftexample: cannot create dir for snapshot %v (%v)", snapdir, err)
@@ -262,48 +303,14 @@ func startRaft(snapdir, waldir string, id int, peers []string, bindAddr string, 
 	// the snapshotter will be used in kv
 	// rc.snapshotterReady <- rc.snapshotter
 
-	c := &raft.Config{
-		ID:                        uint64(id),
-		ElectionTick:              10,
-		HeartbeatTick:             1,
-		Storage:                   raftStorage,
-		MaxSizePerMsg:             1024 * 1024,
-		MaxInflightMsgs:           256,
-		MaxUncommittedEntriesSize: 1 << 30,
-		CheckQuorum:               true,
-		PreVote:                   true,
-	}
-
-	// No need to do this, since we're doing "always commit / set hard state" POC
-	// at every msg; raft storage will knew already (inside WAL)
-
-	var raftNode raft.Node
-	if walExist || join {
-		raftNode = raft.RestartNode(c)
-	} else {
-		rpeers := make([]raft.Peer, len(peers))
-		for i := range rpeers {
-			rpeers[i] = raft.Peer{ID: uint64(i + 1)}
-		}
-		raftNode = raft.StartNode(c, rpeers)
-	}
-
-	transport := &rafthttp.Transport{
-		Logger:      nil, // avoid spam err; can turn on later
-		ID:          types.ID(id),
-		ClusterID:   0x1000,
-		Raft:        &transportListener{node: raftNode},
-		ServerStats: stats.NewServerStats("", ""),
-		LeaderStats: stats.NewLeaderStats(logger, strconv.Itoa(id)),
-		ErrorC:      make(chan error),
-		// Snapshotter: snapshotter, // not included in raft example, but we use it since we will send snapshot separately later
-	}
-
 	rc := &RaftContext{
 		id:       uint64(id),
 		peers:    peers,
 		bindAddr: bindAddr,
 		app:      app,
+
+		walExist: walExist,
+		join:     join,
 
 		raftStorage: raftStorage, // duplicate, but necessary since it's implementation is used inside (not only on the raft)
 		wal:         w,           // used in internal process
@@ -317,8 +324,8 @@ func startRaft(snapdir, waldir string, id int, peers []string, bindAddr string, 
 		httpstopc: make(chan struct{}),
 		httpdonec: make(chan struct{}),
 
-		node:             raftNode,
-		transport:        transport,
+		// node:             raftNode, // in start
+		// transport:        transport,  // in start
 		commitC:          make(chan *commit),
 		leaderC:          make(chan *leaderChange),
 		errorC:           make(chan error),
