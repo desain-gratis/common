@@ -32,6 +32,7 @@ type EntryV2 struct {
 	Term           uint64 `json:"term"`
 	SourceNodeID   uint64 `json:"source_node_id"`
 	SubscriptionID string `json:"subscription_id"` // or subscription ID
+	NodeID         uint64 `json:"node_id"`
 
 	Data json.RawMessage `json:"data"`
 }
