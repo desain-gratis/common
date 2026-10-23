@@ -123,6 +123,8 @@ func (rc *RaftContext) Run(ctx context.Context, leaderListener dgraft.LeaderList
 		}
 	}()
 
+	ctx = WithRaftContext(ctx, rc)
+
 	go func() {
 		for commit := range rc.commitC {
 
@@ -146,7 +148,6 @@ func (rc *RaftContext) Run(ctx context.Context, leaderListener dgraft.LeaderList
 				// overwrite
 				entry.Index = *s.Index
 				entry.Term = *s.Term
-				entry.NodeID = rc.id
 
 				result, err := rc.app.OnUpdateV2(ctx, entry)
 
