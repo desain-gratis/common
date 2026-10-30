@@ -186,7 +186,18 @@ func (i *service[T]) Get(w http.ResponseWriter, r *http.Request, p httprouter.Pa
 	ID := r.URL.Query().Get("id")
 	refIDs := make([]string, 0, len(i.refParams))
 	for _, param := range i.refParams {
-		refIDs = append(refIDs, r.URL.Query().Get(param))
+		paramValue := r.URL.Query().Get(param)
+		if paramValue == "" {
+			// if we specify ID, we should return error
+			// TODO: refactor
+			if ID != "" {
+				handleError(
+					w, "BAD_REQUEST", "id specified, but reference is not complete", http.StatusBadRequest, nil)
+				return
+			}
+			break
+		}
+		refIDs = append(refIDs, paramValue)
 	}
 
 	// Actually get the data
