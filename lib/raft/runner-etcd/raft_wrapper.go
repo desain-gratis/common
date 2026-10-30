@@ -100,11 +100,14 @@ type leaderChange struct {
 func (rc *RaftContext) Propose(ctx context.Context, value any) (any, error) {
 	subID := strconv.FormatUint(rand.Uint64(), 10)
 
-	sub, _ := rc.ApplyTopic.Subscribe(ctx, impl.NewStandardSubscriber(func(a any) bool {
+	sub, err := rc.ApplyTopic.Subscribe(ctx, impl.NewStandardSubscriber(func(a any) bool {
 		// filter out other message
 		msg, ok := a.(*dgraft.ResultV2)
 		return !ok || msg.SubscriptionID != subID
 	}))
+	if err != nil {
+		return nil, err
+	}
 
 	reqPayload, err := json.Marshal(value)
 	if err != nil {
