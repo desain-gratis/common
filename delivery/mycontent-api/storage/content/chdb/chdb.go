@@ -73,20 +73,14 @@ func (h *handler) init(ctx context.Context) error {
 	}
 
 	var b strings.Builder
-	b.WriteString("CREATE TABLE IF NOT EXISTS ")
-	b.WriteString(h.tableName)
-	b.WriteString(" (\n")
+	b.WriteString("CREATE TABLE IF NOT EXISTS " + h.tableName + " (\n")
 	b.WriteString("\tevent_id UInt64,\n")
 	for _, c := range h.keyCols {
-		b.WriteString("\t")
-		b.WriteString(c)
-		b.WriteString(" String,\n")
+		b.WriteString("\t" + c + " String,\n")
 	}
 	b.WriteString("\tdata String,\n")
 	b.WriteString("\tmeta String\n")
-	b.WriteString(") ENGINE = MergeTree ORDER BY (")
-	b.WriteString(strings.Join(h.keyCols, ", "))
-	b.WriteString(", event_id)")
+	b.WriteString(") ENGINE = MergeTree ORDER BY (" + strings.Join(h.keyCols, ", ") + ", event_id)")
 
 	_, err := h.db.ExecContext(ctx, b.String())
 	return err
@@ -169,6 +163,10 @@ func (h *handler) Get(ctx context.Context, namespace string, refIDs []string, ID
 		return nil, err
 	}
 
+	return h.get(ctx, q, args)
+}
+
+func (h *handler) get(ctx context.Context, q string, args []any) ([]content.Data, error) {
 	rows, err := h.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		slog.Error("failed to do query", slog.String("err", err.Error()),
@@ -206,6 +204,10 @@ func (h *handler) Stream(ctx context.Context, namespace string, refIDs []string,
 		return nil, err
 	}
 
+	return h.stream(ctx, q, args)
+}
+
+func (h *handler) stream(ctx context.Context, q string, args []any) (<-chan content.Data, error) {
 	rows, err := h.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		slog.Error("failed to do query", slog.String("err", err.Error()),
@@ -277,18 +279,27 @@ func (h *handler) Delete(ctx context.Context, namespace string, refIDs []string,
 
 // prepareGet returns only the latest event for each key.
 func (h *handler) prepareGet(namespace string, refIDs []string, ID string) (string, []any, error) {
+	return h.prepareGetOrdered(namespace, refIDs, ID, "")
+}
+
+// prepareGetOrdered is prepareGet with a custom final ORDER BY expression
+// (empty = by key columns ascending: namespace, ref_id_*, id).
+func (h *handler) prepareGetOrdered(namespace string, refIDs []string, ID string, orderBy string) (string, []any, error) {
 	whereQ, args, err := h.prepareWhere(namespace, refIDs, ID)
 	if err != nil {
 		return "", nil, err
 	}
 
 	keys := strings.Join(h.keyCols, ", ")
+	if orderBy == "" {
+		orderBy = keys
+	}
 
 	var buf bytes.Buffer
 	buf.WriteString(`SELECT event_id, ` + keys + `, data, meta FROM (`)
 	buf.WriteString(` SELECT * FROM ` + h.tableName + ` ` + whereQ)
 	buf.WriteString(` ORDER BY event_id DESC LIMIT 1 BY ` + keys)
-	buf.WriteString(`) ORDER BY ` + keys)
+	buf.WriteString(`) ORDER BY ` + orderBy)
 
 	return buf.String(), args, nil
 }

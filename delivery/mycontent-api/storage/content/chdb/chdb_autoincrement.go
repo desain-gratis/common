@@ -34,7 +34,11 @@ const maxCounterCacheSize = 100_000
 // re-applying the same raft entry after a restart returns the ID that was
 // already allocated for it instead of allocating a new one.
 //
-// Get, Stream and Delete are inherited from the KV handler.
+// Ordering of Get / Stream: within an entity (same namespace + refIDs) versions are
+// returned latest first (numeric ID descending). The order between entities is
+// undefined and must not be relied upon (currently by key, but not guaranteed).
+//
+// Delete is inherited from the KV handler.
 type AutoIncrementRepo struct {
 	*handler
 	counterTable string
@@ -79,6 +83,33 @@ func (r *AutoIncrementRepo) initCounterTable(ctx context.Context) error {
 
 	_, err := r.db.ExecContext(ctx, b.String())
 	return err
+}
+
+// orderBy: between entities (namespace, refIDs) the order is by key and otherwise
+// UNDEFINED (callers must not rely on it). Within an entity, versions are always
+// returned latest first: by numeric ID descending.
+func (r *AutoIncrementRepo) orderBy() string {
+	return strings.Join(r.branchCols(), ", ") + ", toUInt64OrZero(id) DESC, id DESC"
+}
+
+// Get returns the latest event of each version; within an entity, latest version first.
+func (r *AutoIncrementRepo) Get(ctx context.Context, namespace string, refIDs []string, ID string) ([]content.Data, error) {
+	q, args, err := r.prepareGetOrdered(namespace, refIDs, ID, r.orderBy())
+	if err != nil {
+		return nil, err
+	}
+
+	return r.get(ctx, q, args)
+}
+
+// Stream is Get as a stream, with the same ordering.
+func (r *AutoIncrementRepo) Stream(ctx context.Context, namespace string, refIDs []string, ID string) (<-chan content.Data, error) {
+	q, args, err := r.prepareGetOrdered(namespace, refIDs, ID, r.orderBy())
+	if err != nil {
+		return nil, err
+	}
+
+	return r.stream(ctx, q, args)
 }
 
 func (r *AutoIncrementRepo) Post(ctx context.Context, namespace string, refIDs []string, ID string, input content.Data) (content.Data, error) {
