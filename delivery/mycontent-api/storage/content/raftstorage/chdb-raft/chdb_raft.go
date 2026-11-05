@@ -16,13 +16,20 @@ import (
 )
 
 // This is a raft application that is able to produce multiple "chdb" repositories.
-// Only the KV table type is supported (for now).
+// Supported table types: KV and auto-increment.
 var _ raft.ApplicationV2 = &ChdbRaftApp{}
 
 type TableType string
 
 const (
+	// TableTypeKV is a plain key-value table; the caller provides the ID.
 	TableTypeKV TableType = "kv"
+
+	// TableTypeAutoIncrement allocates an incremental ID (per namespace + refIDs)
+	// when Post is called with an empty ID. A second table "<name>_latest" tracks
+	// the latest ID of each branch. Posting with an ID modifies existing data;
+	// the ID must be a positive integer not higher than the current latest.
+	TableTypeAutoIncrement TableType = "auto-increment"
 )
 
 type TableConfig struct {
@@ -52,18 +59,27 @@ func New(ctx context.Context, db *sql.DB, tableConfig ...TableConfig) (*ChdbRaft
 			return nil, fmt.Errorf("duplicate table config: %q", c.Name)
 		}
 
+		if c.TableType == "" {
+			c.TableType = TableTypeKV
+		}
+
 		switch c.TableType {
-		case TableTypeKV, "":
+		case TableTypeKV:
 			repo, err := content_chdb.New(ctx, db, c.Name, c.RefSize)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create table %q: %w", c.Name, err)
+			}
+			repos[c.Name] = repo
+		case TableTypeAutoIncrement:
+			repo, err := content_chdb.NewAutoIncrement(ctx, db, c.Name, c.RefSize)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create auto-increment table %q: %w", c.Name, err)
 			}
 			repos[c.Name] = repo
 		default:
 			return nil, fmt.Errorf("unsupported table type for table %q: %q", c.Name, c.TableType)
 		}
 
-		c.TableType = TableTypeKV
 		tableConfigMap[c.Name] = c
 	}
 
@@ -79,7 +95,10 @@ func New(ctx context.Context, db *sql.DB, tableConfig ...TableConfig) (*ChdbRaft
 // or "Build()"
 func (s *ChdbRaftApp) GetRepository(raftInstance *runneretcd.RaftContext, tableName string) (content.Repository, bool) {
 	repo, ok := s.repos[tableName]
-	return raftstorage.Wrap(raftInstance, tableName, repo), ok
+	if !ok {
+		return nil, false
+	}
+	return raftstorage.Wrap(raftInstance, tableName, repo), true
 }
 
 // Simpler API for distributed state machine.
@@ -104,6 +123,8 @@ func (s *ChdbRaftApp) OnUpdateV2(ctx context.Context, e raft.EntryV2) (any, erro
 		// IMPORTANT: the state machine must be deterministic. Without this, the
 		// chdb repo generates a wall-clock event_id, which differs on every replica
 		// (and on replay). Derive it from the raft log index instead.
+		// For auto-increment tables the event_id also makes ID allocation
+		// idempotent when an entry is re-applied after a restart.
 		// NOTE: adjust `e.Index` to the actual field name on raft.EntryV2.
 		cmd.Data.EventID = e.Index
 		resp, err = repo.Post(ctx, cmd.Namespace, cmd.RefIDs, cmd.ID, cmd.Data)
