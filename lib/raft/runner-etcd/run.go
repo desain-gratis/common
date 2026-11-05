@@ -106,7 +106,11 @@ func (rc *RaftContext) Run(ctx context.Context, leaderListener dgraft.LeaderList
 	rc.node = raftNode
 	rc.transport = transport
 
-	rc.transport.Start()
+	err := rc.transport.Start()
+	if err != nil {
+		return err
+	}
+
 	for i := range rc.peers { // right now start first and then add..
 		if uint64(i+1) != rc.id {
 			rc.transport.AddPeer(types.ID(i+1), []string{rc.peers[i]})

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"math/rand"
 	"net"
@@ -100,6 +101,10 @@ type leaderChange struct {
 func (rc *RaftContext) Propose(ctx context.Context, value any) (any, error) {
 	subID := strconv.FormatUint(rand.Uint64(), 10)
 
+	if rc == nil {
+		return nil, fmt.Errorf("empty raft instance")
+	}
+
 	sub, err := rc.ApplyTopic.Subscribe(ctx, impl.NewStandardSubscriber(func(a any) bool {
 		// filter out other message
 		msg, ok := a.(*dgraft.ResultV2)
@@ -145,6 +150,10 @@ func (rc *RaftContext) Propose(ctx context.Context, value any) (any, error) {
 		}
 		result = r
 	}()
+
+	if rc.node == nil {
+		log.Fatal("node is nil")
+	}
 
 	err = rc.node.Propose(ctx, wrappedPayload)
 	if err != nil {

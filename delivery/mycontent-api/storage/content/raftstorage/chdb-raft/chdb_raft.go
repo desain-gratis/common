@@ -12,6 +12,7 @@ import (
 	content_chdb "github.com/desain-gratis/common/delivery/mycontent-api/storage/content/chdb"
 	"github.com/desain-gratis/common/delivery/mycontent-api/storage/content/raftstorage"
 	"github.com/desain-gratis/common/lib/raft"
+	runneretcd "github.com/desain-gratis/common/lib/raft/runner-etcd"
 )
 
 // This is a raft application that is able to produce multiple "chdb" repositories.
@@ -75,9 +76,10 @@ func New(ctx context.Context, db *sql.DB, tableConfig ...TableConfig) (*ChdbRaft
 	}, nil
 }
 
-func (s *ChdbRaftApp) getRepository(tableName string) (content.Repository, bool) {
+// or "Build()"
+func (s *ChdbRaftApp) GetRepository(raftInstance *runneretcd.RaftContext, tableName string) (content.Repository, bool) {
 	repo, ok := s.repos[tableName]
-	return raftstorage.Wrap(tableName, repo), ok
+	return raftstorage.Wrap(raftInstance, tableName, repo), ok
 }
 
 // Simpler API for distributed state machine.
@@ -88,7 +90,7 @@ func (s *ChdbRaftApp) OnUpdateV2(ctx context.Context, e raft.EntryV2) (any, erro
 		return nil, fmt.Errorf("%w: failed to parse command as JSON (%v)", err, string(e.Data))
 	}
 
-	repo, ok := s.getRepository(cmd.TableName)
+	repo, ok := s.repos[cmd.TableName]
 	if !ok {
 		return nil, fmt.Errorf("table not found: %s", cmd.TableName)
 	}

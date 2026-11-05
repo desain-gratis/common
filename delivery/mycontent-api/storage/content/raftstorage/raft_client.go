@@ -25,10 +25,11 @@ type Command struct {
 	Data      content.Data `json:"data"`
 }
 
-func Wrap(tableName string, base content.Repository) content.Repository {
+func Wrap(raftCtx *runneretcd.RaftContext, tableName string, base content.Repository) content.Repository {
 	return &repo{
-		Repository: base,
-		TableName:  tableName,
+		Repository:  base,
+		TableName:   tableName,
+		raftContext: raftCtx,
 	}
 }
 
