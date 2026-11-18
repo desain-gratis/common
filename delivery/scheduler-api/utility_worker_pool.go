@@ -1,0 +1,69 @@
+package schedulerapi
+
+import (
+	"context"
+	"log"
+	"time"
+
+	"github.com/desain-gratis/common/delivery/scheduler-api/storage"
+	entity "github.com/desain-gratis/common/types/entity/scheduler"
+)
+
+type TaskHandler func(task *TaskExecutionRuntime) error
+
+func NewPooledQueue(ctx context.Context, client *storage.Client, count int, fn TaskHandler) chan *TaskExecutionRuntime {
+	// simple workers
+	queue := make(chan *TaskExecutionRuntime)
+
+	go func() {
+		defer close(queue)
+		<-ctx.Done()
+	}()
+
+	// TODO: handle application close
+
+	for range count {
+		go func() {
+
+			// simple executor/worker for sendInvoice~
+			for taskExec := range queue {
+
+				runAt := time.Now().In(taskExec.UserTime.Location())
+				taskExec.Status = entity.ExecutionStatusInProgress
+				taskExec.ExecutionState = &entity.ExecutionState{
+					ActualRunAt: &runAt,
+				}
+
+				// update before
+				_, err := client.Propose(ctx, storage.UpdateTaskExecution(taskExec.TaskExecution))
+				if err != nil {
+					log.Printf("executor: failed to update task execution to %v: %v (%v) %v\n", taskExec.Status, taskExec.Id, taskExec.QueueID, err)
+					return
+				}
+
+				// TODO: limit mutation (later..)
+				err = fn(taskExec)
+
+				if err != nil {
+					taskExec.Status = entity.ExecutionStatusFailed
+				} else {
+					taskExec.Status = entity.ExecutionStatusSucceed
+				}
+
+				tComplete := time.Now().In(taskExec.UserTime.Location())
+				taskExec.ExecutionState.CompletedAt = &tComplete
+
+				// update after
+				// TODO: maybe make outside the raft.
+				_, err = client.Propose(ctx, storage.UpdateTaskExecution(taskExec.TaskExecution))
+				if err != nil {
+					// failed to inform cluster back. Leader's timeout mechanism will kick in.
+					log.Printf("executor: failed to update task execution to %v: %v (%v) %v\n", taskExec.Status, taskExec.Id, taskExec.QueueID, err)
+					return
+				}
+			}
+		}()
+	}
+
+	return queue
+}

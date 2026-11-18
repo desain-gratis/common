@@ -8,6 +8,7 @@ require (
 	cloud.google.com/go/secretmanager v1.13.1
 	cloud.google.com/go/storage v1.42.0
 	github.com/ClickHouse/clickhouse-go/v2 v2.40.3
+	github.com/arcward/crong v0.0.0-20240827163849-4abe2a5262db
 	github.com/coder/websocket v1.8.14
 	github.com/dgraph-io/badger/v4 v4.9.6
 	github.com/disintegration/imaging v1.6.2
