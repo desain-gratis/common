@@ -23,6 +23,11 @@ import (
 	"go.uber.org/zap"
 )
 
+func InitWithConfig(ctx context.Context, cfgPath string, replicaID string, app dgraft.ApplicationV2) (*RaftContext, chan string, error) {
+	return RunWithConfig(ctx, cfgPath, replicaID, app)
+}
+
+// deprecated: use InitWithConfig (better naming)
 func RunWithConfig(_ context.Context, cfgPath string, replicaID string, app dgraft.ApplicationV2) (*RaftContext, chan string, error) {
 	cfg, err := readEtcdRaftConfig(cfgPath)
 	if err != nil {
@@ -64,7 +69,12 @@ func RunWithConfig(_ context.Context, cfgPath string, replicaID string, app dgra
 	return rw, proposeOut, nil
 }
 
-// TODOODOODODO
+// Start starts the raft: (1) start the raft.Node state machine, (2) start the transport
+func (rc *RaftContext) Start(ctx context.Context, leaderListener dgraft.LeaderListener) error {
+	return rc.Run(ctx, leaderListener)
+}
+
+// deprecated: use Start
 func (rc *RaftContext) Run(ctx context.Context, leaderListener dgraft.LeaderListener) error {
 	c := &raft.Config{
 		ID:                        uint64(rc.id),

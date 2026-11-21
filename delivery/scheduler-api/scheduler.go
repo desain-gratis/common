@@ -3,13 +3,16 @@ package schedulerapi
 import (
 	"context"
 	"database/sql"
+	"sync"
+	"time"
 
 	"github.com/desain-gratis/common/delivery/mycontent-api/mycontent"
 	mycontent_base "github.com/desain-gratis/common/delivery/mycontent-api/mycontent/base"
 	content_chdb "github.com/desain-gratis/common/delivery/mycontent-api/storage/content/chdb"
-	"github.com/desain-gratis/common/delivery/scheduler-api/storage"
+	"github.com/desain-gratis/common/delivery/scheduler-api/statemachine"
 	"github.com/desain-gratis/common/lib/notifier"
 	notifier_impl "github.com/desain-gratis/common/lib/notifier/impl"
+	runneretcd "github.com/desain-gratis/common/lib/raft/runner-etcd"
 	entity "github.com/desain-gratis/common/types/entity/scheduler"
 )
 
@@ -19,65 +22,64 @@ type StateMachineClient interface {
 	Subscribe(ctx context.Context) (notifier.Subscription, error)
 }
 
-type wrapp struct {
+type replicatedScheduler struct {
 	namespace string
 	// Recurring task definition store
 	RecurringTaskUsecase mycontent.Usecase[*entity.RecurringTask]
 
 	// Task execution store
-	TaskExecutionUsecase storage.TaskExecutionUsecase
+	TaskExecutionUsecase statemachine.TaskExecutionUsecase
 
 	// Integrations
-	Http   *httpAPI
+	StateMachine      *statemachine.RaftStorage
+	StateMachineEvent notifier.Topic
+
+	// Worker handles node specific job
 	Worker *worker
-	Raft   *storage.RaftStorage
-
-	Topic notifier.Topic
-
-	taskExec chan *entity.TaskExecution
-
-	// TODO: make common
-	Client StateMachineClient
 }
 
-func New(ctx context.Context, conn *sql.DB, replicated bool) (*wrapp, error) {
-	namespace := "common"
+// NewReplicatedScheduler creates new replicated scheduler that run on top of etcd-io/raft
+//
+// scheduler := NewReplicatedScheduler(...)
+// raftClient, _ ... := runneretcd.InitWithConfig(scheduler.Raft ...)
+//
+// scheduler.StartWorker(ctx, raftClient)
+//
+// raftClient.Start(ctx, scheduler.OnBecomingLeader)
+//
+// handler := scheduler.HttpHandler(raftClient)
+//
+// ...
+func NewReplicatedScheduler(ctx context.Context, namespace string, conn *sql.DB, replicated bool) (*replicatedScheduler, error) {
+
 	// base recurring task storage
-	recurringTaskStorage, err := content_chdb.New(ctx, conn, storage.TableRecurringTask, 0)
+	recurringTaskStorage, err := content_chdb.New(ctx, conn, statemachine.TableRecurringTask, 0)
 	if err != nil {
 		return nil, err
 	}
 
-	// wrapper for easy access
+	// replicatedSchedulerer for easy access
 	recurringTaskStorageUsecase := mycontent_base.New[*entity.RecurringTask](recurringTaskStorage)
 
 	// custom task execution storage
 	// and execute initialize
-	taskExecStorage := storage.NewClickhouseTaskExecutionStorage(conn)
+	taskExecStorage := statemachine.NewClickhouseTaskExecutionStorage(conn)
 	err = taskExecStorage.Init(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	// topic for events related to scheduler
-	topic := notifier_impl.NewStandardTopic()
-
 	executorCh := make(chan *entity.TaskExecution)
 
-	stub := &stubSMClient{}
-
-	worker := NewWorker(
+	worker := newWorker(
 		namespace,
-		topic,
-		stub,
 		recurringTaskStorageUsecase,
 		taskExecStorage,
 		executorCh,
 	)
 
-	httpAPI := NewHttpAPI(topic, stub, taskExecStorage)
-
-	raftStorage := storage.NewRaftApp(
+	topic := notifier_impl.NewStandardTopic()
+	storageStateMachine := statemachine.NewRaftApp(
 		namespace,
 		topic,
 		recurringTaskStorageUsecase,
@@ -85,30 +87,75 @@ func New(ctx context.Context, conn *sql.DB, replicated bool) (*wrapp, error) {
 		executorCh,
 	)
 
-	return &wrapp{
-		namespace: namespace,
-
-		Http:   httpAPI,
-		Worker: worker,
-		Topic:  topic,
-
-		Raft: raftStorage,
-
-		Client: stub,
+	return &replicatedScheduler{
+		namespace:         namespace,
+		Worker:            worker,
+		StateMachine:      storageStateMachine,
+		StateMachineEvent: topic,
 	}, nil
 }
 
-func (w *wrapp) StartWorker(ctx context.Context, client StateMachineClient) error {
-	// TODO: refactor
-	w.Client = client
-	w.Http.rc = client
-	w.Worker.client = client
-
+func (w *replicatedScheduler) StartWorker(ctx context.Context, raftClient *runneretcd.RaftContext) error {
 	// Load all local task in to memory and start the worker goroutine
-	err := w.Worker.Init(ctx)
+
+	// Can also put the client inside worker; but now it's more clear like this first
+	id := statemachine.NewClient(raftClient).ID()
+	err := w.Worker.Start(ctx, id)
 	if err != nil {
 		return err
 	}
+
+	return nil
+}
+
+// HttpHandler pre-made HTTPHandler to interact with the scheduler
+func (w *replicatedScheduler) HttpHandler(raftClient *runneretcd.RaftContext) *httpAPI {
+	client := statemachine.NewClient(raftClient)
+	return &httpAPI{raftClient: client, tes: w.TaskExecutionUsecase}
+}
+
+// Called everytime becoming raft leader
+// Context will be cancelled when stepping down from raft leader
+func (w *replicatedScheduler) OnBecomingRaftLeader(ctx context.Context, term uint64, leaderID uint64) error {
+	ticker := time.NewTicker(5 * time.Second) // todo: maybe separate health tick & task execution tick
+
+	timers := make(map[string]*time.Timer)
+	timersLock := &sync.RWMutex{}
+
+	// Guarantees that we can get the latest state, and all incoming message after that
+
+	// Get client from context, instead from init value somewhere
+	rc := runneretcd.GetRaftContext(ctx)
+	client := statemachine.NewClient(rc)
+
+	subscription, err := client.Subscribe(ctx)
+	if err != nil {
+		return err
+	}
+
+	ls := leader{
+		worker:     w.Worker,
+		client:     client,
+		timersLock: timersLock,
+		timers:     timers,
+		id:         leaderID,
+		term:       term,
+
+		// keep track of node health
+		node:                  make(map[uint64]*entity.Node),
+		healthyDurationWithin: 10 * time.Second,
+
+		ticker:       ticker,
+		subscription: subscription,
+
+		healthyUIDs: make(map[uint64]struct{}),
+		healthyUID:  0,
+	}
+
+	go func(term, leaderID uint64) {
+		defer ticker.Stop()
+		ls.Handler(ctx, term, leaderID)
+	}(term, leaderID)
 
 	return nil
 }

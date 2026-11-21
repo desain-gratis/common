@@ -5,13 +5,13 @@ import (
 	"log"
 	"time"
 
-	"github.com/desain-gratis/common/delivery/scheduler-api/storage"
+	"github.com/desain-gratis/common/delivery/scheduler-api/statemachine"
 	entity "github.com/desain-gratis/common/types/entity/scheduler"
 )
 
 type TaskHandler func(task *TaskExecutionRuntime) error
 
-func NewPooledQueue(ctx context.Context, client *storage.Client, count int, fn TaskHandler) chan *TaskExecutionRuntime {
+func NewPooledQueue(ctx context.Context, client *statemachine.Client, count int, fn TaskHandler) chan *TaskExecutionRuntime {
 	// simple workers
 	queue := make(chan *TaskExecutionRuntime)
 
@@ -35,7 +35,7 @@ func NewPooledQueue(ctx context.Context, client *storage.Client, count int, fn T
 				}
 
 				// update before
-				_, err := client.Propose(ctx, storage.UpdateTaskExecution(taskExec.TaskExecution))
+				_, err := client.Propose(ctx, statemachine.UpdateTaskExecution(taskExec.TaskExecution))
 				if err != nil {
 					log.Printf("executor: failed to update task execution to %v: %v (%v) %v\n", taskExec.Status, taskExec.Id, taskExec.QueueID, err)
 					return
@@ -55,7 +55,7 @@ func NewPooledQueue(ctx context.Context, client *storage.Client, count int, fn T
 
 				// update after
 				// TODO: maybe make outside the raft.
-				_, err = client.Propose(ctx, storage.UpdateTaskExecution(taskExec.TaskExecution))
+				_, err = client.Propose(ctx, statemachine.UpdateTaskExecution(taskExec.TaskExecution))
 				if err != nil {
 					// failed to inform cluster back. Leader's timeout mechanism will kick in.
 					log.Printf("executor: failed to update task execution to %v: %v (%v) %v\n", taskExec.Status, taskExec.Id, taskExec.QueueID, err)

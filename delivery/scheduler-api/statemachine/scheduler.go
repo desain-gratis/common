@@ -1,4 +1,4 @@
-package storage
+package statemachine
 
 import (
 	"context"
@@ -33,7 +33,7 @@ type RaftStorage struct {
 
 	scheduledTaskUsecase mycontent.Usecase[*entity.RecurringTask]
 
-	executor chan *entity.TaskExecution
+	executor chan<- *entity.TaskExecution
 
 	// experiment use chDB
 	taskExecutionUsecaseV2 TaskExecutionUsecase
@@ -53,7 +53,7 @@ func NewRaftApp(
 	topic notifier.Topic,
 	recurringTaskStorage mycontent.Usecase[*entity.RecurringTask],
 	teStorageV2 TaskExecutionUsecase,
-	executor chan *entity.TaskExecution,
+	executor chan<- *entity.TaskExecution,
 ) *RaftStorage {
 	return &RaftStorage{
 		namespace:              namespace,

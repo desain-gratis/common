@@ -13,22 +13,15 @@ import (
 	_ "time/tzdata"
 
 	"github.com/desain-gratis/common/delivery/mycontent-api/mycontent"
-	"github.com/desain-gratis/common/delivery/scheduler-api/storage"
-	"github.com/desain-gratis/common/lib/notifier"
+	"github.com/desain-gratis/common/delivery/scheduler-api/statemachine"
 	entity "github.com/desain-gratis/common/types/entity/scheduler"
 	"github.com/google/uuid"
 	"github.com/julienschmidt/httprouter"
 )
 
 type httpAPI struct {
-	rc StateMachineClient
-
-	tes storage.TaskExecutionUsecase
-}
-
-// or background process I guess
-func NewHttpAPI(topic notifier.Topic, rc StateMachineClient, tes storage.TaskExecutionUsecase) *httpAPI {
-	return &httpAPI{rc: rc, tes: tes}
+	raftClient StateMachineClient
+	tes        statemachine.TaskExecutionUsecase
 }
 
 func (h *httpAPI) Hello(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
@@ -81,7 +74,7 @@ func (h *httpAPI) GetDailyCount(
 		indexes...,
 	)
 
-	data := make([]*storage.TaskExecutionDailyCount, 0)
+	data := make([]*statemachine.TaskExecutionDailyCount, 0)
 
 	for results != nil || errs != nil {
 		select {
@@ -132,7 +125,7 @@ func (h *httpAPI) GetHourlyCount(
 		indexes...,
 	)
 
-	data := make([]*storage.TaskExecutionHourlyCount, 0)
+	data := make([]*statemachine.TaskExecutionHourlyCount, 0)
 
 	for results != nil || errs != nil {
 		select {
@@ -201,9 +194,9 @@ func (h *httpAPI) ExecuteTask(w http.ResponseWriter, r *http.Request, p httprout
 	}
 
 	// server do something
-	data := storage.CreateTaskExecution(taskExec)
+	data := statemachine.CreateTaskExecution(taskExec)
 
-	result, err := h.rc.Propose(r.Context(), data)
+	result, err := h.raftClient.Propose(r.Context(), data)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		fmt.Fprintf(w, "XXX UWADUUH: %v %v", err, data)
@@ -255,7 +248,7 @@ func (h *httpAPI) CancelTaskExecution(w http.ResponseWriter, r *http.Request, p 
 
 	// client validation (raft will validate as well, this just to make it quicker)
 
-	err = storage.ValidateUpdate(taskExec, &input)
+	err = statemachine.ValidateUpdate(taskExec, &input)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		fmt.Fprintf(w, "WADUUH: %v", err)
@@ -267,7 +260,7 @@ func (h *httpAPI) CancelTaskExecution(w http.ResponseWriter, r *http.Request, p 
 	// TODO: take some field from input (eg. cancellation reason, etc..)
 
 	// Update to raft
-	result, err := h.rc.Propose(r.Context(), storage.UpdateTaskExecution(taskExec))
+	result, err := h.raftClient.Propose(r.Context(), statemachine.UpdateTaskExecution(taskExec))
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		fmt.Fprintf(w, "XXX UWADUUH: %v %v", err, taskExec)
@@ -305,12 +298,12 @@ func (h *httpAPI) CreateRecurringTask(w http.ResponseWriter, r *http.Request, p 
 	taskDefinition.PublishedAt = time.Now().In(taskDefinition.UserTime.Location())
 
 	// server do something
-	data := storage.CreateRecurringTask{
+	data := statemachine.CreateRecurringTask{
 		Task:       taskDefinition,
 		ServerTime: time.Now(),
 	}
 
-	result, err := h.rc.Propose(r.Context(), data)
+	result, err := h.raftClient.Propose(r.Context(), data)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		fmt.Fprintf(w, "XXX UWADUUH: %v %v", err, data)
@@ -336,12 +329,12 @@ func writeJSON(w http.ResponseWriter, status int, data any) {
 
 func parseAggregationInput(
 	r *http.Request,
-) (storage.TaskExecutionFilter, string, []string, error) {
+) (statemachine.TaskExecutionFilter, string, []string, error) {
 	query := r.URL.Query()
 
 	namespace := strings.TrimSpace(r.Header.Get("X-Namespace"))
 	if namespace == "" {
-		return storage.TaskExecutionFilter{}, "", nil,
+		return statemachine.TaskExecutionFilter{}, "", nil,
 			fmt.Errorf("X-Namespace header is required")
 	}
 
@@ -351,11 +344,11 @@ func parseAggregationInput(
 	}
 
 	if _, err := time.LoadLocation(timezone); err != nil {
-		return storage.TaskExecutionFilter{}, "", nil,
+		return statemachine.TaskExecutionFilter{}, "", nil,
 			fmt.Errorf("invalid timezone: %s", timezone)
 	}
 
-	filter := storage.TaskExecutionFilter{}
+	filter := statemachine.TaskExecutionFilter{}
 
 	if value := query.Get("before"); value != "" {
 		before, err := time.Parse(time.RFC3339, value)

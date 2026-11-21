@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/desain-gratis/common/delivery/scheduler-api/storage"
+	"github.com/desain-gratis/common/delivery/scheduler-api/statemachine"
 	"github.com/desain-gratis/common/lib/notifier"
 	entity "github.com/desain-gratis/common/types/entity/scheduler"
 	"go.etcd.io/raft/v3"
@@ -15,6 +15,7 @@ import (
 
 type leader struct {
 	*worker
+
 	client     StateMachineClient
 	timersLock *sync.RWMutex
 	timers     map[string]*time.Timer
@@ -32,6 +33,20 @@ type leader struct {
 
 	healthyUIDs map[uint64]struct{}
 	healthyUID  uint64
+}
+
+// utility to retrieve task from task-ish alias
+func getTask(taskish any) *entity.RecurringTask {
+	switch task := taskish.(type) {
+	case statemachine.EventRecurringTaskCreated:
+		return (*entity.RecurringTask)(task)
+	case statemachine.EventRecurringTaskUpdated:
+		return (*entity.RecurringTask)(task)
+	case statemachine.EventRecurringTaskGenerated:
+		return (*entity.RecurringTask)(task)
+	}
+
+	return nil
 }
 
 // Main loop for leader
@@ -72,7 +87,7 @@ func (ls *leader) Handler(ctx context.Context, term, leaderID uint64) {
 			t := time.Now()
 
 			switch evt := msg.(type) {
-			case storage.EventRecurringTaskCreated:
+			case statemachine.EventRecurringTaskCreated:
 				task := getTask(evt)
 				if task == nil {
 					// TODO: error inside the raft app, can check which causes empty event
@@ -84,7 +99,7 @@ func (ls *leader) Handler(ctx context.Context, term, leaderID uint64) {
 				if err != nil {
 					log.Printf("leader: failed to trigger generate %v", err)
 				}
-			case storage.EventRecurringTaskGenerated:
+			case statemachine.EventRecurringTaskGenerated:
 				task := getTask(evt)
 				if task == nil {
 					// TODO: error inside the raft app, can check which causes empty event
@@ -111,7 +126,7 @@ func (ls *leader) Handler(ctx context.Context, term, leaderID uint64) {
 						log.Printf("leader: err creating scheduled task execution instances %v", err)
 					}
 				})
-			case storage.EventTaskExecutionCreated:
+			case statemachine.EventTaskExecutionCreated:
 				taskExec := (*entity.TaskExecution)(evt)
 				if ls.healthyUID == 0 {
 					// should be fatal, since it's should be assigned during the first periodicCheck()
@@ -129,7 +144,7 @@ func (ls *leader) Handler(ctx context.Context, term, leaderID uint64) {
 }
 
 func (ls *leader) triggerGenerate(ctx context.Context, task *entity.RecurringTask, t time.Time) error {
-	_, err := ls.client.Propose(ctx, storage.GenerateRecurringTaskExecution{
+	_, err := ls.client.Propose(ctx, statemachine.GenerateRecurringTaskExecution{
 		Task:       task,
 		ServerTime: t,
 	})
@@ -181,7 +196,7 @@ func (ls *leader) assignPendingTasks(ctx context.Context, anyHealthyUID uint64, 
 	// todo: replace the hardcoded value
 	before := t0.Add(3 * time.Hour)
 	notAssigned := entity.AssignmentStatusPending
-	filter := storage.TaskExecutionFilter{
+	filter := statemachine.TaskExecutionFilter{
 		Before:           &before,
 		ExecutionStatus:  []entity.ExecutionStatus{entity.ExecutionStatusPending},
 		AssignmentStatus: &notAssigned,
@@ -221,7 +236,7 @@ func (ls *leader) reassignTasksFromUnhealthyNode(ctx context.Context, anyHealthy
 	// todo: replace the hardcoded value
 	before := t0.Add(3 * time.Hour)
 	assigned := entity.AssignmentStatusAssigned
-	filter := storage.TaskExecutionFilter{
+	filter := statemachine.TaskExecutionFilter{
 		Before:           &before,
 		ExecutionStatus:  []entity.ExecutionStatus{entity.ExecutionStatusPending}, // Maybe check also the one in progress
 		AssignmentStatus: &assigned,
@@ -278,7 +293,7 @@ func (ls *leader) assignPendingTask(ctx context.Context, anyHealthyUID uint64, t
 	taskExec.AssignmentState.AssignmentCount++
 	taskExec.AssignmentStatus = entity.AssignmentStatusAssigned
 
-	result, err := ls.client.Propose(ctx, storage.UpdateTaskExecution(taskExec))
+	result, err := ls.client.Propose(ctx, statemachine.UpdateTaskExecution(taskExec))
 	if err != nil {
 		// determien error, maybe panic or maybe just fail
 		log.Printf("leader: failed to (re)assign work: %v", err)

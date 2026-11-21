@@ -9,9 +9,7 @@ import (
 	"time"
 
 	mycontent_base "github.com/desain-gratis/common/delivery/mycontent-api/mycontent/base"
-	"github.com/desain-gratis/common/delivery/scheduler-api/storage"
-	"github.com/desain-gratis/common/lib/notifier"
-	runneretcd "github.com/desain-gratis/common/lib/raft/runner-etcd"
+	"github.com/desain-gratis/common/delivery/scheduler-api/statemachine"
 	entity "github.com/desain-gratis/common/types/entity/scheduler"
 )
 
@@ -21,24 +19,22 @@ var (
 )
 
 type worker struct {
-	id       uint64
-	topic    notifier.Topic
-	toLeader chan string
+	id uint64
 
 	namespace string
 
 	taskDefinitionStoreRO *mycontent_base.Handler[*entity.RecurringTask]
-	teStorageV2           storage.TaskExecutionUsecase
+	teStorageV2           statemachine.TaskExecutionUsecase
 	// task IDs
 	scheduled     map[queueTaskPair]*TaskExecutionRuntime
 	scheduledLock *sync.Mutex
 
-	queue  map[string]chan *TaskExecutionRuntime
-	client StateMachineClient
+	queue map[string]chan *TaskExecutionRuntime
+	// client StateMachineClient
 
 	timeBucket        map[timeQueue][]*TaskExecutionRuntime
 	timeBucketLock    *sync.Mutex
-	assignmentUpdated chan *entity.TaskExecution
+	assignmentUpdated <-chan *entity.TaskExecution
 }
 type queueTaskPair struct {
 	queueID string
@@ -46,29 +42,24 @@ type queueTaskPair struct {
 }
 
 // or background process I guess
-func NewWorker(
+// strictly read-only from the raft events from assignmentUpdated channel.
+// started before raft is ran.
+func newWorker(
 	namespace string,
-	topic notifier.Topic,
-	client StateMachineClient,
 	taskDefinitionStoreRO *mycontent_base.Handler[*entity.RecurringTask],
-	teStorageV2 storage.TaskExecutionUsecase,
-	assignmentUpdated chan *entity.TaskExecution,
+	teStorageV2 statemachine.TaskExecutionUsecase,
+	assignmentUpdated <-chan *entity.TaskExecution,
 ) *worker {
-	w := &worker{
-		topic:                 topic,
-		toLeader:              make(chan string),
+	return &worker{
+		namespace:             namespace,
 		taskDefinitionStoreRO: taskDefinitionStoreRO,
 		teStorageV2:           teStorageV2,
-		namespace:             namespace,
+		assignmentUpdated:     assignmentUpdated,
 		scheduled:             make(map[queueTaskPair]*TaskExecutionRuntime),
 		scheduledLock:         &sync.Mutex{},
-		client:                client,
 		timeBucket:            make(map[timeQueue][]*TaskExecutionRuntime),
-		assignmentUpdated:     assignmentUpdated,
 		timeBucketLock:        &sync.Mutex{},
 	}
-
-	return w
 }
 
 func (w *worker) RegisterQueue(queue map[string]chan *TaskExecutionRuntime) {
@@ -80,13 +71,14 @@ func (w *worker) loadPendingTask(ctx context.Context, t0 time.Time) {
 	// only load task that will be executed in the next 3 hour
 	before := t0.Add(3 * time.Hour)
 	assigned := entity.AssignmentStatusAssigned
-	nodeID := w.client.ID()
-	filter := storage.TaskExecutionFilter{
+
+	filter := statemachine.TaskExecutionFilter{
 		Before:           &before,
 		ExecutionStatus:  []entity.ExecutionStatus{entity.ExecutionStatusPending},
 		AssignmentStatus: &assigned,
-		AssignedNode:     []uint64{nodeID},
+		AssignedNode:     []uint64{w.id},
 	}
+
 	taskCh, errCh := w.teStorageV2.GetAllWithFilter(ctx, filter, "deployd")
 	for taskCh != nil || errCh != nil {
 		select {
@@ -112,9 +104,11 @@ func (w *worker) loadPendingTask(ctx context.Context, t0 time.Time) {
 	}
 }
 
-// Can be called after raft "snapshot" is ready, but before the raft is ran
-func (w *worker) Init(ctx context.Context) error {
+// Start the worker)
+func (w *worker) Start(ctx context.Context, id uint64) error {
 	w.loadPendingTask(ctx, time.Now())
+
+	w.id = id
 
 	poll := time.NewTicker(30 * time.Second)
 	go func() {
@@ -203,7 +197,7 @@ func (w *worker) checkCancellation(_ context.Context, taskExec *entity.TaskExecu
 	}
 
 	// task no longer ours :(
-	if taskExec.AssignmentState.AssignedTo != w.client.ID() {
+	if taskExec.AssignmentState.AssignedTo != w.id {
 		prev.Cancel(ErrTaskExecutionReAssigned)
 		return
 	}
@@ -232,7 +226,7 @@ func (w *worker) loadTaskExec(ctx context.Context, taskExec *entity.TaskExecutio
 	}
 
 	// if it's not our task
-	if taskExec.AssignmentState.AssignedTo != w.client.ID() {
+	if taskExec.AssignmentState.AssignedTo != w.id {
 		return
 	}
 
@@ -345,64 +339,4 @@ func (w *worker) loadTaskExec(ctx context.Context, taskExec *entity.TaskExecutio
 type timeQueue struct {
 	taskScheduledRunAt time.Time
 	queueID            string
-}
-
-// Called everytime becoming raft leader
-// Context will be cancelled when stepping down from raft leader
-func (w *worker) OnBecomingRaftLeader(ctx context.Context, term uint64, leaderID uint64) error {
-	ticker := time.NewTicker(5 * time.Second) // todo: maybe separate health tick & task execution tick
-
-	timers := make(map[string]*time.Timer)
-	timersLock := &sync.RWMutex{}
-
-	// Guarantees that we can get the latest state, and all incoming message after that
-	rc := runneretcd.GetRaftContext(ctx)
-	// Load all task definition from store
-	node := rc.Node()
-
-	subscription, err := w.client.Subscribe(ctx)
-	if err != nil {
-		return err
-	}
-
-	ls := leader{
-		worker:     w,
-		client:     w.client,
-		timersLock: timersLock,
-		timers:     timers,
-		id:         leaderID,
-		term:       term,
-
-		// keep track of node health
-		node:                  make(map[uint64]*entity.Node),
-		healthyDurationWithin: 10 * time.Second,
-
-		ticker:       ticker,
-		raftNode:     node,
-		subscription: subscription,
-
-		healthyUIDs: make(map[uint64]struct{}),
-		healthyUID:  0,
-	}
-
-	go func(term, leaderID uint64) {
-		defer ticker.Stop()
-		ls.Handler(ctx, term, leaderID)
-	}(term, leaderID)
-
-	return nil
-}
-
-// utility to retrieve task from task-ish alias
-func getTask(taskish any) *entity.RecurringTask {
-	switch task := taskish.(type) {
-	case storage.EventRecurringTaskCreated:
-		return (*entity.RecurringTask)(task)
-	case storage.EventRecurringTaskUpdated:
-		return (*entity.RecurringTask)(task)
-	case storage.EventRecurringTaskGenerated:
-		return (*entity.RecurringTask)(task)
-	}
-
-	return nil
 }
