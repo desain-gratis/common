@@ -11,7 +11,7 @@ import (
 type repo struct {
 	content.Repository
 	TableName   string
-	raftContext *runneretcd.RaftContext // specific
+	raftContext *runneretcd.RaftWrapper // specific
 }
 
 type Command struct {
@@ -25,7 +25,7 @@ type Command struct {
 	Data      content.Data `json:"data"`
 }
 
-func Wrap(raftCtx *runneretcd.RaftContext, tableName string, base content.Repository) content.Repository {
+func Wrap(raftCtx *runneretcd.RaftWrapper, tableName string, base content.Repository) content.Repository {
 	return &repo{
 		Repository:  base,
 		TableName:   tableName,

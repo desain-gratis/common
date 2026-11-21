@@ -30,7 +30,7 @@ type mycontentClient struct {
 }
 
 func NewStorageClient(ctx context.Context, tableName string) *mycontentClient {
-	raftCtx, _ := raft_runner.GetRaftContext(ctx)
+	raftCtx, _ := raft_runner.GetRaftWrapper(ctx)
 	return &mycontentClient{
 		tableName: tableName,
 		DHost:     raftCtx.DHost,

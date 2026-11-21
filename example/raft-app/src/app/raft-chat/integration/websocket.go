@@ -39,7 +39,7 @@ type SubscriptionData struct {
 }
 
 func New(ctx context.Context) *ChatAppIntegration {
-	raftCtx, _ := raft_runner.GetRaftContext(ctx)
+	raftCtx, _ := raft_runner.GetRaftWrapper(ctx)
 
 	// TODO: we can create raft.Client to abstract away session creation
 	return &ChatAppIntegration{

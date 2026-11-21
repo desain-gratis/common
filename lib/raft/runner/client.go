@@ -15,7 +15,7 @@ import (
 )
 
 var (
-	ErrRaftContextNotFound = errors.New("raft context not found")
+	ErrRaftWrapperNotFound = errors.New("raft context not found")
 	ErrRaft                = errors.New("raft error") // generic raft error
 )
 
@@ -26,9 +26,9 @@ type Client struct {
 }
 
 func NewClient(ctx context.Context) (*Client, error) {
-	raftCtx, err := GetRaftContext(ctx)
+	raftCtx, err := GetRaftWrapper(ctx)
 	if err != nil {
-		return nil, ErrRaftContextNotFound
+		return nil, ErrRaftWrapperNotFound
 	}
 	return &Client{
 		dHost:     raftCtx.DHost,

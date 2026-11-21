@@ -38,7 +38,7 @@ func withContext[T any](ctx context.Context, conn driver.Conn, appID string) (co
 	}
 
 	// Pass everything via context to make the API clean
-	ctx = context.WithValue(ctx, contextKey, RaftContext{
+	ctx = context.WithValue(ctx, contextKey, RaftWrapper{
 		ID:        sc.ID,
 		ShardID:   sc.ShardID,
 		ReplicaID: sc.ReplicaID,
@@ -90,7 +90,7 @@ func ForEachReplica[T any](appType string, f func(ctx context.Context) error) {
 
 		// Pass everything via context to make the API clean
 		ctx := context.Background()
-		ctx = context.WithValue(ctx, contextKey, RaftContext{
+		ctx = context.WithValue(ctx, contextKey, RaftWrapper{
 			ID:        sc.ID,
 			ShardID:   sc.ShardID,
 			ReplicaID: sc.ReplicaID,
@@ -118,7 +118,7 @@ func Run(ctx context.Context, app raft.Application) error {
 	dhost := DHost()
 
 	cfg := GetConfig()
-	raftCtx, err := GetRaftContext(ctx)
+	raftCtx, err := GetRaftWrapper(ctx)
 	if err != nil {
 		return err
 	}

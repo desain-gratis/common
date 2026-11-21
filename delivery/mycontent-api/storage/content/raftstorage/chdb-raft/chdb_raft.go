@@ -100,7 +100,7 @@ func (s *ChdbRaftApp) GetRepository(tableName string) (content.Repository, bool)
 	return repo, true
 }
 
-func (s *ChdbRaftApp) GetRaftRepository(raftInstance *runneretcd.RaftContext, tableName string) (content.Repository, bool) {
+func (s *ChdbRaftApp) GetRaftRepository(raftInstance *runneretcd.RaftWrapper, tableName string) (content.Repository, bool) {
 	repo, ok := s.repos[tableName]
 	if !ok {
 		return nil, false

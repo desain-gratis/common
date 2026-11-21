@@ -169,7 +169,7 @@ func (s *BadgerRaftApp) GetAutoIncrementTable(ctx context.Context, tableName str
 // Todo: rename to GetRaftRepository or GetRaftEnabledRepository
 func (s *BadgerRaftApp) GetContentRepository(ctx context.Context, tableType TableType, tableName string) (*badgerRaftRepo, error) {
 	// right now we just use what we have
-	raftCtx := runneretcd.GetRaftContext(ctx)
+	raftCtx := runneretcd.GetRaftWrapper(ctx)
 	if raftCtx == nil {
 		return nil, fmt.Errorf("cannot raft maxxing")
 	}

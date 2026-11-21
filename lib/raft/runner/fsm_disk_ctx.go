@@ -18,7 +18,7 @@ const (
 
 type ContextKey string
 
-type RaftContext struct {
+type RaftWrapper struct {
 	ID        string
 	ShardID   uint64
 	ReplicaID uint64
@@ -58,10 +58,10 @@ func SetMetadata(ctx context.Context, namespace string, data []byte) error {
 	return nil
 }
 
-func GetRaftContext(ctx context.Context) (RaftContext, error) {
-	raftCtx, ok := ctx.Value(contextKey).(RaftContext)
+func GetRaftWrapper(ctx context.Context) (RaftWrapper, error) {
+	raftCtx, ok := ctx.Value(contextKey).(RaftWrapper)
 	if !ok {
-		return RaftContext{}, errors.New("raft context not found")
+		return RaftWrapper{}, errors.New("raft context not found")
 	}
 	return raftCtx, nil
 }

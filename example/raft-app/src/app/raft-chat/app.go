@@ -237,7 +237,7 @@ func (s *chatWriterApp) Apply(ctx context.Context) error {
 }
 
 func (s *chatWriterApp) startSubscription(ctx context.Context, _ raft.Entry, rawData json.RawMessage, startIdx uint64) error {
-	raftCtx, _ := raft_runner.GetRaftContext(ctx)
+	raftCtx, _ := raft_runner.GetRaftWrapper(ctx)
 	var data notifierhelper.StartSubscriptionRequest
 	_ = json.Unmarshal(rawData, &data)
 	err := s.topicReg.StartSubscription(raftCtx.ReplicaID, startIdx, data)

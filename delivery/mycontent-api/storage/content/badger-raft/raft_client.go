@@ -11,7 +11,7 @@ import (
 type badgerRaftRepo struct {
 	content.Repository
 	TableName   string
-	raftContext *runneretcd.RaftContext // specific
+	raftContext *runneretcd.RaftWrapper // specific
 }
 
 type Command struct {

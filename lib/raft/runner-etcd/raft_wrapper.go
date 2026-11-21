@@ -35,7 +35,9 @@ var defaultSnapshotCount uint64 = 10000
 
 var snapshotCatchUpEntriesN uint64 = 10000
 
-type RaftContext struct {
+// TODO: naming;  it can Run(), it can Propose(), what it is?
+// Raft? RaftW? Wrapper? Manager? Runner
+type RaftWrapper struct {
 	// todo: maybe put in config
 	id       uint64
 	peers    []string
@@ -77,11 +79,11 @@ type RaftContext struct {
 	Logger *zap.Logger
 }
 
-func (r *RaftContext) ID() uint64 {
+func (r *RaftWrapper) ID() uint64 {
 	return r.id
 }
 
-func (r *RaftContext) Node() raft.Node {
+func (r *RaftWrapper) Node() raft.Node {
 	return r.node
 }
 
@@ -98,7 +100,7 @@ type leaderChange struct {
 
 // Maybe we rename to ProposeSync
 // TODO as well, use better encoding eg. proto type.
-func (rc *RaftContext) Propose(ctx context.Context, value any) (any, error) {
+func (rc *RaftWrapper) Propose(ctx context.Context, value any) (any, error) {
 	subID := strconv.FormatUint(rand.Uint64(), 10)
 
 	if rc == nil {
@@ -168,7 +170,7 @@ func (rc *RaftContext) Propose(ctx context.Context, value any) (any, error) {
 	return result.Data, result.Error
 }
 
-func (rc *RaftContext) serveRaft() {
+func (rc *RaftWrapper) serveRaft() {
 	snap, err := rc.raftStorage.Snapshot()
 	if err != nil {
 		panic(err)
@@ -297,7 +299,7 @@ func (rc *RaftContext) serveRaft() {
 	// so wal dir default impl is the way to go.
 }
 
-func (rc *RaftContext) detectLeadershipChange(lt *leaderTracker, rd *raft.Ready) {
+func (rc *RaftWrapper) detectLeadershipChange(lt *leaderTracker, rd *raft.Ready) {
 	// 1) New term voids leadership.
 	if hs := rd.HardState; hs != nil && hs.GetTerm() != lt.term {
 		lt.term = hs.GetTerm()
@@ -336,7 +338,7 @@ func (lt *leaderTracker) loseLeadership() {
 
 // TODO: use our pattern
 // allow communicate to each server
-func (rc *RaftContext) serveTransport() {
+func (rc *RaftWrapper) serveTransport() {
 	if rc.bindAddr == "" {
 		url, err := url.Parse(rc.peers[rc.id-1]) // todo: use rc.bindAddr
 		if err != nil {
@@ -372,7 +374,7 @@ func (rc *RaftContext) serveTransport() {
 
 // Apply is just like "saveSnapshotToDisk", but without any snapshotting logic
 // It's only writes to WAL, not to the "snapshot"
-func (rc *RaftContext) apply(index, term uint64, confState *raftpb.ConfState, _debugDeleteMe *raftpb.Snapshot) error {
+func (rc *RaftWrapper) apply(index, term uint64, confState *raftpb.ConfState, _debugDeleteMe *raftpb.Snapshot) error {
 	walSnap := walpb.Snapshot{
 		Index:     &index,
 		Term:      &term,
@@ -400,7 +402,7 @@ func (rc *RaftContext) apply(index, term uint64, confState *raftpb.ConfState, _d
 }
 
 // Called from Ready
-func (rc *RaftContext) saveSnapshotToDisk(snap *raftpb.Snapshot) error {
+func (rc *RaftWrapper) saveSnapshotToDisk(snap *raftpb.Snapshot) error {
 	walSnap := walpb.Snapshot{
 		Index:     snap.Metadata.Index,
 		Term:      snap.Metadata.Term,
@@ -423,7 +425,7 @@ func (rc *RaftContext) saveSnapshotToDisk(snap *raftpb.Snapshot) error {
 	return rc.wal.ReleaseLockTo(snap.Metadata.GetIndex()) // TESTING COMMENT SNAPSHOT RELATED
 }
 
-func (rc *RaftContext) loadSnapshot(snapshotToSave *raftpb.Snapshot) {
+func (rc *RaftWrapper) loadSnapshot(snapshotToSave *raftpb.Snapshot) {
 	if raft.IsEmptySnap(snapshotToSave) {
 		return
 	}
@@ -443,7 +445,7 @@ func (rc *RaftContext) loadSnapshot(snapshotToSave *raftpb.Snapshot) {
 // When there is a `raftpb.EntryConfChange` after creating the snapshot,
 // then the confState included in the snapshot is out of date. so We need
 // to update the confState before sending a snapshot to a follower.
-func (rc *RaftContext) updateMsgSnap(ms []*raftpb.Message) []*raftpb.Message {
+func (rc *RaftWrapper) updateMsgSnap(ms []*raftpb.Message) []*raftpb.Message {
 	// no need to create new pointer no...
 	var messages []*raftpb.Message
 	for i := 0; i < len(ms); i++ {
@@ -457,7 +459,7 @@ func (rc *RaftContext) updateMsgSnap(ms []*raftpb.Message) []*raftpb.Message {
 
 // publishEntries writes committed log entries to commit channel and returns
 // whether all entries could be published.
-func (rc *RaftContext) publishEntries(ents []*raftpb.Entry) (<-chan struct{}, bool) {
+func (rc *RaftWrapper) publishEntries(ents []*raftpb.Entry) (<-chan struct{}, bool) {
 	if len(ents) == 0 {
 		return nil, true
 	}
@@ -509,7 +511,7 @@ func (rc *RaftContext) publishEntries(ents []*raftpb.Entry) (<-chan struct{}, bo
 	return applyDoneC, true
 }
 
-func (rc *RaftContext) entriesToApply(ents []*raftpb.Entry) (nents []*raftpb.Entry) {
+func (rc *RaftWrapper) entriesToApply(ents []*raftpb.Entry) (nents []*raftpb.Entry) {
 	if len(ents) == 0 {
 		return ents
 	}
@@ -523,7 +525,7 @@ func (rc *RaftContext) entriesToApply(ents []*raftpb.Entry) (nents []*raftpb.Ent
 	return nents
 }
 
-func (rc *RaftContext) maybeTriggerSnapshot(applyDoneC <-chan struct{}) {
+func (rc *RaftWrapper) maybeTriggerSnapshot(applyDoneC <-chan struct{}) {
 	if rc.appliedIndex-rc.snapshotIndex <= defaultSnapshotCount {
 		return
 	}
@@ -606,7 +608,7 @@ func (rc *RaftContext) maybeTriggerSnapshot(applyDoneC <-chan struct{}) {
 }
 
 // stop closes http, closes all channels, and stops raft.
-func (rc *RaftContext) stop() {
+func (rc *RaftWrapper) stop() {
 	rc.Logger.Info("KENEAPADISTOP?")
 	rc.stopHTTP()
 	close(rc.commitC)
@@ -615,13 +617,13 @@ func (rc *RaftContext) stop() {
 	rc.node.Stop()
 }
 
-func (rc *RaftContext) stopHTTP() {
+func (rc *RaftWrapper) stopHTTP() {
 	rc.transport.Stop()
 	close(rc.httpstopc)
 	<-rc.httpdonec
 }
 
-func (rc *RaftContext) writeError(err error) {
+func (rc *RaftWrapper) writeError(err error) {
 	rc.stopHTTP()
 	close(rc.commitC)
 	rc.errorC <- err

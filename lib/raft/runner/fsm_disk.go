@@ -22,11 +22,11 @@ type baseDiskSM struct {
 	smMetadata     *Metadata
 	initialApplied uint64
 	app            raft.Application
-	raftContext    RaftContext
+	raftContext    RaftWrapper
 	config         DragonboatConfig2
 }
 
-func newBaseDiskClickhouseSM(cfg DragonboatConfig2, raftCtx RaftContext, app raft.Application) func(shardID uint64, replicaID uint64) sm.IOnDiskStateMachine {
+func newBaseDiskClickhouseSM(cfg DragonboatConfig2, raftCtx RaftWrapper, app raft.Application) func(shardID uint64, replicaID uint64) sm.IOnDiskStateMachine {
 	return func(shardID uint64, replicaID uint64) sm.IOnDiskStateMachine {
 		raftCtx.ShardID = shardID
 		raftCtx.ReplicaID = replicaID

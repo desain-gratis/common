@@ -23,12 +23,12 @@ import (
 	"go.uber.org/zap"
 )
 
-func InitWithConfig(ctx context.Context, cfgPath string, replicaID string, app dgraft.ApplicationV2) (*RaftContext, chan string, error) {
-	return RunWithConfig(ctx, cfgPath, replicaID, app)
+// deprecated: use InitWithConfig
+func RunWithConfig(ctx context.Context, cfgPath string, replicaID string, app dgraft.ApplicationV2) (*RaftWrapper, chan string, error) {
+	return InitWithConfig(ctx, cfgPath, replicaID, app)
 }
 
-// deprecated: use InitWithConfig (better naming)
-func RunWithConfig(_ context.Context, cfgPath string, replicaID string, app dgraft.ApplicationV2) (*RaftContext, chan string, error) {
+func InitWithConfig(_ context.Context, cfgPath string, replicaID string, app dgraft.ApplicationV2) (*RaftWrapper, chan string, error) {
 	cfg, err := readEtcdRaftConfig(cfgPath)
 	if err != nil {
 		return nil, nil, err
@@ -41,7 +41,7 @@ func RunWithConfig(_ context.Context, cfgPath string, replicaID string, app dgra
 	join := partitionCfg.GetBool("join")
 
 	// todomaxxing
-	// TODO: let's start in dedicated method (eg. RaftContext.Run())
+	// TODO: let's start in dedicated method (eg. RaftWrapper.Run())
 	snapDir := fmt.Sprintf("%s/etcd-raft/%s-%d-snap", cfg.GetString("base_data_dir"), replicaID, id)
 	walDir := fmt.Sprintf("%s/etcd-raft/%s-%d", cfg.GetString("base_wal_dir"), replicaID, id)
 	rw, err := loadRaft(
@@ -65,17 +65,17 @@ func RunWithConfig(_ context.Context, cfgPath string, replicaID string, app dgra
 		}
 	}()
 
-	// todo: maybe just return raw *RaftContext
+	// todo: maybe just return raw *RaftWrapper
 	return rw, proposeOut, nil
 }
 
 // Start starts the raft: (1) start the raft.Node state machine, (2) start the transport
-func (rc *RaftContext) Start(ctx context.Context, leaderListener dgraft.LeaderListener) error {
-	return rc.Run(ctx, leaderListener)
+// deprecated: use Start
+func (rc *RaftWrapper) Run(ctx context.Context, leaderListener dgraft.LeaderListener) error {
+	return rc.Start(ctx, leaderListener)
 }
 
-// deprecated: use Start
-func (rc *RaftContext) Run(ctx context.Context, leaderListener dgraft.LeaderListener) error {
+func (rc *RaftWrapper) Start(ctx context.Context, leaderListener dgraft.LeaderListener) error {
 	c := &raft.Config{
 		ID:                        uint64(rc.id),
 		ElectionTick:              10,
@@ -132,12 +132,12 @@ func (rc *RaftContext) Run(ctx context.Context, leaderListener dgraft.LeaderList
 			if leaderListener == nil {
 				continue
 			}
-			ctx := WithRaftContext(leaderUpdate.Ctx, rc)
+			ctx := WithRaftWrapper(leaderUpdate.Ctx, rc)
 			_ = leaderListener(ctx, leaderUpdate.Term, leaderUpdate.LeaderID)
 		}
 	}()
 
-	ctx = WithRaftContext(ctx, rc)
+	ctx = WithRaftWrapper(ctx, rc)
 
 	go func() {
 		for commit := range rc.commitC {
@@ -210,7 +210,7 @@ type leaderTracker struct {
 // snpadir --> DATA snapdir
 // waldir --> raft wal dir & raft snapshot dir
 // TODO: refactor
-func loadRaft(snapdir, waldir string, id int, peers []string, bindAddr string, join bool, app dgraft.ApplicationV2) (*RaftContext, error) {
+func loadRaft(snapdir, waldir string, id int, peers []string, bindAddr string, join bool, app dgraft.ApplicationV2) (*RaftWrapper, error) {
 	if !fileutil.Exist(snapdir) {
 		if err := os.MkdirAll(snapdir, 0o750); err != nil {
 			log.Fatalf("raftexample: cannot create dir for snapshot %v (%v)", snapdir, err)
@@ -298,7 +298,7 @@ func loadRaft(snapdir, waldir string, id int, peers []string, bindAddr string, j
 
 	// Prepare the memory storage structure of the raft
 	raftStorage := raft.NewMemoryStorage()
-	if snapshot != nil {
+	if snapshot != nil { // TODO
 		// notice that, it's only the "metadata"
 		raftStorage.ApplySnapshot(snapshot) // walsnapshot nya di apply; artinya dimasukan kedalam core raft storage (in-memory log/journal nya)
 	}
@@ -318,7 +318,7 @@ func loadRaft(snapdir, waldir string, id int, peers []string, bindAddr string, j
 	// the snapshotter will be used in kv
 	// rc.snapshotterReady <- rc.snapshotter
 
-	rc := &RaftContext{
+	rc := &RaftWrapper{
 		id:       uint64(id),
 		peers:    peers,
 		bindAddr: bindAddr,
@@ -377,10 +377,10 @@ func readEtcdRaftConfig(cfgFile string) (cfg *viper.Viper, err error) {
 
 const raftCtxKey = "raft-ctx"
 
-func GetRaftContext(ctx context.Context) *RaftContext {
-	return ctx.Value(raftCtxKey).(*RaftContext)
+func GetRaftWrapper(ctx context.Context) *RaftWrapper {
+	return ctx.Value(raftCtxKey).(*RaftWrapper)
 }
 
-func WithRaftContext(ctx context.Context, rc *RaftContext) context.Context {
+func WithRaftWrapper(ctx context.Context, rc *RaftWrapper) context.Context {
 	return context.WithValue(ctx, raftCtxKey, rc)
 }

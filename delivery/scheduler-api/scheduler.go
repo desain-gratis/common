@@ -95,7 +95,7 @@ func NewReplicatedScheduler(ctx context.Context, namespace string, conn *sql.DB,
 	}, nil
 }
 
-func (w *replicatedScheduler) StartWorker(ctx context.Context, raftClient *runneretcd.RaftContext) error {
+func (w *replicatedScheduler) StartWorker(ctx context.Context, raftClient *runneretcd.RaftWrapper) error {
 	// Load all local task in to memory and start the worker goroutine
 
 	// Can also put the client inside worker; but now it's more clear like this first
@@ -109,7 +109,7 @@ func (w *replicatedScheduler) StartWorker(ctx context.Context, raftClient *runne
 }
 
 // HttpHandler pre-made HTTPHandler to interact with the scheduler
-func (w *replicatedScheduler) HttpHandler(raftClient *runneretcd.RaftContext) *httpAPI {
+func (w *replicatedScheduler) HttpHandler(raftClient *runneretcd.RaftWrapper) *httpAPI {
 	client := statemachine.NewClient(raftClient)
 	return &httpAPI{raftClient: client, tes: w.TaskExecutionUsecase}
 }
@@ -125,7 +125,7 @@ func (w *replicatedScheduler) OnBecomingRaftLeader(ctx context.Context, term uin
 	// Guarantees that we can get the latest state, and all incoming message after that
 
 	// Get client from context, instead from init value somewhere
-	rc := runneretcd.GetRaftContext(ctx)
+	rc := runneretcd.GetRaftWrapper(ctx)
 	client := statemachine.NewClient(rc)
 
 	subscription, err := client.Subscribe(ctx)

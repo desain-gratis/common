@@ -11,9 +11,9 @@ import (
 
 // "replicaID" that maps shard UID
 func WaitReady(ctx context.Context) (raft.EventLeaderUpdate, notifier.Subscription, error) {
-	raftCtx, err := GetRaftContext(ctx)
+	raftCtx, err := GetRaftWrapper(ctx)
 	if err != nil {
-		return raft.EventLeaderUpdate{}, nil, ErrRaftContextNotFound
+		return raft.EventLeaderUpdate{}, nil, ErrRaftWrapperNotFound
 	}
 
 	sub, err := topic.Subscribe(ctx, impl.NewStandardSubscriber(func(a any) bool {
