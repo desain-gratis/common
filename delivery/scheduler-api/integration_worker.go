@@ -29,7 +29,7 @@ type worker struct {
 	scheduled     map[queueTaskPair]*TaskExecutionRuntime
 	scheduledLock *sync.Mutex
 
-	queue map[string]chan *TaskExecutionRuntime
+	queue *queueManager
 	// client StateMachineClient
 
 	timeBucket        map[timeQueue][]*TaskExecutionRuntime
@@ -62,9 +62,9 @@ func newWorker(
 	}
 }
 
-func (w *worker) RegisterQueue(queue map[string]chan *TaskExecutionRuntime) {
-	w.queue = queue
-}
+// func (w *worker) RegisterQueue(queue map[string]chan *TaskExecutionRuntime) {
+// 	w.queue = queue
+// }
 
 func (w *worker) loadPendingTask(ctx context.Context, t0 time.Time) {
 	// TODO: refactor
@@ -239,7 +239,14 @@ func (w *worker) loadTaskExec(ctx context.Context, taskExec *entity.TaskExecutio
 	}
 
 	// if the queue no longer found
-	q, ok := w.queue[taskExec.QueueID]
+	var q chan *TaskExecutionRuntime
+	var ok bool
+
+	func() {
+		w.queue.queueByIDLock.Lock()
+		defer w.queue.queueByIDLock.Unlock()
+		q, ok = w.queue.queueByID[taskExec.QueueID]
+	}()
 	if !ok {
 		// todo: queue validation should happens at creation
 		// and additional handling..
