@@ -10,7 +10,7 @@ import (
 
 var _ mycontent.Usecase[*entity.TaskExecution] = (*teStorageDGAdapter)(nil)
 
-// desain gratis mycontent wrapper for task execution storage
+// read-only desain gratis mycontent wrapper for task execution storage
 type teStorageDGAdapter struct {
 	*teStorageChDB
 }

@@ -129,6 +129,7 @@ func (w *worker) Start(ctx context.Context, id uint64) error {
 	return nil
 }
 
+// TODO: private and public
 type TaskExecutionRuntime struct {
 	*entity.TaskExecution
 	ctx    context.Context

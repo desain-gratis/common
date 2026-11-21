@@ -28,7 +28,8 @@ type replicatedScheduler struct {
 	RecurringTaskUsecase mycontent.Usecase[*entity.RecurringTask]
 
 	// Task execution store
-	TaskExecutionUsecase statemachine.TaskExecutionUsecase
+	TaskExecutionUsecase mycontent.Usecase[*entity.TaskExecution]
+	taskExecutionUsecase statemachine.TaskExecutionUsecase // base
 
 	// Integrations
 	StateMachine      *statemachine.RaftStorage
@@ -50,7 +51,7 @@ type replicatedScheduler struct {
 // handler := scheduler.HttpHandler(raftClient)
 //
 // ...
-func NewReplicatedScheduler(ctx context.Context, namespace string, conn *sql.DB, replicated bool) (*replicatedScheduler, error) {
+func NewReplicatedScheduler(ctx context.Context, namespace string, conn *sql.DB) (*replicatedScheduler, error) {
 
 	// base recurring task storage
 	recurringTaskStorage, err := content_chdb.New(ctx, conn, statemachine.TableRecurringTask, 0)
@@ -88,10 +89,13 @@ func NewReplicatedScheduler(ctx context.Context, namespace string, conn *sql.DB,
 	)
 
 	return &replicatedScheduler{
-		namespace:         namespace,
-		Worker:            worker,
-		StateMachine:      storageStateMachine,
-		StateMachineEvent: topic,
+		namespace:            namespace,
+		Worker:               worker,
+		RecurringTaskUsecase: recurringTaskStorageUsecase,
+		TaskExecutionUsecase: taskExecStorage.DGCompat(),
+		taskExecutionUsecase: taskExecStorage,
+		StateMachine:         storageStateMachine,
+		StateMachineEvent:    topic,
 	}, nil
 }
 
@@ -109,9 +113,14 @@ func (w *replicatedScheduler) StartWorker(ctx context.Context, raftClient *runne
 }
 
 // HttpHandler pre-made HTTPHandler to interact with the scheduler
-func (w *replicatedScheduler) HttpHandler(raftClient *runneretcd.RaftWrapper) *httpAPI {
-	client := statemachine.NewClient(raftClient)
-	return &httpAPI{raftClient: client, tes: w.TaskExecutionUsecase}
+func (w *replicatedScheduler) HttpHandler(raftWrapper *runneretcd.RaftWrapper) *httpAPI {
+	client := statemachine.NewClient(raftWrapper)
+	return &httpAPI{raftClient: client, tes: w.taskExecutionUsecase}
+}
+
+func (w *replicatedScheduler) Queue(raftWrapper *runneretcd.RaftWrapper) *queueManager {
+	client := statemachine.NewClient(raftWrapper)
+	return &queueManager{raftClient: client, queueByID: make(map[string]chan *TaskExecutionRuntime), queueByIDLock: &sync.RWMutex{}}
 }
 
 // Called everytime becoming raft leader
@@ -140,6 +149,7 @@ func (w *replicatedScheduler) OnBecomingRaftLeader(ctx context.Context, term uin
 		timers:     timers,
 		id:         leaderID,
 		term:       term,
+		raftNode:   rc.Node(),
 
 		// keep track of node health
 		node:                  make(map[uint64]*entity.Node),

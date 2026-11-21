@@ -141,3 +141,40 @@ func (a *TaskExecution) WithVersion(ver uint64) mycontent.Data {
 func (a *TaskExecution) DGVersion() *uint64 {
 	return nil
 }
+
+func (a *TaskExecution) Copy() *TaskExecution {
+	if a == nil {
+		return nil
+	}
+
+	cp := *a
+
+	if a.ParentId != nil {
+		*cp.ParentId = *a.ParentId
+	}
+	if a.ExecutionState != nil {
+		*cp.ExecutionState = *a.ExecutionState
+
+		if a.ExecutionState.ActualRunAt != nil {
+			*cp.ExecutionState.ActualRunAt = *a.ExecutionState.ActualRunAt
+		}
+
+		if a.ExecutionState.CompletedAt != nil {
+			*cp.ExecutionState.CompletedAt = *a.ExecutionState.CompletedAt
+		}
+	}
+
+	if a.AssignmentState != nil {
+		*cp.AssignmentState = *a.AssignmentState
+	}
+
+	if a.RecurringTaskID != nil {
+		*cp.RecurringTaskID = *a.RecurringTaskID
+	}
+
+	if a.CancelReason != nil {
+		*cp.CancelReason = *a.CancelReason
+	}
+
+	return &cp
+}
