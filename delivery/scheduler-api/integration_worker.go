@@ -59,6 +59,8 @@ func newWorker(
 		scheduledLock:         &sync.Mutex{},
 		timeBucket:            make(map[timeQueue][]*TaskExecutionRuntime),
 		timeBucketLock:        &sync.Mutex{},
+		queue:                 nil,
+		id:                    0,
 	}
 }
 
@@ -243,6 +245,9 @@ func (w *worker) loadTaskExec(ctx context.Context, taskExec *entity.TaskExecutio
 	var ok bool
 
 	func() {
+		if w.queue == nil {
+			return
+		}
 		w.queue.queueByIDLock.Lock()
 		defer w.queue.queueByIDLock.Unlock()
 		q, ok = w.queue.queueByID[taskExec.QueueID]

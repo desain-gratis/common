@@ -120,7 +120,8 @@ func (w *replicatedScheduler) HttpHandler(raftWrapper *runneretcd.RaftWrapper) *
 
 func (w *replicatedScheduler) Queue(raftWrapper *runneretcd.RaftWrapper) *queueManager {
 	client := statemachine.NewClient(raftWrapper)
-	return &queueManager{raftClient: client, queueByID: make(map[string]chan *TaskExecutionRuntime), queueByIDLock: &sync.RWMutex{}}
+	w.Worker.queue = &queueManager{raftClient: client, queueByID: make(map[string]chan *TaskExecutionRuntime), queueByIDLock: &sync.RWMutex{}}
+	return w.Worker.queue
 }
 
 // Called everytime becoming raft leader
