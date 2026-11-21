@@ -70,7 +70,9 @@ func taskFunctionHarness(client StateMachineClient, fn Executor) func(taskExec *
 		if err != nil {
 			taskExec.Status = entity.ExecutionStatusFailed
 		} else {
-			if taskExec.Status == "" {
+			switch taskExec.Status {
+			case entity.ExecutionStatusCancelled, entity.ExecutionStatusInterrupted:
+			default:
 				taskExec.Status = entity.ExecutionStatusSucceed
 			}
 		}
