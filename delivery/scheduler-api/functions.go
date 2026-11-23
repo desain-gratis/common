@@ -3,7 +3,7 @@ package schedulerapi
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/desain-gratis/common/delivery/scheduler-api/statemachine"
@@ -32,7 +32,10 @@ func (u *taskExecutionRuntimeView) Cancel(reason string) {
 
 // can do other allowed mutation as well
 
-const teKey = "task-execs"
+const (
+	teKey     = "task-execs"
+	loggerKey = "log"
+)
 
 // TODO: maybe in their own module to be more user friendly
 func GetTaskExecutionView(ctx context.Context) *taskExecutionRuntimeView {
@@ -44,9 +47,27 @@ func WithTaskExecution(ctx context.Context, rc *TaskExecutionRuntime) context.Co
 	return context.WithValue(ctx, teKey, rc)
 }
 
+func WithLogger(ctx context.Context, logger *slog.Logger) context.Context {
+	return context.WithValue(ctx, loggerKey, logger)
+}
+
+func GetLogger(ctx context.Context) *slog.Logger {
+	logger, _ := ctx.Value(loggerKey).(*slog.Logger)
+	return logger
+}
+
 // Wrap any "stateless" function with state reporting to raft
-func taskFunctionHarness(client StateMachineClient, fn Executor) func(taskExec *TaskExecutionRuntime) {
+func taskFunctionHarness(client StateMachineClient, fn Executor, log *slog.Logger) func(taskExec *TaskExecutionRuntime) {
 	return func(taskExec *TaskExecutionRuntime) {
+		log := log.With(
+			slog.String("task_id", taskExec.Id),
+			slog.String("queue_id", taskExec.QueueID),
+			slog.Uint64("executor_id", taskExec.AssignmentState.AssignedTo),
+		)
+		if taskExec.ParentId != nil {
+			log = log.With(slog.String("task_parent_id", *taskExec.ParentId))
+		}
+
 		runAt := time.Now().In(taskExec.UserTime.Location())
 		taskExec.Status = entity.ExecutionStatusInProgress
 		taskExec.ExecutionState = &entity.ExecutionState{
@@ -57,11 +78,12 @@ func taskFunctionHarness(client StateMachineClient, fn Executor) func(taskExec *
 		ctx := taskExec.ctx
 
 		ctx = WithTaskExecution(ctx, taskExec)
+		ctx = WithLogger(ctx, log)
 
 		// update before
 		_, err := client.Propose(ctx, statemachine.UpdateTaskExecution(taskExec.TaskExecution))
 		if err != nil {
-			log.Printf("executor: failed to update task execution to %v: %v (%v) %v\n", taskExec.Status, taskExec.Id, taskExec.QueueID, err)
+			log.Error("executor: failed to update task execution", slog.String("err", err.Error()))
 			return
 		}
 
@@ -86,7 +108,7 @@ func taskFunctionHarness(client StateMachineClient, fn Executor) func(taskExec *
 		_, err = client.Propose(ctx, statemachine.UpdateTaskExecution(taskExec.TaskExecution))
 		if err != nil {
 			// failed to inform cluster back. Leader's timeout mechanism will kick in.
-			log.Printf("executor: failed to update task execution to %v: %v (%v) %v\n", taskExec.Status, taskExec.Id, taskExec.QueueID, err)
+			log.Error("executor: failed to update task execution", slog.String("err", err.Error()))
 			return
 		}
 	}

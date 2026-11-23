@@ -3,6 +3,7 @@ package schedulerapi
 import (
 	"context"
 	"database/sql"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -118,9 +119,16 @@ func (w *replicatedScheduler) HttpHandler(raftWrapper *runneretcd.RaftWrapper) *
 	return &httpAPI{raftClient: client, tes: w.taskExecutionUsecase}
 }
 
-func (w *replicatedScheduler) Queue(raftWrapper *runneretcd.RaftWrapper) *queueManager {
+// todo: provide good default
+func (w *replicatedScheduler) Queue(raftWrapper *runneretcd.RaftWrapper, logger func(id string) *slog.Logger) *queueManager {
 	client := statemachine.NewClient(raftWrapper)
-	w.Worker.queue = &queueManager{raftClient: client, queueByID: make(map[string]chan *TaskExecutionRuntime), queueByIDLock: &sync.RWMutex{}}
+	w.Worker.queue = &queueManager{
+		raftClient:    client,
+		queueByID:     make(map[string]chan *TaskExecutionRuntime),
+		queueByIDLock: &sync.RWMutex{},
+		logger:        logger,
+	}
+
 	return w.Worker.queue
 }
 

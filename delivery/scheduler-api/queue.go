@@ -2,6 +2,7 @@ package schedulerapi
 
 import (
 	"context"
+	"log/slog"
 	"sync"
 )
 
@@ -10,6 +11,8 @@ type queueManager struct {
 
 	queueByID     map[string]chan *TaskExecutionRuntime
 	queueByIDLock *sync.RWMutex
+
+	logger func(id string) *slog.Logger
 }
 
 // Add let's user specify how the worker will execute the task
@@ -41,8 +44,7 @@ func (q *queueManager) AddFunction(ctx context.Context, id string, ngoroutine in
 	}
 
 	queue := make(chan *TaskExecutionRuntime)
-
-	fnWithHarness := taskFunctionHarness(q.raftClient, fn)
+	fnWithHarness := taskFunctionHarness(q.raftClient, fn, q.logger(id))
 
 	for range ngoroutine {
 		go func() {
