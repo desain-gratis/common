@@ -48,12 +48,10 @@ type RaftWrapper struct {
 
 	config *raft.Config
 
-	// todo: temporary (can use better pattern)
-	httpstopc chan struct{}
-	httpdonec chan struct{}
-
 	node      raft.Node
 	transport *rafthttp.Transport
+
+	httpServer *http.Server // used in transport
 
 	raftStorage   *raft.MemoryStorage
 	wal           *wal.WAL
@@ -170,20 +168,7 @@ func (rc *RaftWrapper) Propose(ctx context.Context, value any) (any, error) {
 	return result.Data, result.Error
 }
 
-func (rc *RaftWrapper) serveRaft() {
-	snap, err := rc.raftStorage.Snapshot()
-	if err != nil {
-		panic(err)
-	}
-	rc.confState = snap.Metadata.ConfState
-	rc.snapshotIndex = snap.Metadata.GetIndex()
-	rc.appliedIndex = snap.Metadata.GetIndex()
-
-	defer rc.wal.Close()
-
-	ticker := time.NewTicker(100 * time.Millisecond)
-	defer ticker.Stop()
-
+func (rc *RaftWrapper) serveRaft(ctx context.Context) {
 	// send proposals over raft
 	go func() {
 		confChangeCount := uint64(0)
@@ -212,71 +197,87 @@ func (rc *RaftWrapper) serveRaft() {
 		close(rc.stopc)
 	}()
 
-	var lt leaderTracker
-
 	// event loop on raft state machine updates
-	for {
-		select {
-		case <-ticker.C:
-			rc.node.Tick()
+	go func() {
+		var lt leaderTracker
 
-		// store raft entries to wal, then publish over commit channel
-		case rd := <-rc.node.Ready():
-			// 1. SAVE IN ADVANCE (TO DISK)
-			if !raft.IsEmptySnap(rd.Snapshot) {
-				// Save snapshot from raft (not from our initialization code) to disk immediately.
-				// meaning: Save it inside the WAL that we have a 'snapshot entry' not necessary a full Database backup.
-				rc.saveSnapshotToDisk(rd.Snapshot)
-			}
-			var hs *raftpb.HardState
-			if !raft.IsEmptyHardState(rd.HardState) {
-				hs = rd.HardState
-			}
-			rc.wal.Save(hs, rd.Entries)
+		snap, err := rc.raftStorage.Snapshot()
+		if err != nil {
+			panic(err)
+		}
 
-			// 2. LOAD TO STORAGE (TO MEMORY; since it's using the inmemory implementation)
-			if !raft.IsEmptySnap(rd.Snapshot) {
-				// Load the snapshot to the application
-				rc.raftStorage.ApplySnapshot(rd.Snapshot)
+		rc.confState = snap.Metadata.ConfState
+		rc.snapshotIndex = snap.Metadata.GetIndex()
+		rc.appliedIndex = snap.Metadata.GetIndex()
 
-				// kv must be un sync w. snapshot in me storage
-				rc.loadSnapshot(rd.Snapshot)
-			}
-			// 2a. Load entries (to memory as well)
-			rc.raftStorage.Append(rd.Entries) // entries
+		defer rc.wal.Close()
 
-			// 3. SEND
-			rc.transport.Send(rc.updateMsgSnap(rd.Messages))
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
 
-			// Leadership change event
-			rc.detectLeadershipChange(&lt, &rd)
+		for {
+			select {
+			case <-ticker.C:
+				rc.node.Tick()
 
-			// 4. APPLY
-			applyDoneC, ok := rc.publishEntries(rc.entriesToApply(rd.CommittedEntries))
-			if !ok {
-				rc.stop()
+			// store raft entries to wal, then publish over commit channel
+			case rd := <-rc.node.Ready():
+				// 1. SAVE IN ADVANCE (TO DISK)
+				if !raft.IsEmptySnap(rd.Snapshot) {
+					// Save snapshot from raft (not from our initialization code) to disk immediately.
+					// meaning: Save it inside the WAL that we have a 'snapshot entry' not necessary a full Database backup.
+					rc.saveSnapshotToDisk(rd.Snapshot)
+				}
+				var hs *raftpb.HardState
+				if !raft.IsEmptyHardState(rd.HardState) {
+					hs = rd.HardState
+				}
+				rc.wal.Save(hs, rd.Entries)
+
+				// 2. LOAD TO STORAGE (TO MEMORY; since it's using the inmemory implementation)
+				if !raft.IsEmptySnap(rd.Snapshot) {
+					// Load the snapshot to the application
+					rc.raftStorage.ApplySnapshot(rd.Snapshot)
+
+					// kv must be un sync w. snapshot in me storage
+					rc.loadSnapshot(rd.Snapshot)
+				}
+				// 2a. Load entries (to memory as well)
+				rc.raftStorage.Append(rd.Entries) // entries
+
+				// 3. SEND
+				rc.transport.Send(rc.updateMsgSnap(rd.Messages))
+
+				// Leadership change event
+				rc.detectLeadershipChange(&lt, &rd)
+
+				// 4. APPLY
+				applyDoneC, ok := rc.publishEntries(rc.entriesToApply(rd.CommittedEntries))
+				if !ok {
+					rc.stop(ctx)
+					return
+				}
+
+				// todo: maybe better if we can  make it simpler later / make it per "applied" message;
+				// no need to use channel.
+
+				// see inside this method
+				rc.maybeTriggerSnapshot(applyDoneC)
+
+				// TODO: important, on after apply () should be made here.
+
+				rc.node.Advance()
+
+			case err := <-rc.transport.ErrorC:
+				rc.writeError(err)
+				return
+
+			case <-rc.stopc:
+				rc.stop(ctx)
 				return
 			}
-
-			// todo: maybe better if we can  make it simpler later / make it per "applied" message;
-			// no need to use channel.
-
-			// see inside this method
-			rc.maybeTriggerSnapshot(applyDoneC)
-
-			// TODO: important, on after apply () should be made here.
-
-			rc.node.Advance()
-
-		case err := <-rc.transport.ErrorC:
-			rc.writeError(err)
-			return
-
-		case <-rc.stopc:
-			rc.stop()
-			return
 		}
-	}
+	}()
 
 	// During processing of app message,
 	// the app can always write-write-write-write asynchronously. INSERT to `log` table.`
@@ -338,7 +339,7 @@ func (lt *leaderTracker) loseLeadership() {
 
 // TODO: use our pattern
 // allow communicate to each server
-func (rc *RaftWrapper) serveTransport() {
+func (rc *RaftWrapper) serveTransport(ctx context.Context) {
 	if rc.bindAddr == "" {
 		url, err := url.Parse(rc.peers[rc.id-1]) // todo: use rc.bindAddr
 		if err != nil {
@@ -350,26 +351,24 @@ func (rc *RaftWrapper) serveTransport() {
 	// https://stackoverflow.com/questions/63676241/how-to-set-setkeepaliveperiod-on-a-tls-conn
 	// 3 minutes as per the etcd's contrib/raftexample
 	lc := net.ListenConfig{KeepAlive: 3 * time.Minute}
-	ln, err := lc.Listen(context.Background(), "tcp", rc.bindAddr) // TODO: use proper context
-	// log.Println("HELLO ORLDFREND: ", url.Host)
-	// ln, err := newStoppableListener(url.Host, rc.httpstopc)
+	log.Println("serveTransport: lc listen")
+	ln, err := lc.Listen(ctx, "tcp", rc.bindAddr) // TODO: use proper context
 	if err != nil {
-		log.Fatalf("raftexample: Failed to listen rafthttp (%v)", err)
+		log.Fatalf("serveTransport: Failed to listen rafthttp (%v)", err)
 	}
+
 	srv := &http.Server{Handler: rc.transport.Handler()}
 
-	err = srv.Serve(ln)
-	if err != nil {
-		log.Fatalf("raftexample: Failed to serve rafthttp (%v)", err)
-	}
+	rc.httpServer = srv
 
-	select {
-	case <-rc.httpstopc:
-	default:
-		log.Fatalf("raftexample: Failed to serve rafthttp (%v)", err)
-	}
-
-	close(rc.httpdonec)
+	go func() {
+		log.Println("serveTransport: serving")
+		if err := srv.Serve(ln); err != nil {
+			if !errors.Is(err, http.ErrServerClosed) {
+				log.Printf("serveTransport: Failed to serve rafthttp (%v)", err)
+			}
+		}
+	}()
 }
 
 // Apply is just like "saveSnapshotToDisk", but without any snapshotting logic
@@ -608,23 +607,44 @@ func (rc *RaftWrapper) maybeTriggerSnapshot(applyDoneC <-chan struct{}) {
 }
 
 // stop closes http, closes all channels, and stops raft.
-func (rc *RaftWrapper) stop() {
-	rc.Logger.Info("KENEAPADISTOP?")
-	rc.stopHTTP()
+func (rc *RaftWrapper) stop(ctx context.Context) error {
+	rc.Logger.Info("RW stop: shutting down raft http")
+	rc.stopHTTP(ctx) // stop the HTTP
+
+	rc.Logger.Info("RW stop: closing channels")
 	close(rc.commitC)
 	close(rc.errorC)
 	close(rc.leaderC)
+
+	rc.Logger.Info("RW stop: stopping raft")
 	rc.node.Stop()
+	rc.Logger.Info("RW stop: raft stopped")
+
+	return nil
 }
 
-func (rc *RaftWrapper) stopHTTP() {
+func (rc *RaftWrapper) stopHTTP(ctx context.Context) error {
+
+	// Raft's transport.Stop() help us stop the long-running connection.
+	// otherwise, httpServer.Shutdown() will time out.
+	// I think this don't apply to the usual http flow, but we can learn (eg. to close long-runnning websocket)
+	rc.Logger.Info("RW stopHTTP: stopping raft's http transport")
 	rc.transport.Stop()
-	close(rc.httpstopc)
-	<-rc.httpdonec
+	rc.Logger.Info("RW stopHTTP: succcessfuly stopped raft's http transport")
+
+	rc.Logger.Info("RW stopHTTP: stopping raft's http server")
+	err := rc.httpServer.Shutdown(ctx)
+	if err != nil {
+		rc.Logger.Error("RW stopHTTP: err shutdown http server", zap.Any("err", err))
+		return err
+	}
+	rc.Logger.Info("RW stopHTTP: succcessfuly shut down raft's http server")
+
+	return nil
 }
 
 func (rc *RaftWrapper) writeError(err error) {
-	rc.stopHTTP()
+	rc.stopHTTP(context.Background())
 	close(rc.commitC)
 	rc.errorC <- err
 	close(rc.errorC)

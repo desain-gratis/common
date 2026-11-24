@@ -71,11 +71,13 @@ func InitWithConfig(_ context.Context, cfgPath string, replicaID string, app dgr
 
 // Start starts the raft: (1) start the raft.Node state machine, (2) start the transport
 // deprecated: use Start
-func (rc *RaftWrapper) Run(ctx context.Context, leaderListener dgraft.LeaderListener) error {
-	return rc.Start(ctx, leaderListener)
+func (rc *RaftWrapper) Run(_ context.Context, leaderListener dgraft.LeaderListener) error {
+	return rc.Start(leaderListener)
 }
 
-func (rc *RaftWrapper) Start(ctx context.Context, leaderListener dgraft.LeaderListener) error {
+func (rc *RaftWrapper) Start(leaderListener dgraft.LeaderListener) error {
+	ctx := context.Background() // manage our own context for more graceful shutdown
+
 	c := &raft.Config{
 		ID:                        uint64(rc.id),
 		ElectionTick:              10,
@@ -179,7 +181,7 @@ func (rc *RaftWrapper) Start(ctx context.Context, leaderListener dgraft.LeaderLi
 
 				err = rc.apply(*s.Index, *s.Term, rc.confState, nil)
 				if err != nil {
-					log.Panic("ngga bisa apply, hehe")
+					log.Panicf("ngga bisa apply, hehe %v", err)
 				}
 
 				err = rc.ApplyTopic.Broadcast(ctx, resultWrapper)
@@ -191,10 +193,14 @@ func (rc *RaftWrapper) Start(ctx context.Context, leaderListener dgraft.LeaderLi
 		}
 	}()
 
-	go rc.serveTransport()
-	go rc.serveRaft()
+	rc.serveTransport(ctx)
+	rc.serveRaft(ctx)
 
 	return nil
+}
+
+func (rc *RaftWrapper) Shutdown(ctx context.Context) error {
+	return rc.stop(ctx)
 }
 
 // todo: make proper later
@@ -334,10 +340,6 @@ func loadRaft(snapdir, waldir string, id int, peers []string, bindAddr string, j
 		// input
 		proposeC:    make(chan string),
 		confChangeC: make(<-chan *raftpb.ConfChange),
-
-		stopc:     make(chan struct{}),
-		httpstopc: make(chan struct{}),
-		httpdonec: make(chan struct{}),
 
 		// node:             raftNode, // in start
 		// transport:        transport,  // in start
