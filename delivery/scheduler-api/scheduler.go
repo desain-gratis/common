@@ -167,8 +167,8 @@ func (w *replicatedScheduler) OnBecomingRaftLeader(ctx context.Context, term uin
 		ticker:       ticker,
 		subscription: subscription,
 
-		healthyUIDs: make(map[uint64]struct{}),
-		healthyUID:  0,
+		workers:         make(map[uint64]*workerStatus),
+		preferredWorker: 0,
 	}
 
 	go func(term, leaderID uint64) {

@@ -18,6 +18,14 @@ var (
 	ErrTaskExecutionReAssigned = errors.New("task execution reassigned")
 )
 
+const (
+	// gracePeriod in case of a worker shutdown, leader will allow brief amount of time for the worker to start executing
+	gracePeriod = 5 * time.Minute
+
+	// materializeExecutionPeriod create actual entry in the TaskExecution database (from cron)
+	materializeExecutionPeriod = 3 * time.Hour
+)
+
 type worker struct {
 	id uint64
 
@@ -71,7 +79,7 @@ func newWorker(
 func (w *worker) loadPendingTask(ctx context.Context, t0 time.Time) {
 	// TODO: refactor
 	// only load task that will be executed in the next 3 hour
-	before := t0.Add(3 * time.Hour)
+	before := t0.Add(materializeExecutionPeriod)
 	assigned := entity.AssignmentStatusAssigned
 
 	filter := statemachine.TaskExecutionFilter{
@@ -81,7 +89,7 @@ func (w *worker) loadPendingTask(ctx context.Context, t0 time.Time) {
 		AssignedNode:     []uint64{w.id},
 	}
 
-	taskCh, errCh := w.teStorageV2.GetAllWithFilter(ctx, filter, "deployd")
+	taskCh, errCh := w.teStorageV2.GetAllWithFilter(ctx, filter, w.namespace)
 	for taskCh != nil || errCh != nil {
 		select {
 		case task, ok := <-taskCh:
@@ -216,7 +224,8 @@ func (w *worker) checkCancellation(_ context.Context, taskExec *entity.TaskExecu
 	}
 }
 
-// loadTaskExec materialize task execution into an in memory data structure, ready to be executed
+// loadTaskExec "materialize" task execution into an in-memory data structure, ready to be executed
+// it also initialize context used for the execution
 func (w *worker) loadTaskExec(ctx context.Context, taskExec *entity.TaskExecution, _ string) {
 	// if it's not pending
 	if taskExec.Status != entity.ExecutionStatusPending {
@@ -233,7 +242,7 @@ func (w *worker) loadTaskExec(ctx context.Context, taskExec *entity.TaskExecutio
 		return
 	}
 
-	if taskExec.ScheduledRunAt.After(time.Now().Add(3 * time.Hour)) {
+	if taskExec.ScheduledRunAt.After(time.Now().Add(materializeExecutionPeriod)) {
 		// to soon to load
 		// use the polling mechanism later
 		log.Printf("the task %v is past 3 hours from now (%v), I'll schedule it later.", taskExec.Id, taskExec.ScheduledRunAt)
@@ -312,12 +321,9 @@ func (w *worker) loadTaskExec(ctx context.Context, taskExec *entity.TaskExecutio
 		if newTimeBucket {
 			executeAt := time.Until(tq.taskScheduledRunAt)
 
-			// TODO: choose what's best
-			if executeAt < -10*time.Second {
-				// in hope server already re-assign
-				log.Println("worker: warn. stale task will not be executed")
-				return
-			} else if executeAt < 0 {
+			// TODO: fine tune
+			// still execute if it's within asignment grace period
+			if executeAt < 0 && executeAt.Abs() < gracePeriod {
 				// immediately executed
 				executeAt = 0
 			}
@@ -331,16 +337,7 @@ func (w *worker) loadTaskExec(ctx context.Context, taskExec *entity.TaskExecutio
 				}()
 
 				for _, taskExecRuntime := range taskExecs {
-					if taskExecRuntime.ctx.Err() != nil {
-						// we will no longer execute
-						continue
-					}
-
-					select {
-					case q <- taskExecRuntime:
-					default:
-						log.Printf("worker: queue starting to get full~")
-					}
+					q <- taskExecRuntime
 				}
 
 				// todo: delete the bucket

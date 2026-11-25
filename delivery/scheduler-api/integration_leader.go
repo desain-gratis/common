@@ -31,8 +31,16 @@ type leader struct {
 	raftNode     raft.Node
 	subscription notifier.Subscription
 
-	healthyUIDs map[uint64]struct{}
-	healthyUID  uint64
+	workers map[uint64]*workerStatus
+
+	// preferredWorker to assign task to, taken from list of healthy worker
+	preferredWorker uint64
+}
+
+type workerStatus struct {
+	uid        uint64
+	notHealthy bool
+	lastSeen   time.Time
 }
 
 // utility to retrieve task from task-ish alias
@@ -128,12 +136,12 @@ func (ls *leader) Handler(ctx context.Context, term, leaderID uint64) {
 				})
 			case statemachine.EventTaskExecutionCreated:
 				taskExec := (*entity.TaskExecution)(evt)
-				if ls.healthyUID == 0 {
+				if ls.preferredWorker == 0 {
 					// should be fatal, since it's should be assigned during the first periodicCheck()
 					log.Printf("leader: no healthy UID during task assignment")
 					continue
 				}
-				ls.assignPendingTask(ctx, ls.healthyUID, taskExec, t)
+				ls.assignPendingTask(ctx, ls.preferredWorker, taskExec, t)
 			default:
 				// log.Printf("Unknown job evt")
 			}
@@ -157,34 +165,45 @@ func (ls *leader) triggerGenerate(ctx context.Context, task *entity.RecurringTas
 
 // check for unhealthy and if found, re-assign task execution, notify worker
 func (ls *leader) periodicCheck(ctx context.Context, t0 time.Time) error {
-	unhealthyUIDs := make([]uint64, 0)
+	healthyCount := 0
 
 	// only available in leader
 	for nodeID, progress := range ls.raftNode.Status().Progress {
+		if _, ok := ls.workers[nodeID]; !ok {
+			ls.workers[nodeID] = &workerStatus{}
+		}
+
+		ls.workers[nodeID].uid = nodeID
+
 		if progress.RecentActive {
-			ls.healthyUIDs[nodeID] = struct{}{}
+			ls.workers[nodeID].notHealthy = false
+			ls.workers[nodeID].lastSeen = t0
+			healthyCount++
 		} else {
-			unhealthyUIDs = append(unhealthyUIDs, nodeID)
+			ls.workers[nodeID].notHealthy = true
 		}
 	}
 
-	if len(ls.healthyUIDs) == 0 {
+	if healthyCount == 0 {
 		return fmt.Errorf("leader: no healthy node")
 	}
 
-	// if the previous is still healthy, we will not change the healthyUIDs
-	// if not or at initialization, we select any healthy UIDs
+	// assign preferred worker from healthy node
+	// sticky: only change the preferred worker at initialization & if we detected that the (currrent) preffered worker is not healthy
+	//
 	// todo: task can have node/worker preferences in which they may execute in
-	_, ok := ls.healthyUIDs[ls.healthyUID]
-	if ls.healthyUID == 0 || !ok {
-		for anyHealthyUID := range ls.healthyUIDs {
-			ls.healthyUID = anyHealthyUID
-			break
+	preffered, ok := ls.workers[ls.preferredWorker]
+	if ls.preferredWorker == 0 || (ok && preffered.notHealthy) {
+		for workerUID, aWorker := range ls.workers {
+			if !aWorker.notHealthy {
+				ls.preferredWorker = workerUID
+				break
+			}
 		}
 	}
 
-	_ = ls.assignPendingTasks(ctx, ls.healthyUID, t0)
-	_ = ls.reassignTasksFromUnhealthyNode(ctx, ls.healthyUID, unhealthyUIDs, t0) // can be in different periodic tick
+	_ = ls.assignPendingTasks(ctx, ls.preferredWorker, t0)
+	_ = ls.reassignTasksFromUnhealthyNode(ctx, ls.preferredWorker, t0)
 
 	return nil
 }
@@ -194,7 +213,7 @@ func (ls *leader) periodicCheck(ctx context.Context, t0 time.Time) error {
 func (ls *leader) assignPendingTasks(ctx context.Context, anyHealthyUID uint64, t0 time.Time) error {
 	// This is totally separate with worker code; we can use different value
 	// todo: replace the hardcoded value
-	before := t0.Add(3 * time.Hour)
+	before := t0.Add(materializeExecutionPeriod)
 	notAssigned := entity.AssignmentStatusPending
 	filter := statemachine.TaskExecutionFilter{
 		Before:           &before,
@@ -226,7 +245,8 @@ func (ls *leader) assignPendingTasks(ctx context.Context, anyHealthyUID uint64, 
 	return nil
 }
 
-func (ls *leader) reassignTasksFromUnhealthyNode(ctx context.Context, anyHealthyUID uint64, unhealthyUIDs []uint64, t0 time.Time) error {
+func (ls *leader) reassignTasksFromUnhealthyNode(ctx context.Context, prefferedUID uint64, t0 time.Time) error {
+	unhealthyUIDs := make([]uint64, 0)
 	if len(unhealthyUIDs) == 0 {
 		// no error
 		return nil
@@ -234,7 +254,7 @@ func (ls *leader) reassignTasksFromUnhealthyNode(ctx context.Context, anyHealthy
 
 	// This is totally separate with worker code. we can use different value
 	// todo: replace the hardcoded value
-	before := t0.Add(3 * time.Hour)
+	before := t0.Add(materializeExecutionPeriod)
 	assigned := entity.AssignmentStatusAssigned
 	filter := statemachine.TaskExecutionFilter{
 		Before:           &before,
@@ -252,7 +272,24 @@ func (ls *leader) reassignTasksFromUnhealthyNode(ctx context.Context, anyHealthy
 				continue
 			}
 
-			ls.assignPendingTask(ctx, anyHealthyUID, task, t0)
+			if task.AssignmentState == nil {
+				// should not happen
+				continue
+			}
+
+			assignee := ls.workers[task.AssignmentState.AssignedTo]
+			if !assignee.notHealthy {
+				// healthy, no need reassign
+				continue
+			}
+
+			if task.ScheduledRunAt.Before(assignee.lastSeen.Add(gracePeriod)) {
+				// grace period. we hope (optimistic) that the asignee worker will be back within 10 minute
+				// and execute the said task
+				continue
+			}
+
+			ls.assignPendingTask(ctx, prefferedUID, task, t0)
 		case err, ok := <-errCh:
 			if !ok {
 				errCh = nil
