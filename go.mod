@@ -22,7 +22,9 @@ require (
 	github.com/lestrrat-go/jwx v1.2.31
 	github.com/lib/pq v1.10.9
 	github.com/lni/dragonboat/v4 v4.0.0-20250723143628-076c7f6497dc
+	github.com/magicaltux/ringbuf v0.1.2
 	github.com/minio/minio-go/v7 v7.0.97
+	github.com/minio/simdjson-go v0.4.5
 	github.com/rs/zerolog v1.34.0
 	github.com/spf13/viper v1.21.0
 	go.etcd.io/etcd/client/pkg/v3 v3.7.1
@@ -35,6 +37,7 @@ require (
 	golang.org/x/sync v0.21.0
 	google.golang.org/api v0.185.0
 	google.golang.org/protobuf v1.36.11
+	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 	modernc.org/sqlite v1.55.0
 )
 

@@ -35,6 +35,8 @@ type TaskExecution struct {
 
 	PublishedAt time.Time `json:"published_at"`
 	URLx        string    `json:"url"`
+
+	LogURL string `json:"log_url"`
 }
 
 type ExecutionState struct {

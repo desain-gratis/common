@@ -2,9 +2,16 @@ package schedulerapi
 
 import (
 	"context"
+	"errors"
+	"io"
 	"log/slog"
 	"sync"
+
+	"github.com/magicaltux/ringbuf"
+	"gopkg.in/natefinch/lumberjack.v2"
 )
+
+type QueueLogger func(id string) (string, *slog.Logger)
 
 type queueManager struct {
 	raftClient StateMachineClient
@@ -12,7 +19,14 @@ type queueManager struct {
 	queueByID     map[string]chan *TaskExecutionRuntime
 	queueByIDLock *sync.RWMutex
 
-	logger func(id string) *slog.Logger
+	queueData     map[string]*queueState
+	queueDataLock *sync.RWMutex
+
+	logDir string
+}
+
+type queueState struct {
+	logBuf *ringbuf.Writer
 }
 
 // Add let's user specify how the worker will execute the task
@@ -32,6 +46,12 @@ func (q *queueManager) Add(ctx context.Context, id string, queue chan<- *taskExe
 		q.queueByID[id] = queue2
 	}()
 
+	func() {
+		q.queueDataLock.Lock()
+		defer q.queueDataLock.Unlock()
+		q.queueData[id] = &queueState{}
+	}()
+
 	return q
 }
 
@@ -44,7 +64,36 @@ func (q *queueManager) AddFunction(ctx context.Context, id string, ngoroutine in
 	}
 
 	queue := make(chan *TaskExecutionRuntime)
-	fnWithHarness := taskFunctionHarness(q.raftClient, fn, q.logger(id))
+
+	logBuf, err := ringbuf.New(10 * 1024 * 1024) // 1MB ring buffer for logs
+	if err != nil {
+		// TODO
+		return nil
+	}
+
+	reada := logBuf.BlockingReader()
+	llogger := &lumberjack.Logger{
+		Filename: q.logDir + "/queue/" + id + "/log.log", // todo: proper path handling
+	}
+
+	lok := slog.New(slog.NewJSONHandler(logBuf, nil))
+
+	go func() {
+		defer reada.Close()
+		defer llogger.Close()
+
+		for {
+			_, err := io.Copy(llogger, reada)
+			if err != nil {
+				if errors.Is(err, io.EOF) {
+					break
+				}
+				return
+			}
+		}
+	}()
+
+	fnWithHarness := taskFunctionHarness(q.raftClient, fn, lok)
 
 	for range ngoroutine {
 		go func() {
@@ -65,6 +114,14 @@ func (q *queueManager) AddFunction(ctx context.Context, id string, ngoroutine in
 		q.queueByIDLock.Lock()
 		defer q.queueByIDLock.Unlock()
 		q.queueByID[id] = queue
+	}()
+
+	func() {
+		q.queueDataLock.Lock()
+		defer q.queueDataLock.Unlock()
+		q.queueData[id] = &queueState{
+			logBuf: logBuf,
+		}
 	}()
 
 	return q

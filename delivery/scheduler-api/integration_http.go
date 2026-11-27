@@ -1,6 +1,7 @@
 package schedulerapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	_ "time/tzdata"
 
@@ -17,9 +19,11 @@ import (
 	entity "github.com/desain-gratis/common/types/entity/scheduler"
 	"github.com/google/uuid"
 	"github.com/julienschmidt/httprouter"
+	"github.com/minio/simdjson-go"
 )
 
 type httpAPI struct {
+	*worker
 	raftClient StateMachineClient
 	tes        statemachine.TaskExecutionUsecase
 }
@@ -432,4 +436,258 @@ func parseAggregationInput(
 	}
 
 	return filter, timezone, indexes, nil
+}
+
+func (q *httpAPI) TailLog(appCtx context.Context) httprouter.Handle {
+	return func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+		if r.URL.Query().Get("task_id") == "" {
+			q.tailLogAll(appCtx, w, r, p)
+			return
+		}
+
+		q.tailLogFiltered(appCtx, w, r, p)
+	}
+}
+
+func (q *httpAPI) tailLogFiltered(
+	appCtx context.Context,
+	w http.ResponseWriter,
+	r *http.Request,
+	_ httprouter.Params,
+) {
+	queueID := r.URL.Query().Get("queue_id")
+	taskID := r.URL.Query().Get("task_id")
+	// task, err := q.worker.teStorageV2.GetByID(r.Context(), q.namespace, queueID, taskID)
+	// if err != nil {
+	// 	writeJSON(w, http.StatusBadRequest, map[string]string{
+	// 		"error": err.Error(),
+	// 	})
+	// 	return
+	// }
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+
+	var queueState *queueState
+	func() {
+		q.worker.queue.queueDataLock.RLock()
+		defer q.worker.queue.queueDataLock.RUnlock()
+
+		queueState = q.worker.queue.queueData[queueID]
+	}()
+
+	// might miss subtle case / duplcate
+
+	if queueState == nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{
+			"error": "queue not found",
+		})
+		return
+	}
+
+	reader := queueState.logBuf.BlockingReader()
+
+	// just tail the latest log
+	reader.Reset()
+
+	var closeOnce sync.Once
+	closeReader := func() {
+		closeOnce.Do(func() {
+			reader.Close()
+		})
+	}
+	defer closeReader()
+
+	// Close the reader when the HTTP client disconnects.
+	stop := make(chan struct{})
+	defer close(stop)
+
+	go func() {
+		select {
+		case <-appCtx.Done():
+			closeReader()
+		case <-r.Context().Done():
+			closeReader()
+		case <-stop:
+		}
+	}()
+
+	// simdjson NDJSON parser.
+	reuse := make(chan *simdjson.ParsedJson, 10)
+	stream := make(chan simdjson.Stream, 1)
+
+	go simdjson.ParseNDStream(reader, stream, reuse)
+
+	connected := true
+
+	for got := range stream {
+		if got.Error != nil {
+			if errors.Is(got.Error, io.EOF) {
+				break
+			}
+
+			// Expected when the HTTP client disconnects.
+			if r.Context().Err() != nil {
+				break
+			}
+
+			if appCtx.Err() != nil {
+				break
+			}
+
+			if errors.Is(got.Error, io.ErrClosedPipe) {
+				break
+			}
+
+			log.Printf("log parser error: %v", got.Error)
+			continue
+		}
+
+		if got.Value == nil {
+			continue
+		}
+
+		matched := taskID == ""
+
+		// Filter by task_id if requested.
+		if taskID != "" {
+			var elem *simdjson.Element
+
+			err := got.Value.ForEach(func(i simdjson.Iter) error {
+				var err error
+
+				elem, err = i.FindElement(elem, "task_id")
+				if err != nil {
+					return nil
+				}
+
+				bts, err := elem.Iter.StringBytes()
+				if err != nil {
+					return nil
+				}
+
+				matched = string(bts) == taskID
+				return nil
+			})
+
+			if err != nil {
+				log.Printf("log filter error: %v", err)
+			}
+		}
+
+		// Write original JSON bytes without re-serialization.
+		if connected && matched {
+			if _, err := w.Write(got.Value.Message); err != nil {
+				connected = false
+				closeReader()
+			} else {
+				// ParseNDStream trims trailing whitespace from Message.
+				// Restore the NDJSON delimiter.
+				if _, err := w.Write([]byte{'\n'}); err != nil {
+					connected = false
+					closeReader()
+				} else {
+					flusher.Flush()
+				}
+			}
+		}
+
+		// Return ParsedJson to the parser for reuse.
+		reuse <- got.Value
+	}
+}
+
+// Raw streaming without JSON parsing or filtering.
+func (q *httpAPI) tailLogAll(
+	appCtx context.Context,
+	w http.ResponseWriter,
+	r *http.Request,
+	_ httprouter.Params,
+) {
+	// Move the TailLogRaw implementation here.
+	queueID := r.URL.Query().Get("queue_id")
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+
+	var queueState *queueState
+	func() {
+		q.worker.queue.queueDataLock.RLock()
+		defer q.worker.queue.queueDataLock.RUnlock()
+
+		queueState = q.worker.queue.queueData[queueID]
+	}()
+
+	if queueState == nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{
+			"error": "queue not found",
+		})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/x-ndjson")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+
+	reader := queueState.logBuf.BlockingReader()
+	reader.Reset()
+	defer reader.Close()
+
+	var closeOnce sync.Once
+	closeReader := func() {
+		closeOnce.Do(func() {
+			reader.Close()
+		})
+	}
+
+	stop := make(chan struct{})
+	defer close(stop)
+
+	go func() {
+		select {
+		case <-appCtx.Done():
+			closeReader()
+		case <-r.Context().Done():
+			closeReader()
+		case <-stop:
+		}
+	}()
+
+	buf := make([]byte, 32*1024)
+
+	for {
+		n, err := reader.Read(buf)
+
+		if n > 0 {
+			if _, writeErr := w.Write(buf[:n]); writeErr != nil {
+				closeReader()
+				return
+			}
+
+			flusher.Flush()
+		}
+
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return
+			}
+
+			if r.Context().Err() != nil || appCtx.Err() != nil {
+				return
+			}
+
+			if errors.Is(err, io.ErrClosedPipe) {
+				return
+			}
+
+			log.Printf("log reader error: %v", err)
+			return
+		}
+	}
 }
