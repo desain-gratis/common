@@ -22,7 +22,8 @@ type queueManager struct {
 	queueData     map[string]*queueState
 	queueDataLock *sync.RWMutex
 
-	logDir string
+	logDir      string
+	logProducer func(logger *slog.Logger) // or factory
 }
 
 type queueState struct {
@@ -73,10 +74,15 @@ func (q *queueManager) AddFunction(ctx context.Context, id string, ngoroutine in
 
 	reada := logBuf.BlockingReader()
 	llogger := &lumberjack.Logger{
-		Filename: q.logDir + "/queue/" + id + "/log.log", // todo: proper path handling
+		Filename: q.logDir + "/" + id + "/log.log", // todo: proper path handling
 	}
 
 	lok := slog.New(slog.NewJSONHandler(logBuf, nil))
+
+	if q.logProducer != nil {
+		// so user can inject with various attribute
+		q.logProducer(lok)
+	}
 
 	go func() {
 		defer reada.Close()
@@ -124,5 +130,10 @@ func (q *queueManager) AddFunction(ctx context.Context, id string, ngoroutine in
 		}
 	}()
 
+	return q
+}
+
+func (q *queueManager) WithLogProducer(logProducer func(logger *slog.Logger)) *queueManager {
+	q.logProducer = logProducer
 	return q
 }
