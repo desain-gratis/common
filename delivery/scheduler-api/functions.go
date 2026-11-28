@@ -2,7 +2,6 @@ package schedulerapi
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -102,7 +101,7 @@ func taskFunctionHarness(ctx context.Context, client StateMachineClient, fn Exec
 		// in case of top-down error (from raft), worker does not need to send anything back.
 		// we don't use select statement here because fn should be responsible in managing handling the cancellation event
 		tErr := tctx.Err()
-		if errors.Is(tErr, ErrTaskExecutionCancelled) || errors.Is(tErr, ErrTaskExecutionReAssigned) {
+		if tErr != nil {
 			return
 		}
 
