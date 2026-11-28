@@ -57,7 +57,7 @@ func GetLogger(ctx context.Context) *slog.Logger {
 }
 
 // Wrap any "stateless" function with state reporting to raft
-func taskFunctionHarness(client StateMachineClient, fn Executor, log *slog.Logger) func(taskExec *TaskExecutionRuntime) {
+func taskFunctionHarness(ctx context.Context, client StateMachineClient, fn Executor, log *slog.Logger) func(taskExec *TaskExecutionRuntime) {
 	return func(taskExec *TaskExecutionRuntime) {
 		log := log.With(
 			slog.String("task_id", taskExec.Id),
@@ -74,12 +74,6 @@ func taskFunctionHarness(client StateMachineClient, fn Executor, log *slog.Logge
 			ActualRunAt: &runAt,
 		}
 
-		// TODO: handle ctx more properly
-		ctx := taskExec.ctx
-
-		ctx = WithTaskExecution(ctx, taskExec)
-		ctx = WithLogger(ctx, log)
-
 		// update before
 		_, err := client.Propose(ctx, statemachine.UpdateTaskExecution(taskExec.TaskExecution))
 		if err != nil {
@@ -88,7 +82,12 @@ func taskFunctionHarness(client StateMachineClient, fn Executor, log *slog.Logge
 		}
 
 		// TODO: limit mutation (later..)
-		out, err := fn(ctx, taskExec.Input)
+
+		// task context
+		tctx := taskExec.ctx
+		tctx = WithTaskExecution(tctx, taskExec)
+		tctx = WithLogger(tctx, log)
+		out, err := fn(tctx, taskExec.Input)
 		if err != nil {
 			taskExec.Status = entity.ExecutionStatusFailed
 		} else {
