@@ -31,6 +31,7 @@ type worker struct {
 
 	namespace string
 
+	workerStoreRO         *mycontent_base.Handler[*entity.Worker]
 	taskDefinitionStoreRO *mycontent_base.Handler[*entity.RecurringTask]
 	teStorageV2           statemachine.TaskExecutionUsecase
 	// task IDs
@@ -54,12 +55,14 @@ type queueTaskPair struct {
 // started before raft is ran.
 func newWorker(
 	namespace string,
+	workerStoreRO *mycontent_base.Handler[*entity.Worker],
 	taskDefinitionStoreRO *mycontent_base.Handler[*entity.RecurringTask],
 	teStorageV2 statemachine.TaskExecutionUsecase,
 	assignmentUpdated <-chan *entity.TaskExecution,
 ) *worker {
 	return &worker{
 		namespace:             namespace,
+		workerStoreRO:         workerStoreRO,
 		taskDefinitionStoreRO: taskDefinitionStoreRO,
 		teStorageV2:           teStorageV2,
 		assignmentUpdated:     assignmentUpdated,

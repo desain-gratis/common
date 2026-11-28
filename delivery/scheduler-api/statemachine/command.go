@@ -47,10 +47,7 @@ type GenerateRecurringTaskExecution struct {
 type CreateTaskExecution *entity.TaskExecution
 type UpdateTaskExecution *entity.TaskExecution
 
-type UpdateAvailability struct {
-	NodeID   uint64
-	QueueIDs []string
-}
+type UpdateAvailability *entity.Worker
 
 type ReassignNode struct {
 	FromNode uint64

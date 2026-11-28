@@ -36,7 +36,7 @@ type RecurringTask struct {
 
 type Queue struct {
 	ID    string `json:"id"`
-	Param any    `json:"param"`
+	Param any    `json:"param,omitempty"`
 }
 
 type RecurringTaskState struct {

@@ -11,7 +11,7 @@ type Event string
 type EventRecurringTaskCreated *entity.RecurringTask
 type EventRecurringTaskUpdated *entity.RecurringTask
 type EventRecurringTaskGenerated *entity.RecurringTask
-type EventWorkerRequestedWork UpdateAvailability
+type EventWorkerRequestedWork *entity.Worker
 
 type EventTaskExecutionCreated *entity.TaskExecution
 

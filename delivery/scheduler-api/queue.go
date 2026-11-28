@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"sync"
 
+	entity "github.com/desain-gratis/common/types/entity/scheduler"
 	"github.com/magicaltux/ringbuf"
 	"gopkg.in/natefinch/lumberjack.v2"
 )
@@ -28,6 +29,22 @@ type queueManager struct {
 
 type queueState struct {
 	logBuf *ringbuf.Writer
+}
+
+func (q *queueManager) GetAll() map[string]*entity.Queue {
+	queueCp := make(map[string]*entity.Queue)
+	func() {
+		q.queueDataLock.Lock()
+		defer q.queueDataLock.Unlock()
+		for key := range q.queueData {
+			queueCp[key] = &entity.Queue{
+				ID: key,
+				// todo: other field
+			}
+		}
+	}()
+
+	return queueCp
 }
 
 // Add let's user specify how the worker will execute the task
@@ -99,7 +116,7 @@ func (q *queueManager) AddFunction(ctx context.Context, id string, ngoroutine in
 		}
 	}()
 
-	fnWithHarness := taskFunctionHarness(q.raftClient, fn, lok)
+	fnWithHarness := taskFunctionHarness(ctx, q.raftClient, fn, lok)
 
 	for range ngoroutine {
 		go func() {

@@ -3,6 +3,7 @@ package schedulerapi
 import (
 	"context"
 	"database/sql"
+	"strconv"
 	"sync"
 	"time"
 
@@ -24,6 +25,10 @@ type StateMachineClient interface {
 
 type replicatedScheduler struct {
 	namespace string
+
+	// List of worker / node
+	WorkerUsecase mycontent.Usecase[*entity.Worker]
+
 	// Recurring task definition store
 	RecurringTaskUsecase mycontent.Usecase[*entity.RecurringTask]
 
@@ -37,6 +42,20 @@ type replicatedScheduler struct {
 
 	// Worker handles node specific job
 	Worker *worker
+
+	config *Config
+}
+
+type Config struct {
+	Host string `json:"host"`
+
+	// Log URL to allow access to the log
+	LogUrl string `json:"log_url"`
+
+	// Log URL to allow access to the log tail / live tail
+	LogTailUrl string `json:"log_tail_url"`
+
+	// Other config such as region.. etc..
 }
 
 // NewReplicatedScheduler creates new replicated scheduler that run on top of etcd-io/raft
@@ -51,7 +70,12 @@ type replicatedScheduler struct {
 // handler := scheduler.HttpHandler(raftClient)
 //
 // ...
-func NewReplicatedScheduler(ctx context.Context, namespace string, conn *sql.DB) (*replicatedScheduler, error) {
+func NewReplicatedScheduler(ctx context.Context, namespace string, conn *sql.DB, config *Config) (*replicatedScheduler, error) {
+	// worker registry
+	workerStorage, err := content_chdb.New(ctx, conn, statemachine.TableWorker, 0)
+	if err != nil {
+		return nil, err
+	}
 
 	// base recurring task storage
 	recurringTaskStorage, err := content_chdb.New(ctx, conn, statemachine.TableRecurringTask, 0)
@@ -59,7 +83,8 @@ func NewReplicatedScheduler(ctx context.Context, namespace string, conn *sql.DB)
 		return nil, err
 	}
 
-	// replicatedSchedulerer for easy access
+	// for easy access in the code
+	workerStorageUsecase := mycontent_base.New[*entity.Worker](workerStorage)
 	recurringTaskStorageUsecase := mycontent_base.New[*entity.RecurringTask](recurringTaskStorage)
 
 	// custom task execution storage
@@ -74,37 +99,67 @@ func NewReplicatedScheduler(ctx context.Context, namespace string, conn *sql.DB)
 
 	worker := newWorker(
 		namespace,
+		workerStorageUsecase,
 		recurringTaskStorageUsecase,
 		taskExecStorage,
 		executorCh,
 	)
 
 	topic := notifier_impl.NewStandardTopic()
+
+	// the replicated state machine
+	// any storage mutations happened here
 	storageStateMachine := statemachine.NewRaftApp(
 		namespace,
 		topic,
+		workerStorageUsecase,
 		recurringTaskStorageUsecase,
 		taskExecStorage,
 		executorCh,
 	)
 
+	// todo: make storage read only for user
 	return &replicatedScheduler{
 		namespace:            namespace,
 		Worker:               worker,
+		WorkerUsecase:        workerStorageUsecase,
 		RecurringTaskUsecase: recurringTaskStorageUsecase,
 		TaskExecutionUsecase: taskExecStorage.DGCompat(),
 		taskExecutionUsecase: taskExecStorage,
 		StateMachine:         storageStateMachine,
 		StateMachineEvent:    topic,
+		config:               config,
 	}, nil
 }
 
-func (w *replicatedScheduler) StartWorker(ctx context.Context, raftClient *runneretcd.RaftWrapper) error {
+func (w *replicatedScheduler) StartWorker(ctx context.Context, raftWrapper *runneretcd.RaftWrapper) error {
 	// Load all local task in to memory and start the worker goroutine
 
 	// Can also put the client inside worker; but now it's more clear like this first
-	id := statemachine.NewClient(raftClient).ID()
-	err := w.Worker.Start(ctx, id)
+	client := statemachine.NewClient(raftWrapper)
+	err := w.Worker.Start(ctx, client.ID())
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (w *replicatedScheduler) UpdateAvailability(ctx context.Context, raftWrapper *runneretcd.RaftWrapper) error {
+	client := statemachine.NewClient(raftWrapper)
+	wdata := &entity.Worker{
+		Ns:          w.namespace,
+		Id:          strconv.FormatUint(client.ID(), 10),
+		IdInt:       client.ID(),
+		Queue:       w.Worker.queue.GetAll(),
+		PublishedAt: time.Now(),
+	}
+	if w.config != nil {
+		wdata.LogUrl = w.config.LogUrl
+		wdata.Host = w.config.Host
+	}
+
+	// Also tells that this worker is ready to receive task
+	_, err := client.Propose(ctx, statemachine.UpdateAvailability(wdata))
 	if err != nil {
 		return err
 	}

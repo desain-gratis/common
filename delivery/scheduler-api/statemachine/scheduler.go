@@ -18,6 +18,7 @@ import (
 )
 
 const (
+	TableWorker        = "worker"
 	TableRecurringTask = "recurring_task"
 	TableTaskExecution = "task_execution"
 )
@@ -31,6 +32,7 @@ type RaftStorage struct {
 	namespace string
 	topic     notifier.Topic
 
+	workerStorageUsecase mycontent.Usecase[*entity.Worker]
 	scheduledTaskUsecase mycontent.Usecase[*entity.RecurringTask]
 
 	executor chan<- *entity.TaskExecution
@@ -51,6 +53,7 @@ var ErrRetryable = errors.New("retryable")
 func NewRaftApp(
 	namespace string,
 	topic notifier.Topic,
+	workerStorageUsecase mycontent.Usecase[*entity.Worker],
 	recurringTaskStorage mycontent.Usecase[*entity.RecurringTask],
 	teStorageV2 TaskExecutionUsecase,
 	executor chan<- *entity.TaskExecution,
@@ -58,6 +61,7 @@ func NewRaftApp(
 	return &RaftStorage{
 		namespace:              namespace,
 		topic:                  topic,
+		workerStorageUsecase:   workerStorageUsecase,
 		scheduledTaskUsecase:   recurringTaskStorage,
 		executor:               executor,
 		taskExecutionUsecaseV2: teStorageV2,
@@ -177,11 +181,14 @@ func (m *RaftStorage) OnUpdateV2(ctx context.Context, entry raft.EntryV2) (any, 
 			return nil, err
 		}
 
-		rw.NodeID = entry.SourceNodeID
+		result, err := m.workerStorageUsecase.Post(ctx, rw, nil)
+		if err != nil {
+			return nil, err
+		}
 
 		// broadcast to all worker that this node needs work
 		// leader will then process this to allocate task
-		m.topic.Broadcast(ctx, EventWorkerRequestedWork(rw))
+		m.topic.Broadcast(ctx, EventWorkerRequestedWork(result))
 		return "SUCCESS", nil
 
 	default:
