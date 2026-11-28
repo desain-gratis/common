@@ -14,6 +14,7 @@ import (
 )
 
 var (
+	// top-down error
 	ErrTaskExecutionCancelled  = errors.New("task execution cancelled")
 	ErrTaskExecutionReAssigned = errors.New("task execution reassigned")
 )
