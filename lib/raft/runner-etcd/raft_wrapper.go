@@ -152,7 +152,7 @@ func (rc *RaftWrapper) Propose(ctx context.Context, value any) (any, error) {
 	}()
 
 	if rc.node == nil {
-		log.Fatal("node is nil")
+		return nil, err
 	}
 
 	err = rc.node.Propose(ctx, wrappedPayload)
